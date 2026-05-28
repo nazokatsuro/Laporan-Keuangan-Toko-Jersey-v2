@@ -298,7 +298,7 @@ export async function safeHtml2canvas(element: HTMLElement, options: any = {}): 
   // Clean oklch in the main document's styles right now to avoid stylesheet read failures
   cleanOklchInDocument(document);
 
-  const isInvoice = element.id === 'invoice-paper';
+  const isInvoice = element.id && (element.id === 'invoice-paper' || element.id.startsWith('invoice-paper'));
   const isFinancialReport = element.id === 'financial-report-paper';
   
   // Create a clean options object

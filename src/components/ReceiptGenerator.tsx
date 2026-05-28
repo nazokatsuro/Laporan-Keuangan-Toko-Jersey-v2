@@ -751,7 +751,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                             className="text-[10px] font-bold text-indigo-900 uppercase text-left"
                           />
                         </h6>
-                        <p className="text-[10px] text-indigo-700 mt-0.5 leading-relaxed text-left">
+                        <div className="text-[10px] text-indigo-700 mt-0.5 leading-relaxed text-left">
                           <EditableText
                             isEditing={isEditingTexts}
                             value={getVal(item.id, 'jaminanText', 'Jersey ini dibuat kustom menggunakan teknologi sublimation press HD anti luntur berkualitas premium.')}
@@ -760,7 +760,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                             rows={2}
                             className="text-[10px] text-indigo-700 mt-0.5 leading-relaxed text-left"
                           />
-                        </p>
+                        </div>
                       </div>
                     </div>
 
@@ -1023,7 +1023,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                     className="text-xs font-bold text-slate-400 uppercase tracking-widest text-left"
                   />
                 </h4>
-                <p className="text-xs text-slate-650 leading-relaxed text-left">
+                <div className="text-xs text-slate-650 leading-relaxed text-left">
                   <EditableText
                     isEditing={isEditingTexts}
                     value={getVal('rekap', 'descStatusIkhtisar', `Berikut adalah rincian konsolidasi tagihan seluruh pesanan (${pesananArray.length} PO) yang dipilih untuk cetak batch nota.`)}
@@ -1032,7 +1032,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                     rows={2}
                     className="text-xs text-slate-650 leading-relaxed text-left"
                   />
-                </p>
+                </div>
               </div>
 
               {/* Table of Batch Items */}
@@ -1180,7 +1180,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                           className="text-[10px] font-bold text-indigo-900 uppercase text-left"
                         />
                       </h6>
-                      <p className="text-[10px] text-indigo-700 mt-0.5 leading-relaxed text-left">
+                      <div className="text-[10px] text-indigo-700 mt-0.5 leading-relaxed text-left">
                         <EditableText
                           isEditing={isEditingTexts}
                           value={getVal('rekap', 'perhatianText', 'Harap menginstruksikan pelunasan sisa tagihan untuk masing-masing PO di atas sesuai dengan rincian yang tercantum pada lembar nota masing-masing.')}
@@ -1189,10 +1189,10 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                           rows={2}
                           className="text-[10px] text-indigo-700 mt-0.5 leading-relaxed text-left"
                         />
-                      </p>
+                      </div>
                     </div>
                   </div>
-                  <p className="text-[9px] text-slate-400 leading-relaxed italic text-left">
+                  <div className="text-[9px] text-slate-400 leading-relaxed italic text-left">
                     <EditableText
                       isEditing={isEditingTexts}
                       value={getVal('rekap', 'ikhtisarDisclaimer', '* Ikhtisar ini disusun otomatis oleh sistem kasir untuk menyederhanakan perhitungan total invoice bagi pemesan rombongan / reseller.')}
@@ -1201,7 +1201,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                       rows={2}
                       className="text-[9px] text-slate-400 leading-relaxed italic text-left"
                     />
-                  </p>
+                  </div>
                 </div>
 
                 {/* Total Aggregation */}

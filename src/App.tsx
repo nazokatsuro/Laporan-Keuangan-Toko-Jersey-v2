@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Pesanan, ShopSettings } from './types';
 import { 
   DEFAULT_ORDERS, 
@@ -131,6 +131,9 @@ export default function App() {
   const [cloudDraftInfo, setCloudDraftInfo] = useState<{ id: string; modifiedTime: string; payload: any } | null>(null);
   const [isDriveSyncActive, setIsDriveSyncActive] = useState(false);
   const [syncMessage, setSyncMessage] = useState('Mengotorisasi akses...');
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'pending' | 'saving' | 'error'>('synced');
+  const isFirstRender = useRef(true);
+  const lastSavedDataRef = useRef<string>('');
 
   // States & handler for blocking login popup before page entry
   const [isSigningInGoogle, setIsSigningInGoogle] = useState(false);
@@ -191,19 +194,30 @@ export default function App() {
               if (payload.settings) {
                 setSettings(payload.settings);
               }
+              const baselineData = JSON.stringify({
+                pesananList: payload.pesananList,
+                settings: payload.settings || settings
+              });
+              lastSavedDataRef.current = baselineData;
+              isFirstRender.current = false;
+
               console.log('Draft dari Google Drive berhasil dimuat secara otomatis!');
               setSyncMessage('Sinkronisasi selesai! Menyiapkan dokumen workspace...');
               await new Promise(resolve => setTimeout(resolve, 800));
             } else {
               setSyncMessage('Data cadangan kosong. Menyiapkan draf lokal...');
               await new Promise(resolve => setTimeout(resolve, 600));
+              lastSavedDataRef.current = JSON.stringify({ pesananList, settings });
+              isFirstRender.current = false;
             }
           } else {
             setSyncMessage('Tidak ditemukan berkas cadangan cloud sebelumnya. Menyiapkan workspace lokal...');
             await new Promise(resolve => setTimeout(resolve, 1000));
+            lastSavedDataRef.current = JSON.stringify({ pesananList, settings });
+            isFirstRender.current = false;
           }
         } catch (err) {
-          console.error('Error auto-syncing Drive:', err);
+          console.warn('Gagal sinkronisasi draf cloud (offline atau sesi habis):', err);
           setSyncMessage('Gagal menyinkronkan data draf dari Penyimpanan Awan.');
           await new Promise(resolve => setTimeout(resolve, 1200));
         } finally {
@@ -222,17 +236,56 @@ export default function App() {
   useEffect(() => {
     const isAutoSyncOn = localStorage.getItem('laporan_jersey_gdrive_autosync') === 'true';
     if (googleUser && googleToken && isAutoSyncOn) {
+      const currentDataStr = JSON.stringify({ pesananList, settings });
+      
+      // If we are still initializing, skip triggering backup
+      if (isFirstRender.current) {
+        lastSavedDataRef.current = currentDataStr;
+        isFirstRender.current = false;
+        return;
+      }
+
+      // If data matches what is saved or baseline, stay on synced
+      if (currentDataStr === lastSavedDataRef.current) {
+        setCloudSyncStatus('synced');
+        return;
+      }
+
+      // We have unsaved changes, change status to pending
+      setCloudSyncStatus('pending');
+
       const timer = setTimeout(async () => {
         try {
+          setCloudSyncStatus('saving');
           console.log('Background Auto-Sync ke Google Drive berjalan...');
           await uploadDraftToDrive(googleToken, pesananList, settings);
+          lastSavedDataRef.current = currentDataStr;
+          setCloudSyncStatus('synced');
         } catch (err) {
-          console.error('Failed to auto-backup draft:', err);
+          console.warn('Failed to auto-backup draft (offline or session expired):', err);
+          setCloudSyncStatus('error');
         }
       }, 4000);
       return () => clearTimeout(timer);
     }
   }, [pesananList, settings, googleUser, googleToken]);
+
+  // Fitur pengingat beforeunload ketika hendak refresh atau close tab
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (cloudSyncStatus === 'pending' || cloudSyncStatus === 'saving') {
+        const warningMessage = "⚠️ PERINGATAN: Butuh waktu sekitar 4 detik untuk auto-save ke Penyimpanan Awan. Apakah Anda yakin ingin mengabaikan cadangan terbaru dan keluar/refresh?";
+        e.preventDefault();
+        e.returnValue = warningMessage; // Standard for most browsers (Chrome, Firefox, Safari)
+        return warningMessage; 
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [cloudSyncStatus]);
 
   // Warning Details memoized calculation (All warnings in details list)
   const warningDetails = useMemo(() => {
@@ -422,8 +475,29 @@ export default function App() {
           </div>
 
           {signInError && (
-            <div className="w-full bg-rose-500/10 border border-rose-500/20 px-4 py-3 rounded-xl text-rose-400 text-xs font-medium text-center mb-5 leading-normal">
-              {signInError}
+            <div className="w-full space-y-3 mb-5">
+              <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl text-rose-300 text-xs text-center leading-normal">
+                <p className="font-extrabold mb-1">Terjadi Kendala Otorisasi</p>
+                <p className="opacity-95 text-[11px]">{signInError}</p>
+              </div>
+              
+              {/* Troubleshoot guide for Google Verification / access_denied 403 error */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 text-[11px] leading-relaxed text-slate-300 select-text">
+                <p className="font-extrabold text-white text-xs mb-1.5 flex items-center gap-1.5 text-indigo-400">
+                  <Shield className="h-3.5 w-3.5 shrink-0" />
+                  <span>Solusi Error 403: access_denied</span>
+                </p>
+                <p className="mb-2 text-slate-400 text-[10.5px]">
+                  Jika masuk dengan akun lain dan ditolak karena status aplikasi Firebase belum terverifikasi penuh publik oleh Google:
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-300 pl-1 text-[10.5px]">
+                  <li>Buka <strong>Google Cloud Console</strong> dengan akun pemilik proyek.</li>
+                  <li>Pilih menu <strong>APIs & Services</strong> &gt; <strong>OAuth consent screen</strong>.</li>
+                  <li>Gulir ke bawah pada bagian <strong>Test Users</strong> (Pengguna Pengujian).</li>
+                  <li>Klik <strong>+ ADD USERS</strong> dan masukkan email Anda (misal: <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-300 font-mono">nomadenapp@gmail.com</code>).</li>
+                  <li>Klik <strong>Save</strong>. Lalu coba klik tombol masuk kembali.</li>
+                </ol>
+              </div>
             </div>
           )}
 
@@ -584,6 +658,49 @@ export default function App() {
                 <span className="text-[10px] sm:inline hidden">Hati-hati:</span>
                 <span>{notificationsOverview.totalAlerts}</span>
               </button>
+            )}
+
+            {/* Cloud Sync Status Indicator */}
+            {googleUser && googleToken && (
+              <div 
+                title={
+                  cloudSyncStatus === 'synced' ? 'Seluruh perubahan telah dicadangkan ke Google Drive' :
+                  cloudSyncStatus === 'pending' ? 'Terjadi penambahan/perubahan data. Menunggu 4 detik delay aman untuk auto-save...' :
+                  cloudSyncStatus === 'saving' ? 'Sedang mengunggah draf cadangan terbaru ke Google Drive...' :
+                  'Gagal menghubungkan draf ke Google Drive.'
+                }
+                className={`p-2 border rounded-xl text-xs flex items-center gap-1.5 cursor-default select-none transition-all duration-350 header-glow ${
+                  cloudSyncStatus === 'synced' ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/10' :
+                  cloudSyncStatus === 'pending' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' :
+                  cloudSyncStatus === 'saving' ? 'border-indigo-500/20 text-indigo-400 bg-indigo-500/10' :
+                  'border-rose-500/20 text-rose-400 bg-rose-500/10'
+                }`}
+              >
+                {cloudSyncStatus === 'synced' && (
+                  <>
+                    <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
+                    <span className="text-[10px] hidden sm:inline text-emerald-300 font-bold uppercase tracking-widest leading-none">Cloud Terhubung</span>
+                  </>
+                )}
+                {cloudSyncStatus === 'pending' && (
+                  <>
+                    <div className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span className="text-[10px] hidden sm:inline text-amber-300 font-bold uppercase tracking-widest leading-none">Tertunda (4s)</span>
+                  </>
+                )}
+                {cloudSyncStatus === 'saving' && (
+                  <>
+                    <Loader2 className="h-3 w-3 text-indigo-400 animate-spin shrink-0" />
+                    <span className="text-[10px] hidden sm:inline text-indigo-300 font-bold uppercase tracking-widest leading-none font-sans">Menyimpan...</span>
+                  </>
+                )}
+                {cloudSyncStatus === 'error' && (
+                  <>
+                    <div className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                    <span className="text-[10px] hidden sm:inline text-rose-300 font-bold uppercase tracking-widest leading-none">Gagal Backup</span>
+                  </>
+                )}
+              </div>
             )}
 
             {/* Dark Mode Theme Active indicator tag */}

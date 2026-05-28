@@ -168,7 +168,7 @@ export const searchDraftInDrive = async (token: string): Promise<DriveFileMetada
     }
     return null;
   } catch (err) {
-    console.error('Error searching draft in Drive:', err);
+    console.warn('Silent notice: Draft file check not loaded or offline.', err);
     throw err;
   }
 };
@@ -203,7 +203,7 @@ export const downloadDraftFromDrive = async (token: string, fileId: string): Pro
     }
     return payload as DraftPayload;
   } catch (err) {
-    console.error('Error downloading draft:', err);
+    console.warn('Silent notice: Downloading of cloud draft offline or rejected.', err);
     throw err;
   }
 };
@@ -290,7 +290,7 @@ export const uploadDraftToDrive = async (
       modifiedTime 
     };
   } catch (err) {
-    console.error('Error uploading draft:', err);
+    console.warn('Silent notice: Background upload/draft update skipped or offline.', err);
     throw err;
   }
 };
