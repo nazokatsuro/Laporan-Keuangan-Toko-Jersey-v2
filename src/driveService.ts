@@ -1,0 +1,253 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  User,
+  signOut
+} from 'firebase/auth';
+import firebaseConfig from '../firebase-applet-config.json';
+import { Pesanan, ShopSettings } from './types';
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+const provider = new GoogleAuthProvider();
+// Request Workspace scope for access to full drive or drive.file
+// The user has requested full 'https://www.googleapis.com/auth/drive' scope
+provider.addScope('https://www.googleapis.com/auth/drive');
+
+let isSigningIn = false;
+let cachedAccessToken: string | null = null;
+
+// Track listener callbacks
+const authCallbacks = new Set<(user: User | null, token: string | null) => void>();
+
+// Handle Firebase Auth changes and fetch the token
+onAuthStateChanged(auth, async (user: User | null) => {
+  if (user) {
+    // If we have a user but no cached token, we can extract the token if signed in recently
+    // or trigger callback. We rely on the popup sign-in to populate cachedAccessToken.
+    // However, if the session is restored, we will need to re-authenticate or use the stored login.
+    // To handle automatic tokens, we can keep the session or require login click.
+    authCallbacks.forEach(cb => cb(user, cachedAccessToken));
+  } else {
+    cachedAccessToken = null;
+    authCallbacks.forEach(cb => cb(null, null));
+  }
+});
+
+export const initAuth = (
+  callback: (user: User | null, token: string | null) => void
+) => {
+  authCallbacks.add(callback);
+  // Call immediately with current state
+  callback(auth.currentUser, cachedAccessToken);
+  return () => {
+    authCallbacks.delete(callback);
+  };
+};
+
+export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+  try {
+    isSigningIn = true;
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) {
+      throw new Error('Gagal mendapatkan access token dari Google Sign-In.');
+    }
+
+    cachedAccessToken = credential.accessToken;
+    // Trigger callbacks with the newly logged in user & token
+    authCallbacks.forEach(cb => cb(result.user, cachedAccessToken));
+    return { user: result.user, accessToken: cachedAccessToken };
+  } catch (error: any) {
+    console.error('Sign-in Error:', error);
+    throw error;
+  } finally {
+    isSigningIn = false;
+  }
+};
+
+export const googleSignOut = async () => {
+  await signOut(auth);
+  cachedAccessToken = null;
+  authCallbacks.forEach(cb => cb(null, null));
+};
+
+export const getAccessToken = (): string | null => {
+  return cachedAccessToken;
+};
+
+// --- Google Drive Integration APIs ---
+
+const DRAFT_FILE_NAME = 'laporan_jersey_draft.json';
+
+interface DriveFileMetadata {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime: string;
+}
+
+/**
+ * Search for the draft file in Google Drive.
+ * Returns metadata of the draft if found, otherwise null.
+ */
+export const searchDraftInDrive = async (token: string): Promise<DriveFileMetadata | null> => {
+  try {
+    const q = encodeURIComponent(`name = '${DRAFT_FILE_NAME}' and trashed = false`);
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType,modifiedTime)`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('UNAUTHORIZED');
+      }
+      throw new Error(`Google Drive API error (${response.status})`);
+    }
+
+    const data = await response.json();
+    if (data.files && data.files.length > 0) {
+      return data.files[0] as DriveFileMetadata;
+    }
+    return null;
+  } catch (err) {
+    console.error('Error searching draft in Drive:', err);
+    throw err;
+  }
+};
+
+export interface DraftPayload {
+  appId: 'laporan-jersey-app';
+  exportedAt: string;
+  shopName: string;
+  pesananList: Pesanan[];
+  settings: ShopSettings;
+}
+
+/**
+ * Downloads the draft data from Google Drive given a fileId.
+ */
+export const downloadDraftFromDrive = async (token: string, fileId: string): Promise<DraftPayload> => {
+  try {
+    const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gagal mendownload file dari Drive (${response.status})`);
+    }
+
+    const payload = await response.json();
+    if (payload.appId !== 'laporan-jersey-app') {
+      throw new Error('Format berkas di Google Drive bukan Laporan Jersey App.');
+    }
+    return payload as DraftPayload;
+  } catch (err) {
+    console.error('Error downloading draft:', err);
+    throw err;
+  }
+};
+
+/**
+ * Uploads (creates or updates) the draft on Google Drive.
+ * We use a neat 2-step process: POST file metadata, then media PATCH.
+ */
+export const uploadDraftToDrive = async (
+  token: string, 
+  pesananList: Pesanan[], 
+  settings: ShopSettings
+): Promise<{ success: boolean; fileId: string; modifiedTime: string }> => {
+  try {
+    // 1. Check if the draft file already exists
+    const existingFile = await searchDraftInDrive(token);
+    
+    const payload: DraftPayload = {
+      appId: 'laporan-jersey-app',
+      exportedAt: new Date().toISOString(),
+      shopName: settings.namaToko,
+      pesananList,
+      settings
+    };
+
+    let fileId = '';
+
+    if (existingFile) {
+      // File exists - overwrite it using PATCH
+      fileId = existingFile.id;
+    } else {
+      // Create new file metadata
+      const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: DRAFT_FILE_NAME,
+          mimeType: 'application/json'
+        })
+      });
+
+      if (!createRes.ok) {
+        throw new Error(`Gagal membuat berkas draft di Google Drive (${createRes.status})`);
+      }
+
+      const fileData = await createRes.json();
+      fileId = fileData.id;
+    }
+
+    // 2. Upload the file content (payload) using media PATCH
+    const uploadUrl = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`;
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!uploadRes.ok) {
+      throw new Error(`Gagal mengupload konten draft ke Google Drive (${uploadRes.status})`);
+    }
+
+    // 3. Retrieve the updated modifiedTime
+    const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=modifiedTime`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    let modifiedTime = new Date().toISOString();
+    if (metaRes.ok) {
+      const metaData = await metaRes.json();
+      modifiedTime = metaData.modifiedTime;
+    }
+
+    return { 
+      success: true, 
+      fileId, 
+      modifiedTime 
+    };
+  } catch (err) {
+    console.error('Error uploading draft:', err);
+    throw err;
+  }
+};

@@ -1,0 +1,8 @@
+{
+  "name": "Laporan Keuangan Toko Jersey v2",
+  "description": "Aplikasi pencatatan pesanan jersey, hitung modal, omset, keuntungan, status produksi, laporan bulanan, dan generator nota otomatis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

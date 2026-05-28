@@ -1,0 +1,909 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { Pesanan, ShopSettings } from './types';
+import { 
+  DEFAULT_ORDERS, 
+  DEFAULT_SETTINGS, 
+  generateId, 
+  formatRupiah 
+} from './utils';
+
+// Import Modular Components
+import Dashboard from './components/Dashboard';
+import ActiveOrders from './components/ActiveOrders';
+import OrderForm from './components/OrderForm';
+import FinancialReports from './components/FinancialReports';
+import ReceiptGenerator from './components/ReceiptGenerator';
+import Settings from './components/Settings';
+
+// Lucide Icons
+import { 
+  LayoutDashboard, 
+  TrendingUp, 
+  ClipboardList, 
+  PlusCircle, 
+  Settings as SettingsIcon, 
+  Sun, 
+  Moon, 
+  Bell, 
+  Clock, 
+  DollarSign,
+  AlertTriangle,
+  Flame,
+  Shirt,
+  X,
+  CheckCircle,
+  Cloud,
+  Loader2
+} from 'lucide-react';
+
+import { 
+  initAuth, 
+  searchDraftInDrive, 
+  downloadDraftFromDrive, 
+  uploadDraftToDrive 
+} from './driveService';
+import { User } from 'firebase/auth';
+
+export default function App() {
+  // Load initial orders state
+  const [pesananList, setPesananList] = useState<Pesanan[]>(() => {
+    try {
+      const saved = localStorage.getItem('laporan_jersey_data');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Gagal meload data dari LocalStorage, menggunakan default.', e);
+    }
+    return DEFAULT_ORDERS;
+  });
+
+  // Load initial settings state
+  const [settings, setSettings] = useState<ShopSettings>(() => {
+    try {
+      const saved = localStorage.getItem('laporan_jersey_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        parsed.darkMode = true; // Force dark mode enabled!
+        return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return { ...DEFAULT_SETTINGS, darkMode: true };
+  });
+
+  // Navigation system tabs: 'dashboard' | 'transaksi' | 'formulir' | 'laporan' | 'pengaturan'
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
+
+  // Active editing order placeholder pointer
+  const [pesananToEdit, setPesananToEdit] = useState<Pesanan | null>(null);
+
+  // Active invoice being active previewed or batch invoices
+  const [pesananForNota, setPesananForNota] = useState<Pesanan | Pesanan[] | null>(null);
+
+  // Active state for Warning center modal
+  const [showAlertsModal, setShowAlertsModal] = useState<boolean>(false);
+
+  // Shared active period selected month & year (fully synchronized with localStorage)
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    return localStorage.getItem('laporan_jersey_dashboard_month') || String(new Date().getMonth() + 1).padStart(2, '0');
+  });
+  const [selectedYear, setSelectedYear] = useState<string>(() => {
+    return localStorage.getItem('laporan_jersey_dashboard_year') || String(new Date().getFullYear());
+  });
+
+  useEffect(() => {
+    localStorage.setItem('laporan_jersey_dashboard_month', selectedMonth);
+    localStorage.setItem('laporan_jersey_filter_month', selectedMonth);
+  }, [selectedMonth]);
+
+  useEffect(() => {
+    localStorage.setItem('laporan_jersey_dashboard_year', selectedYear);
+    localStorage.setItem('laporan_jersey_filter_year', selectedYear);
+  }, [selectedYear]);
+
+  // Sync orders to LocalStorage on updates
+  useEffect(() => {
+    localStorage.setItem('laporan_jersey_data', JSON.stringify(pesananList));
+  }, [pesananList]);
+
+  // Sync settings to LocalStorage on updates
+  useEffect(() => {
+    localStorage.setItem('laporan_jersey_settings', JSON.stringify({ ...settings, darkMode: true }));
+    // Always apply dark mode class
+    document.documentElement.classList.add('dark');
+  }, [settings]);
+
+  // Google Drive Sync states
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [showSyncOffer, setShowSyncOffer] = useState(false);
+  const [cloudDraftInfo, setCloudDraftInfo] = useState<{ id: string; modifiedTime: string; payload: any } | null>(null);
+  const [isDriveSyncActive, setIsDriveSyncActive] = useState(false);
+
+  // Subscribe to Authentication state
+  useEffect(() => {
+    const unsubscribe = initAuth((user, token) => {
+      setGoogleUser(user);
+      setGoogleToken(token);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Automatic Cloud Draft Check and Load on login
+  useEffect(() => {
+    if (googleUser && googleToken) {
+      const checkAndAutoLoad = async () => {
+        try {
+          const meta = await searchDraftInDrive(googleToken);
+          if (meta) {
+            // Check if local is empty or just default mock template data
+            const isLocalDefault = pesananList.length === 3 && 
+              pesananList.some(p => p.id === 'ORD-J001') && 
+              settings.namaToko === 'Jersey Tech Indonesia';
+            
+            const isLocalEmpty = pesananList.length === 0;
+
+            if (isLocalDefault || isLocalEmpty) {
+              // Load automatically! That is exactly "load draft otomatis"
+              setIsDriveSyncActive(true);
+              const payload = await downloadDraftFromDrive(googleToken, meta.id);
+              if (payload && Array.isArray(payload.pesananList)) {
+                setPesananList(payload.pesananList);
+                if (payload.settings) {
+                  setSettings(payload.settings);
+                }
+                console.log('Draft dari Google Drive dimuat otomatis sesuai login!');
+              }
+              setIsDriveSyncActive(false);
+            } else {
+              // Local has customized data, so we don't overwrite silently!
+              // Download payload in background to let them decide if they want to overwrite
+              const payload = await downloadDraftFromDrive(googleToken, meta.id);
+              setCloudDraftInfo({
+                id: meta.id,
+                modifiedTime: meta.modifiedTime,
+                payload
+              });
+              setShowSyncOffer(true);
+            }
+          }
+        } catch (err) {
+          console.error('Error auto-syncing Drive:', err);
+          setIsDriveSyncActive(false);
+        }
+      };
+
+      checkAndAutoLoad();
+    } else {
+      setCloudDraftInfo(null);
+      setShowSyncOffer(false);
+    }
+  }, [googleUser, googleToken]);
+
+  // Ambient Auto-Backup to Drive whenever data changes (debounced by 4s to prevent API spam)
+  useEffect(() => {
+    const isAutoSyncOn = localStorage.getItem('laporan_jersey_gdrive_autosync') === 'true';
+    if (googleUser && googleToken && isAutoSyncOn) {
+      const timer = setTimeout(async () => {
+        try {
+          console.log('Background Auto-Sync ke Google Drive berjalan...');
+          await uploadDraftToDrive(googleToken, pesananList, settings);
+        } catch (err) {
+          console.error('Failed to auto-backup draft:', err);
+        }
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [pesananList, settings, googleUser, googleToken]);
+
+  // Warning Details memoized calculation (All warnings in details list)
+  const warningDetails = useMemo(() => {
+    const list: Array<{
+      id: string;
+      type: 'unpaid' | 'deadline' | 'overdue';
+      title: string;
+      message: string;
+      severity: 'high' | 'medium';
+      order: Pesanan;
+    }> = [];
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    pesananList.forEach(item => {
+      // 1. Unpaid debt alert
+      if (item.sisaTagihan > 0) {
+        list.push({
+          id: `${item.id}-unpaid`,
+          type: 'unpaid',
+          title: `Sisa Tagihan: ${item.namaPo}`,
+          message: `Pemesan ${item.namaPemesan} belum melunasi ${formatRupiah(item.sisaTagihan)}. (${item.noTelepon || 'No HP tidak ada'})`,
+          severity: 'medium',
+          order: item
+        });
+      }
+
+      // 2. Production deadline alert
+      if (item.statusProduksi !== 'Beres') {
+        const dlParts = item.deadline.split('-');
+        if (dlParts.length === 3) {
+          const dlDate = new Date(parseInt(dlParts[0]), parseInt(dlParts[1]) - 1, parseInt(dlParts[2]));
+          const diffTime = dlDate.getTime() - todayStart.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          if (diffDays <= 3 && diffDays >= 0) {
+            list.push({
+              id: `${item.id}-deadline`,
+              type: 'deadline',
+              title: `Deadline Dekat! ${item.namaPo}`,
+              message: `Harus diselesaikan dalam ${diffDays} hari (${item.deadline}) - Status: ${item.statusProduksi}`,
+              severity: 'high',
+              order: item
+            });
+          } else if (diffDays < 0) {
+            list.push({
+              id: `${item.id}-overdue`,
+              type: 'overdue',
+              title: `⚠️ OVERDUE: ${item.namaPo}`,
+              message: `Pengerjaan jersey terlambat ${Math.abs(diffDays)} hari! Batas pengerjaan: ${item.deadline}`,
+              severity: 'high',
+              order: item
+            });
+          }
+        }
+      }
+    });
+
+    return list;
+  }, [pesananList]);
+
+  // Notifications summary list (for badge indicator)
+  const notificationsOverview = useMemo(() => {
+    const unpaidCount = warningDetails.filter(w => w.type === 'unpaid').length;
+    const urgentDeadlineCount = warningDetails.filter(w => w.type !== 'unpaid').length;
+
+    return {
+      unpaidCount,
+      urgentDeadlineCount,
+      totalAlerts: warningDetails.length
+    };
+  }, [warningDetails]);
+
+  // Actions modifiers
+  const handleSavePesanan = (newOrUpdated: Pesanan) => {
+    setPesananList(prev => {
+      const matchedIdx = prev.findIndex(item => item.id === newOrUpdated.id);
+      if (matchedIdx !== -1) {
+        // Redraw updated list
+        const updated = [...prev];
+        updated[matchedIdx] = newOrUpdated;
+        return updated;
+      } else {
+        // Enqueue brand new order
+        return [newOrUpdated, ...prev];
+      }
+    });
+    
+    // Clear out edit pointers and return back to list
+    setPesananToEdit(null);
+    setActiveTab('transaksi');
+  };
+
+  const handleDeletePesanan = (id: string) => {
+    setPesananList(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handleUpdateStatus = (id: string, newStatus: any) => {
+    setPesananList(prev => prev.map(item => {
+      if (item.id === id) {
+        return { ...item, statusProduksi: newStatus };
+      }
+      return item;
+    }));
+  };
+
+  // Launch order Editor from index lists
+  const handleLaunchEdit = (item: Pesanan) => {
+    setPesananToEdit(item);
+    setPesananForNota(null);
+    setActiveTab('formulir');
+  };
+
+  // Launch Invoice Generator View
+  const handleLaunchNota = (item: Pesanan | Pesanan[]) => {
+    setPesananForNota(item);
+  };
+
+  // Update specific setting values
+  const handleUpdateSettings = (updates: Partial<ShopSettings>) => {
+    setSettings(prev => ({ ...prev, ...updates }));
+  };
+
+  // Import draft backups fully
+  const handleImportData = (importedOrders: Pesanan[], importedShopName?: string) => {
+    if (importedOrders && Array.isArray(importedOrders)) {
+      setPesananList(importedOrders);
+    }
+    if (importedShopName) {
+      setSettings(prev => ({ ...prev, namaToko: importedShopName }));
+    }
+  };
+
+  // Reset database values back to factory defaults (Starting completely from 0)
+  const handleResetAll = () => {
+    setPesananList([]);
+    setSettings(DEFAULT_SETTINGS);
+    setPesananToEdit(null);
+    setPesananForNota(null);
+    setActiveTab('dashboard');
+  };
+
+  return (
+    <div className={`min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300 font-sans`}>
+      
+      {/* Upper Navigation Header bar */}
+      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800/60 transition-colors duration-300 no-print">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          
+          <div className="flex items-center gap-2.5">
+            {settings.logoUrl ? (
+              <img 
+                src={settings.logoUrl} 
+                alt="Logo Toko" 
+                className="h-9 w-9 object-contain rounded-lg border border-slate-105"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="h-9 w-9 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-xs font-black">
+                JT
+              </div>
+            )}
+            <div>
+              <h1 className="text-sm font-black tracking-tight text-slate-900 dark:text-white leading-none">
+                {settings.namaToko || 'Toko Jersey'}
+              </h1>
+              <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-extrabold tracking-wide uppercase leading-none mt-1 inline-block">
+                Keuangan & Produksi
+              </span>
+            </div>
+          </div>
+
+          {/* Quick controls right slot */}
+          <div className="flex items-center gap-3">
+            
+            {/* Urgent Warning Counter badge */}
+            {notificationsOverview.totalAlerts > 0 && (
+              <button 
+                onClick={() => {
+                  setShowAlertsModal(true);
+                }} 
+                title={`${notificationsOverview.totalAlerts} Peringatan Aktif (Sisa tagihan / deadline dekat)`}
+                className="flex items-center gap-1.5 p-1 px-2.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold animate-pulse cursor-pointer hover:bg-rose-500/20 transition-all outline-hidden"
+              >
+                <Bell className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                <span className="text-[10px] sm:inline hidden">Hati-hati:</span>
+                <span>{notificationsOverview.totalAlerts}</span>
+              </button>
+            )}
+
+            {/* Dark Mode Theme Active indicator tag */}
+            <div
+              title="Aplikasi Berjalan dalam Mode Gelap"
+              className="p-2 border border-slate-700/60 text-amber-500 rounded-xl bg-slate-800/40 text-xs flex items-center gap-1.5 cursor-default select-none header-glow"
+            >
+              <Moon className="h-3.5 w-3.5 text-amber-500 shrink-0 fill-amber-500/20" />
+              <span className="text-[10px] hidden sm:inline text-slate-300 font-bold uppercase tracking-wider">Mode Gelap</span>
+            </div>
+          </div>
+
+        </div>
+      </header>
+
+      {/* Primary responsive Full width flex structural container */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 sm:pb-8 flex flex-col md:flex-row gap-6">
+        
+        {/* Responsive Desktop Left Sidebar Menu */}
+        <aside className="w-full md:w-64 shrink-0 no-print hidden md:block">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-750 p-4 shadow-3xs sticky top-24 space-y-6">
+            
+            <p className="text-[10px] font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase px-3">
+              Menu Utama
+            </p>
+
+            <nav className="space-y-1">
+              
+              {/* Dashboard Tab */}
+              <button
+                onClick={() => {
+                  setActiveTab('dashboard');
+                  setPesananForNota(null);
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                  activeTab === 'dashboard' && !pesananForNota
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>Dashboard</span>
+                </div>
+              </button>
+
+              {/* Active Orders List */}
+              <button
+                onClick={() => {
+                  setActiveTab('transaksi');
+                  setPesananForNota(null);
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                  activeTab === 'transaksi' && !pesananForNota
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <ClipboardList className="h-4 w-4" />
+                  <span>Daftar Transaksi</span>
+                </div>
+                <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${
+                  activeTab === 'transaksi' ? 'bg-indigo-500 text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-500'
+                }`}>
+                  {pesananList.length}
+                </span>
+              </button>
+
+              {/* Order form drafting */}
+              <button
+                onClick={() => {
+                  setPesananToEdit(null);
+                  setPesananForNota(null);
+                  setActiveTab('formulir');
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                  activeTab === 'formulir' && !pesananForNota
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <PlusCircle className="h-4 w-4" />
+                  <span>Buat Pesanan Baru</span>
+                </div>
+              </button>
+
+              {/* Financial calculations and downloadable summaries */}
+              <button
+                onClick={() => {
+                  setPesananForNota(null);
+                  setActiveTab('laporan');
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                  activeTab === 'laporan' && !pesananForNota
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <TrendingUp className="h-4 w-4" />
+                  <span>Laporan Laba Rugi</span>
+                </div>
+              </button>
+
+              {/* Configuration panel */}
+              <button
+                onClick={() => {
+                  setPesananForNota(null);
+                  setActiveTab('pengaturan');
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                  activeTab === 'pengaturan' && !pesananForNota
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <SettingsIcon className="h-4 w-4" />
+                  <span>Pengaturan Toko</span>
+                </div>
+              </button>
+
+            </nav>
+
+            {/* Visual workshop stats summary */}
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider px-1">Kas Kerja</span>
+              
+              <div className="space-y-1.5 text-xs">
+                <div className="rounded-2xl p-3.5 bg-slate-900 border border-emerald-500/30 shadow-xs relative overflow-hidden">
+                  <div className="absolute right-[-12px] bottom-[-12px] opacity-10">
+                    <DollarSign className="h-14 w-14 text-emerald-400" />
+                  </div>
+                  <span className="text-[10px] text-emerald-400 block uppercase leading-none font-black tracking-wider">Uang Terkumpul</span>
+                  <p className="text-base font-black text-white mt-2 leading-none">
+                    {formatRupiah(pesananList.reduce((acc, item) => acc + item.uangMasuk, 0))}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </aside>
+
+        {/* Primary Central Content viewport renderer */}
+        <main className="flex-1 min-w-0">
+          
+          {/* Override view layer IF we are generating the specific Invoice receipt */}
+          {pesananForNota ? (
+            <ReceiptGenerator
+              pesanan={pesananForNota}
+              settings={settings}
+              onCancel={() => setPesananForNota(null)}
+            />
+          ) : (
+            <>
+              {activeTab === 'dashboard' && (
+                <Dashboard 
+                  pesananList={pesananList} 
+                  onNavigate={(tab) => setActiveTab(tab)}
+                  onSelectOrder={(order) => {
+                    setPesananForNota(order);
+                  }}
+                  selectedMonth={selectedMonth}
+                  setSelectedMonth={setSelectedMonth}
+                  selectedYear={selectedYear}
+                  setSelectedYear={setSelectedYear}
+                />
+              )}
+
+              {activeTab === 'transaksi' && (
+                <ActiveOrders 
+                  pesananList={pesananList}
+                  onAddNew={() => {
+                    setPesananToEdit(null);
+                    setActiveTab('formulir');
+                  }}
+                  onEdit={handleLaunchEdit}
+                  onDelete={handleDeletePesanan}
+                  onGenerateNota={handleLaunchNota}
+                  onUpdateStatus={handleUpdateStatus}
+                  selectedMonth={selectedMonth}
+                  setSelectedMonth={setSelectedMonth}
+                  selectedYear={selectedYear}
+                  setSelectedYear={setSelectedYear}
+                />
+              )}
+
+              {activeTab === 'formulir' && (
+                <OrderForm 
+                  pesananToEdit={pesananToEdit}
+                  onSave={handleSavePesanan}
+                  onCancel={() => {
+                    setPesananToEdit(null);
+                    setActiveTab('transaksi');
+                  }}
+                />
+              )}
+
+              {activeTab === 'laporan' && (
+                <FinancialReports 
+                  pesananList={pesananList} 
+                  selectedMonth={selectedMonth}
+                  setSelectedMonth={setSelectedMonth}
+                  selectedYear={selectedYear}
+                  setSelectedYear={setSelectedYear}
+                />
+              )}
+
+              {activeTab === 'pengaturan' && (
+                <Settings 
+                  settings={settings}
+                  onUpdateSettings={handleUpdateSettings}
+                  pesananList={pesananList}
+                  onImportData={handleImportData}
+                  onResetAll={handleResetAll}
+                />
+              )}
+            </>
+          )}
+
+        </main>
+
+      </div>
+
+      {/* Sticky Bottom Tab bar exclusively for mobile devices */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 pr-2 pl-2 pt-2 pb-5 flex justify-around items-center md:hidden z-40 no-print shadow-xl">
+        
+        {/* Dashboard trigger */}
+        <button
+          onClick={() => {
+            setActiveTab('dashboard');
+            setPesananForNota(null);
+          }}
+          className={`flex flex-col items-center gap-1 ${
+            activeTab === 'dashboard' && !pesananForNota ? 'text-indigo-600' : 'text-slate-400'
+          }`}
+        >
+          <LayoutDashboard className="h-5 w-5" />
+          <span className="text-[10px] font-bold">Dashboard</span>
+        </button>
+
+        {/* Transactions trigger */}
+        <button
+          onClick={() => {
+            setActiveTab('transaksi');
+            setPesananForNota(null);
+          }}
+          className={`flex flex-col items-center gap-1 relative ${
+            activeTab === 'transaksi' && !pesananForNota ? 'text-indigo-600' : 'text-slate-400'
+          }`}
+        >
+          <ClipboardList className="h-5 w-5" />
+          <span className="text-[10px] font-bold">Transaksi</span>
+          {pesananList.length > 0 && (
+            <span className="absolute -top-1.5 -right-2.5 bg-indigo-600 text-white text-[9px] font-black h-4 w-4 flex items-center justify-center rounded-full">
+              {pesananList.length}
+            </span>
+          )}
+        </button>
+
+        {/* New draft order trigger */}
+        <button
+          onClick={() => {
+            setPesananToEdit(null);
+            setPesananForNota(null);
+            setActiveTab('formulir');
+          }}
+          className={`flex flex-col items-center gap-1 ${
+            activeTab === 'formulir' && !pesananForNota ? 'text-indigo-600' : 'text-slate-400'
+          }`}
+        >
+          <PlusCircle className="h-5 w-5" />
+          <span className="text-[10px] font-bold">+ Jersey</span>
+        </button>
+
+        {/* Monthly Profit report tab */}
+        <button
+          onClick={() => {
+            setPesananForNota(null);
+            setActiveTab('laporan');
+          }}
+          className={`flex flex-col items-center gap-1 ${
+            activeTab === 'laporan' && !pesananForNota ? 'text-indigo-600' : 'text-slate-400'
+          }`}
+        >
+          <TrendingUp className="h-5 w-5" />
+          <span className="text-[10px] font-bold">Laporan</span>
+        </button>
+
+        {/* Settings tab trigger */}
+        <button
+          onClick={() => {
+            setPesananForNota(null);
+            setActiveTab('pengaturan');
+          }}
+          className={`flex flex-col items-center gap-1 ${
+            activeTab === 'pengaturan' && !pesananForNota ? 'text-indigo-600' : 'text-slate-400'
+          }`}
+        >
+          <SettingsIcon className="h-5 w-5" />
+          <span className="text-[10px] font-bold">Setelan</span>
+        </button>
+
+      </nav>
+
+      {/* Pusat Peringatan & Tindakan Cepat (Alert & Warning Action Center Modal) */}
+      {showAlertsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-fade-in no-print">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative max-h-[85vh] overflow-hidden flex flex-col animate-scale-in">
+            
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 bg-rose-500/10 rounded-xl relative">
+                  <Bell className="h-5 w-5 text-rose-500" />
+                  <span className="absolute -top-0.5 -right-0.5 bg-rose-600 h-2 w-2 rounded-full animate-ping" />
+                </span>
+                <div>
+                  <h3 className="text-base font-extrabold text-white">Pusat Peringatan & Cepat Tanggap</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Daftar sisa penjualan belum lunas & pengerjaan mendekati deadline.</p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setShowAlertsModal(false)}
+                className="text-slate-400 hover:text-white p-1.5 hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                aria-label="Tutup Peringatan"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body Container with customized scroll view */}
+            <div className="flex-1 overflow-y-auto py-4 space-y-3.5 pr-1.5">
+              {warningDetails.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto mb-3" />
+                  <p className="font-extrabold text-slate-200">Semua Berjalan Lancar!</p>
+                  <p className="text-xs text-slate-400 mt-1">Tidak ada sisa tagihan terutang maupun batas deadline kritis.</p>
+                </div>
+              ) : (
+                warningDetails.map((alert) => (
+                  <div 
+                    key={alert.id}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                      alert.severity === 'high' 
+                        ? 'bg-rose-500/5 border-rose-500/20 text-slate-100' 
+                        : 'bg-amber-500/5 border-amber-500/20 text-slate-100'
+                    }`}
+                  >
+                    {/* Warning Information Description Block */}
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <span className="mt-1 shrink-0">
+                        {alert.type === 'overdue' ? (
+                          <AlertTriangle className="h-5 w-5 text-rose-500 animate-pulse" />
+                        ) : alert.type === 'deadline' ? (
+                          <Clock className="h-5 w-5 text-rose-400" />
+                        ) : (
+                          <DollarSign className="h-5 w-5 text-amber-500" />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="font-extrabold text-sm text-white truncate">{alert.title}</h4>
+                          <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase text-[10px] tracking-wide border ${
+                            alert.severity === 'high' 
+                              ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' 
+                              : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                          }`}>
+                            {alert.type === 'unpaid' ? 'Belum Lunas' : alert.type === 'overdue' ? 'MENDESAK' : 'Hari H Dekat'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-350 mt-1 leading-relaxed">
+                          {alert.message}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Quick Interactive Actions Panel */}
+                    <div className="flex flex-wrap items-center gap-2 shrink-0 md:justify-end">
+                      
+                      {/* Interactive Live Status Selector */}
+                      {alert.type !== 'unpaid' && (
+                        <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1 border border-slate-700/80">
+                          <span className="text-[10px] px-1.5 text-slate-400 font-bold">Fase:</span>
+                          <select
+                            value={alert.order.statusProduksi}
+                            onChange={(e) => handleUpdateStatus(alert.order.id, e.target.value)}
+                            className="bg-transparent focus:outline-hidden text-xs text-white rounded outline-hidden border-none font-bold py-0.5 pl-0.5 pr-4 cursor-pointer"
+                          >
+                            <option value="Setting" className="bg-slate-900 text-white">Setting</option>
+                            <option value="Print Press" className="bg-slate-900 text-white">Print Press</option>
+                            <option value="Jahit" className="bg-slate-900 text-white">Jahit</option>
+                            <option value="Tinggal Kirim" className="bg-slate-900 text-white">Tinggal Kirim</option>
+                            <option value="Beres" className="bg-slate-900 text-white">Beres</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Action trigger: view invoice preview */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleLaunchNota(alert.order);
+                          setShowAlertsModal(false);
+                        }}
+                        className="text-[10px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 font-bold rounded-lg text-slate-200 transition-all cursor-pointer"
+                      >
+                        Nota
+                      </button>
+
+                      {/* Action trigger: edit full order details */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleLaunchEdit(alert.order);
+                          setShowAlertsModal(false);
+                        }}
+                        className="text-[10px] px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 font-bold rounded-lg text-white transition-all cursor-pointer shadow-xs"
+                      >
+                        Edit PO
+                      </button>
+
+                    </div>
+
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Modal Footer Info block */}
+            <div className="pt-4 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-400 shrink-0">
+              <p>Klik tombol untuk memperbarui status pesanan secepat kilat.</p>
+              <span className="font-bold text-slate-450 uppercase">Workshop App v2.1</span>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Google Drive Restore Sync Offer Modal */}
+      {showSyncOffer && cloudDraftInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-fade-in no-print">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative animate-scale-in text-slate-800 dark:text-slate-200">
+            
+            {/* Modal Header */}
+            <div className="flex items-start gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <span className="p-2 bg-indigo-500/10 rounded-xl">
+                <Cloud className="h-6 w-6 text-indigo-500" />
+              </span>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">Ditemukan Backup Cloud!</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Google Drive draft sinkronisasi terdeteksi.</p>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="py-4 space-y-3">
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Ada berkas cadangan <span className="font-bold text-slate-800 dark:text-slate-200">laporan_jersey_draft.json</span> di Google Drive Anda dari:
+              </p>
+              
+              <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 rounded-xl text-xs space-y-1.5 font-semibold text-slate-700 dark:text-slate-300">
+                <div className="flex justify-between">
+                  <span>Nama Toko:</span>
+                  <span className="text-indigo-600 dark:text-indigo-400 font-black">{cloudDraftInfo.payload.shopName || 'Jersey Toko'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Jumlah Order:</span>
+                  <span className="text-slate-800 dark:text-white font-black">{cloudDraftInfo.payload.pesananList?.length || 0} pengerjaan</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Terakhir Diubah:</span>
+                  <span className="text-slate-800 dark:text-white">{new Date(cloudDraftInfo.modifiedTime).toLocaleString('id-ID')}</span>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-amber-500 font-bold leading-normal">
+                ⚠️ PERHATIAN: Memulihkan draft ini akan menumpuk (menghapus permanen) seluruh data lokal yang anda ada saat ini.
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setPesananList(cloudDraftInfo.payload.pesananList);
+                  if (cloudDraftInfo.payload.settings) {
+                    setSettings(cloudDraftInfo.payload.settings);
+                  }
+                  setShowSyncOffer(false);
+                  alert('Draft Google Drive berhasil dipulihkan otomatis!');
+                }}
+                className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs transition-all shadow-xs cursor-pointer"
+              >
+                Ya, Muat Draft
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSyncOffer(false)}
+                className="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-755 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-all cursor-pointer"
+              >
+                Simpan Lokal saja
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
