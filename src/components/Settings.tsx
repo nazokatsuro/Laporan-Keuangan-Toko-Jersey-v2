@@ -73,8 +73,11 @@ export default function Settings({
       } else {
         setDriveDraftMeta(null);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to look up Google Drive draft:', err);
+      if (err?.message === 'UNAUTHORIZED') {
+        await googleSignOut();
+      }
     }
   };
 
@@ -97,6 +100,8 @@ export default function Settings({
     try {
       const result = await googleSignIn();
       if (result) {
+        setGoogleUser(result.user);
+        setGoogleToken(result.accessToken);
         triggerSuccess(`Logged in: ${result.user.email}`);
         await checkDriveDraft(result.accessToken);
       }

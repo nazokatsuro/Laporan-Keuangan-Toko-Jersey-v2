@@ -25,7 +25,19 @@ const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/drive');
 
 let isSigningIn = false;
-let cachedAccessToken: string | null = null;
+let cachedAccessToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('gdrive_access_token') : null;
+let cachedUserProfile: any = null;
+
+if (typeof window !== 'undefined') {
+  const storedProfile = localStorage.getItem('gdrive_user_profile');
+  if (storedProfile) {
+    try {
+      cachedUserProfile = JSON.parse(storedProfile);
+    } catch (e) {
+      console.error('Failed to parse cached user profile:', e);
+    }
+  }
+}
 
 // Track listener callbacks
 const authCallbacks = new Set<(user: User | null, token: string | null) => void>();
@@ -33,13 +45,43 @@ const authCallbacks = new Set<(user: User | null, token: string | null) => void>
 // Handle Firebase Auth changes and fetch the token
 onAuthStateChanged(auth, async (user: User | null) => {
   if (user) {
-    // If we have a user but no cached token, we can extract the token if signed in recently
-    // or trigger callback. We rely on the popup sign-in to populate cachedAccessToken.
-    // However, if the session is restored, we will need to re-authenticate or use the stored login.
-    // To handle automatic tokens, we can keep the session or require login click.
+    if (isSigningIn) {
+      // Do not trigger callbacks with a null/empty token while we are in the middle of googleSignIn()
+      return;
+    }
+    if (!cachedAccessToken && typeof window !== 'undefined') {
+      cachedAccessToken = localStorage.getItem('gdrive_access_token');
+    }
+    const profile = {
+      uid: user.uid,
+      photoURL: user.photoURL,
+      displayName: user.displayName,
+      email: user.email,
+    };
+    cachedUserProfile = profile;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gdrive_user_profile', JSON.stringify(profile));
+    }
+    // If user is logged in, use the token
     authCallbacks.forEach(cb => cb(user, cachedAccessToken));
   } else {
-    cachedAccessToken = null;
+    // Keep cachedAccessToken and local storage intact on temporary or unauthenticated transitions during initialization.
+    // Specially check if a fallback session exists in localStorage to prevent unauthorized logs/sign-outs.
+    const storedToken = typeof window !== 'undefined' ? localStorage.getItem('gdrive_access_token') : null;
+    const storedProfileStr = typeof window !== 'undefined' ? localStorage.getItem('gdrive_user_profile') : null;
+    
+    if (storedToken && storedProfileStr) {
+      try {
+        const parsedProfile = JSON.parse(storedProfileStr);
+        cachedAccessToken = storedToken;
+        cachedUserProfile = parsedProfile;
+        authCallbacks.forEach(cb => cb(parsedProfile as User, storedToken));
+        return;
+      } catch (err) {
+        console.error('Failed to parse cached session profile on auth state change:', err);
+      }
+    }
+    // If no cached session, then we yield a null login state
     authCallbacks.forEach(cb => cb(null, null));
   }
 });
@@ -48,8 +90,27 @@ export const initAuth = (
   callback: (user: User | null, token: string | null) => void
 ) => {
   authCallbacks.add(callback);
-  // Call immediately with current state
-  callback(auth.currentUser, cachedAccessToken);
+  
+  // Robust fallback: make sure the token and user profile are loaded from localStorage if not in memory
+  if (typeof window !== 'undefined') {
+    if (!cachedAccessToken) {
+      cachedAccessToken = localStorage.getItem('gdrive_access_token');
+    }
+    if (!cachedUserProfile) {
+      const storedProfile = localStorage.getItem('gdrive_user_profile');
+      if (storedProfile) {
+        try {
+          cachedUserProfile = JSON.parse(storedProfile);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+  }
+
+  // Call immediately with current state or cached fallback
+  const fallbackUser = auth.currentUser || cachedUserProfile;
+  callback(fallbackUser, cachedAccessToken);
   return () => {
     authCallbacks.delete(callback);
   };
@@ -65,6 +126,18 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     cachedAccessToken = credential.accessToken;
+    const profile = {
+      uid: result.user.uid,
+      photoURL: result.user.photoURL,
+      displayName: result.user.displayName,
+      email: result.user.email,
+    };
+    cachedUserProfile = profile;
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gdrive_access_token', cachedAccessToken);
+      localStorage.setItem('gdrive_user_profile', JSON.stringify(profile));
+    }
     // Trigger callbacks with the newly logged in user & token
     authCallbacks.forEach(cb => cb(result.user, cachedAccessToken));
     return { user: result.user, accessToken: cachedAccessToken };
@@ -79,6 +152,11 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 export const googleSignOut = async () => {
   await signOut(auth);
   cachedAccessToken = null;
+  cachedUserProfile = null;
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('gdrive_access_token');
+    localStorage.removeItem('gdrive_user_profile');
+  }
   authCallbacks.forEach(cb => cb(null, null));
 };
 
