@@ -51,6 +51,7 @@ import {
   googleSignIn
 } from './driveService';
 import { User } from 'firebase/auth';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
   // Load initial orders state
@@ -129,6 +130,7 @@ export default function App() {
   const [showSyncOffer, setShowSyncOffer] = useState(false);
   const [cloudDraftInfo, setCloudDraftInfo] = useState<{ id: string; modifiedTime: string; payload: any } | null>(null);
   const [isDriveSyncActive, setIsDriveSyncActive] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('Mengotorisasi akses...');
 
   // States & handler for blocking login popup before page entry
   const [isSigningInGoogle, setIsSigningInGoogle] = useState(false);
@@ -164,46 +166,47 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // Automatic Cloud Draft Check and Load on login
+  // Automatic Cloud Draft Check and Load on login with dynamic state loading descriptions
   useEffect(() => {
     if (googleUser && googleToken) {
       const checkAndAutoLoad = async () => {
         try {
-          const meta = await searchDraftInDrive(googleToken);
-          if (meta) {
-            // Check if local is empty or just default mock template data
-            const isLocalDefault = pesananList.length === 3 && 
-              pesananList.some(p => p.id === 'ORD-J001') && 
-              settings.namaToko === 'Jersey Tech Indonesia';
-            
-            const isLocalEmpty = pesananList.length === 0;
+          setIsDriveSyncActive(true);
+          setSyncMessage('Menghubungkan ke Google Drive...');
+          await new Promise(resolve => setTimeout(resolve, 600));
 
-            if (isLocalDefault || isLocalEmpty) {
-              // Load automatically! That is exactly "load draft otomatis"
-              setIsDriveSyncActive(true);
-              const payload = await downloadDraftFromDrive(googleToken, meta.id);
-              if (payload && Array.isArray(payload.pesananList)) {
-                setPesananList(payload.pesananList);
-                if (payload.settings) {
-                  setSettings(payload.settings);
-                }
-                console.log('Draft dari Google Drive dimuat otomatis sesuai login!');
+          setSyncMessage('Memeriksa berkas cadangan draf laporan...');
+          const meta = await searchDraftInDrive(googleToken);
+          
+          if (meta) {
+            setSyncMessage('Ditemukan Backup Cloud! Mengunduh draf...');
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            const payload = await downloadDraftFromDrive(googleToken, meta.id);
+            if (payload && Array.isArray(payload.pesananList)) {
+              setSyncMessage('Memulihkan draf pesanan & pengaturan toko...');
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              setPesananList(payload.pesananList);
+              if (payload.settings) {
+                setSettings(payload.settings);
               }
-              setIsDriveSyncActive(false);
+              console.log('Draft dari Google Drive berhasil dimuat secara otomatis!');
+              setSyncMessage('Sinkronisasi selesai! Menyiapkan dokumen workspace...');
+              await new Promise(resolve => setTimeout(resolve, 800));
             } else {
-              // Local has customized data, so we don't overwrite silently!
-              // Download payload in background to let them decide if they want to overwrite
-              const payload = await downloadDraftFromDrive(googleToken, meta.id);
-              setCloudDraftInfo({
-                id: meta.id,
-                modifiedTime: meta.modifiedTime,
-                payload
-              });
-              setShowSyncOffer(true);
+              setSyncMessage('Data cadangan kosong. Menyiapkan draf lokal...');
+              await new Promise(resolve => setTimeout(resolve, 600));
             }
+          } else {
+            setSyncMessage('Tidak ditemukan berkas cadangan cloud sebelumnya. Menyiapkan workspace lokal...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
           }
         } catch (err) {
           console.error('Error auto-syncing Drive:', err);
+          setSyncMessage('Gagal menyinkronkan data draf dari Penyimpanan Awan.');
+          await new Promise(resolve => setTimeout(resolve, 1200));
+        } finally {
           setIsDriveSyncActive(false);
         }
       };
@@ -450,6 +453,86 @@ export default function App() {
           <span className="text-[10px] text-slate-500 font-bold tracking-wider uppercase mt-5">
             Laporan Jersey App v2.0
           </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (isDriveSyncActive) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans select-none text-slate-100">
+        {/* Futuristic glowing radial particles */}
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-550/10 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-505/10 blur-[120px]" />
+
+        {/* Outer orbital path simulation */}
+        <div className="relative flex flex-col items-center z-10">
+          
+          {/* Main Visual Loading Gear/Cloud with custom spinning outer borders */}
+          <div className="relative mb-8 h-24 w-24">
+            {/* Spinning active ring */}
+            <div className="absolute inset-0 border-4 border-slate-900 rounded-full" />
+            <motion.div 
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+              className="absolute inset-0 border-4 border-t-indigo-550 border-r-indigo-400 border-b-transparent border-l-transparent rounded-full"
+            />
+            
+            {/* Pulsing glow inside */}
+            <div className="absolute inset-4 rounded-full bg-gradient-to-tr from-indigo-500 to-indigo-600 flex items-center justify-center text-white border border-indigo-400/20 shadow-lg shadow-indigo-500/20">
+              <Cloud className="h-7 w-7 animate-pulse text-white shrink-0" />
+            </div>
+
+            {/* Micro data bits flying up or orbiting */}
+            <motion.div
+              animate={{ scale: [1, 1.3, 1], opacity: [0.6, 1, 0.6] }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+              className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-indigo-400 border border-slate-950 shadow-sm"
+            />
+          </div>
+
+          {/* Dynamic synchronized state title */}
+          <h2 className="text-lg sm:text-xl font-black text-center text-white tracking-tight leading-none mb-3">
+            Sinkronisasi Cadangan Cloud
+          </h2>
+
+          {/* Loader status with a beautifully smooth layout transition */}
+          <div className="min-h-[46px] flex items-center justify-center px-6 max-w-sm">
+            <AnimatePresence mode="wait">
+              <motion.p 
+                key={syncMessage}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="text-xs text-indigo-300 font-mono tracking-wide text-center leading-relaxed"
+              >
+                {syncMessage}
+              </motion.p>
+            </AnimatePresence>
+          </div>
+
+          {/* Subtitle / Loader bar */}
+          <div className="mt-6 w-48 h-1 bg-slate-900 rounded-full overflow-hidden relative">
+            <motion.div 
+              style={{ originX: 0 }}
+              animate={{ 
+                x: ["-100%", "100%"]
+              }}
+              transition={{ 
+                repeat: Infinity, 
+                duration: 1.6, 
+                ease: "easeInOut" 
+              }}
+              className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"
+            />
+          </div>
+          
+          <div className="mt-12 flex items-center gap-1.5 bg-slate-900/80 border border-slate-800/80 px-3.5 py-1.5 rounded-full text-[10px] text-slate-400 font-bold uppercase tracking-wider select-none">
+            <Loader2 className="h-3 w-3 animate-spin text-indigo-400 shrink-0" />
+            <span>Sedang Memproses Laporan Jersey</span>
+          </div>
+
         </div>
       </div>
     );
@@ -938,77 +1021,6 @@ export default function App() {
             <div className="pt-4 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-400 shrink-0">
               <p>Klik tombol untuk memperbarui status pesanan secepat kilat.</p>
               <span className="font-bold text-slate-450 uppercase">Workshop App v2.1</span>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* Google Drive Restore Sync Offer Modal */}
-      {showSyncOffer && cloudDraftInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-fade-in no-print">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative animate-scale-in text-slate-800 dark:text-slate-200">
-            
-            {/* Modal Header */}
-            <div className="flex items-start gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-              <span className="p-2 bg-indigo-500/10 rounded-xl">
-                <Cloud className="h-6 w-6 text-indigo-500" />
-              </span>
-              <div>
-                <h3 className="text-base font-black text-slate-900 dark:text-white">Ditemukan Backup Cloud!</h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">Google Drive draft sinkronisasi terdeteksi.</p>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="py-4 space-y-3">
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Ada berkas cadangan <span className="font-bold text-slate-800 dark:text-slate-200">laporan_jersey_draft.json</span> di Google Drive Anda dari:
-              </p>
-              
-              <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 rounded-xl text-xs space-y-1.5 font-semibold text-slate-700 dark:text-slate-300">
-                <div className="flex justify-between">
-                  <span>Nama Toko:</span>
-                  <span className="text-indigo-600 dark:text-indigo-400 font-black">{cloudDraftInfo.payload.shopName || 'Jersey Toko'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Jumlah Order:</span>
-                  <span className="text-slate-800 dark:text-white font-black">{cloudDraftInfo.payload.pesananList?.length || 0} pengerjaan</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Terakhir Diubah:</span>
-                  <span className="text-slate-800 dark:text-white">{new Date(cloudDraftInfo.modifiedTime).toLocaleString('id-ID')}</span>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-amber-500 font-bold leading-normal">
-                ⚠️ PERHATIAN: Memulihkan draft ini akan menumpuk (menghapus permanen) seluruh data lokal yang anda ada saat ini.
-              </p>
-            </div>
-
-            {/* Actions */}
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setPesananList(cloudDraftInfo.payload.pesananList);
-                  if (cloudDraftInfo.payload.settings) {
-                    setSettings(cloudDraftInfo.payload.settings);
-                  }
-                  setShowSyncOffer(false);
-                  alert('Draft Google Drive berhasil dipulihkan otomatis!');
-                }}
-                className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs transition-all shadow-xs cursor-pointer"
-              >
-                Ya, Muat Draft
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSyncOffer(false)}
-                className="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-755 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-all cursor-pointer"
-              >
-                Simpan Lokal saja
-              </button>
             </div>
 
           </div>
