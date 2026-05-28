@@ -38,14 +38,17 @@ import {
   X,
   CheckCircle,
   Cloud,
-  Loader2
+  Loader2,
+  Lock,
+  Shield
 } from 'lucide-react';
 
 import { 
   initAuth, 
   searchDraftInDrive, 
   downloadDraftFromDrive, 
-  uploadDraftToDrive 
+  uploadDraftToDrive,
+  googleSignIn
 } from './driveService';
 import { User } from 'firebase/auth';
 
@@ -126,6 +129,31 @@ export default function App() {
   const [showSyncOffer, setShowSyncOffer] = useState(false);
   const [cloudDraftInfo, setCloudDraftInfo] = useState<{ id: string; modifiedTime: string; payload: any } | null>(null);
   const [isDriveSyncActive, setIsDriveSyncActive] = useState(false);
+
+  // States & handler for blocking login popup before page entry
+  const [isSigningInGoogle, setIsSigningInGoogle] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
+
+  const handleBlockLogin = async () => {
+    setIsSigningInGoogle(true);
+    setSignInError(null);
+    try {
+      const result = await googleSignIn();
+      if (result) {
+        setGoogleUser(result.user);
+        setGoogleToken(result.accessToken);
+        // Default set automatic backup to true if not specified
+        if (localStorage.getItem('laporan_jersey_gdrive_autosync') !== 'false') {
+          localStorage.setItem('laporan_jersey_gdrive_autosync', 'true');
+        }
+      }
+    } catch (err: any) {
+      console.error('Locker Login Error:', err);
+      setSignInError(err.message || 'Keluar atau gagal melakukan login Google. Silakan coba lagi.');
+    } finally {
+      setIsSigningInGoogle(false);
+    }
+  };
 
   // Subscribe to Authentication state
   useEffect(() => {
@@ -343,6 +371,89 @@ export default function App() {
     setPesananForNota(null);
     setActiveTab('dashboard');
   };
+
+  if (!googleUser || !googleToken) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden font-sans">
+        {/* Abstract futuristic glowing backgrounds */}
+        <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-indigo-500/15 blur-[130px]" />
+        <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-indigo-600/10 blur-[130px]" />
+        
+        {/* Main card */}
+        <div className="w-full max-w-md bg-slate-900/65 border border-slate-800/80 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative z-10 select-none text-slate-100 flex flex-col items-center">
+          
+          {/* Cloud with circular animation */}
+          <div className="relative mb-6">
+            <div className="absolute inset-0 bg-indigo-500/20 rounded-full blur-xl scale-125 animate-pulse" />
+            <div className="h-16 w-16 rounded-2xl bg-gradient-to-tr from-indigo-500 to-indigo-600 flex items-center justify-center text-white border border-indigo-400/30 shadow-lg relative">
+              <Cloud className="h-8 w-8 shrink-0" />
+            </div>
+          </div>
+
+          <h1 className="text-xl sm:text-2xl font-black text-center text-white tracking-tight leading-tight mb-2">
+            Penyimpanan Awan & Google Drive
+          </h1>
+          
+          <div className="flex items-center gap-1.5 bg-indigo-500/10 border border-indigo-500/25 px-3 py-1 rounded-full text-indigo-400 text-[10px] font-black tracking-wider uppercase mb-5">
+            <Lock className="h-3 w-3 shrink-0 text-indigo-400" />
+            <span>Otorisasi Akses Diwajibkan</span>
+          </div>
+
+          <p className="text-xs text-slate-400 text-center leading-relaxed mb-6">
+            Akses ke aplikasi manajemen keuangan dan produksi ini mewajibkan sinkronisasi cloud. Keamanan data pesanan, draf cadangan, dan pengaturan toko Anda terintegrasi langsung dengan <strong>Google Drive</strong> secara otomatis dan real-time.
+          </p>
+
+          <div className="w-full border-t border-slate-800/50 pt-5 pb-5 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="h-5 w-5 rounded-full bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 flex items-center justify-center mt-0.5 text-[10px] shrink-0 font-black">1</div>
+              <p className="text-[11px] text-slate-350 leading-relaxed">
+                Setiap kali membuka halaman atau refresh, Anda akan otomatis logout demi keamanan data keuangan.
+              </p>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="h-5 w-5 rounded-full bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 flex items-center justify-center mt-0.5 text-[10px] shrink-0 font-black">2</div>
+              <p className="text-[11px] text-slate-350 leading-relaxed">
+                Login wajib dilakukan di awal sehingga draf terbaru dari Google Drive dapat dimuat secara instan dan aman.
+              </p>
+            </div>
+          </div>
+
+          {signInError && (
+            <div className="w-full bg-rose-500/10 border border-rose-500/20 px-4 py-3 rounded-xl text-rose-400 text-xs font-medium text-center mb-5 leading-normal">
+              {signInError}
+            </div>
+          )}
+
+          <button
+            onClick={handleBlockLogin}
+            disabled={isSigningInGoogle}
+            className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl bg-white hover:bg-slate-100 text-slate-900 font-extrabold text-xs tracking-wide transition-all select-none shadow-md shadow-slate-950/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-[0.98]"
+          >
+            {isSigningInGoogle ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin shrink-0 text-slate-900" />
+                <span>Menghubungkan ke Google...</span>
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                </svg>
+                <span>Masuk dengan Google</span>
+              </>
+            )}
+          </button>
+
+          <span className="text-[10px] text-slate-500 font-bold tracking-wider uppercase mt-5">
+            Laporan Jersey App v2.0
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300 font-sans`}>

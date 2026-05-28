@@ -25,18 +25,14 @@ const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/drive');
 
 let isSigningIn = false;
-let cachedAccessToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('gdrive_access_token') : null;
+let cachedAccessToken: string | null = null;
 let cachedUserProfile: any = null;
 
+// Immediately clear all tokens on module evaluation to enforce "refresh auto logout"
 if (typeof window !== 'undefined') {
-  const storedProfile = localStorage.getItem('gdrive_user_profile');
-  if (storedProfile) {
-    try {
-      cachedUserProfile = JSON.parse(storedProfile);
-    } catch (e) {
-      console.error('Failed to parse cached user profile:', e);
-    }
-  }
+  localStorage.removeItem('gdrive_access_token');
+  localStorage.removeItem('gdrive_user_profile');
+  signOut(auth).catch(err => console.debug('Initial signout:', err));
 }
 
 // Track listener callbacks
@@ -65,23 +61,10 @@ onAuthStateChanged(auth, async (user: User | null) => {
     // If user is logged in, use the token
     authCallbacks.forEach(cb => cb(user, cachedAccessToken));
   } else {
-    // Keep cachedAccessToken and local storage intact on temporary or unauthenticated transitions during initialization.
-    // Specially check if a fallback session exists in localStorage to prevent unauthorized logs/sign-outs.
-    const storedToken = typeof window !== 'undefined' ? localStorage.getItem('gdrive_access_token') : null;
-    const storedProfileStr = typeof window !== 'undefined' ? localStorage.getItem('gdrive_user_profile') : null;
-    
-    if (storedToken && storedProfileStr) {
-      try {
-        const parsedProfile = JSON.parse(storedProfileStr);
-        cachedAccessToken = storedToken;
-        cachedUserProfile = parsedProfile;
-        authCallbacks.forEach(cb => cb(parsedProfile as User, storedToken));
-        return;
-      } catch (err) {
-        console.error('Failed to parse cached session profile on auth state change:', err);
-      }
-    }
-    // If no cached session, then we yield a null login state
+    // Force clear internal properties
+    cachedAccessToken = null;
+    cachedUserProfile = null;
+    // Notify all listeners of the logged out state
     authCallbacks.forEach(cb => cb(null, null));
   }
 });
@@ -91,26 +74,8 @@ export const initAuth = (
 ) => {
   authCallbacks.add(callback);
   
-  // Robust fallback: make sure the token and user profile are loaded from localStorage if not in memory
-  if (typeof window !== 'undefined') {
-    if (!cachedAccessToken) {
-      cachedAccessToken = localStorage.getItem('gdrive_access_token');
-    }
-    if (!cachedUserProfile) {
-      const storedProfile = localStorage.getItem('gdrive_user_profile');
-      if (storedProfile) {
-        try {
-          cachedUserProfile = JSON.parse(storedProfile);
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    }
-  }
-
-  // Call immediately with current state or cached fallback
-  const fallbackUser = auth.currentUser || cachedUserProfile;
-  callback(fallbackUser, cachedAccessToken);
+  // Call immediately with current state or null (since we forced clear on init)
+  callback(auth.currentUser || cachedUserProfile, cachedAccessToken);
   return () => {
     authCallbacks.delete(callback);
   };
