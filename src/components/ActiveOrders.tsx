@@ -363,14 +363,14 @@ export default function ActiveOrders({
                 {/* Beautiful Grid Layout inside Card */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
                   
-                  {/* Left Column (Cols 1-3): ID & Basic identities with checkbox select */}
-                  <div className="lg:col-span-3 flex items-start gap-3 min-w-0">
+                  {/* Left Column (Cols 1-2): ID & Basic identities with checkbox select */}
+                  <div className="lg:col-span-2 flex items-start gap-2.5 min-w-0">
                     <div className="pt-1 shrink-0">
                       <input
                         type="checkbox"
                         checked={selectedIds.includes(item.id)}
                         onChange={() => handleToggleSelect(item.id)}
-                        className="h-4 w-4 rounded-md border-slate-300 dark:border-slate-705 bg-slate-50 dark:bg-slate-900 text-indigo-600 focus:ring-indigo-505 cursor-pointer accent-indigo-600"
+                        className="h-4 w-4 rounded-md border-slate-300 dark:border-slate-755 bg-slate-50 dark:bg-slate-900 text-indigo-600 focus:ring-indigo-505 cursor-pointer accent-indigo-600"
                       />
                     </div>
                     
@@ -384,25 +384,28 @@ export default function ActiveOrders({
                         </span>
                       </div>
 
-                      <h4 className="font-extrabold text-sm md:text-base text-slate-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" title={item.namaPo}>
+                      <h4 className="font-extrabold text-sm md:text-base text-slate-900 dark:text-white leading-snug line-clamp-2 break-words group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" title={item.namaPo}>
                         {item.namaPo}
                       </h4>
 
-                      {/* Contact details */}
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 truncate">
-                        <User className="h-3.5 w-3.5 inline shrink-0" />
-                        <span className="truncate">{item.namaPemesan}</span>
+                      {/* Contact details: Susunan Vertikal */}
+                      <div className="flex flex-col gap-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <User className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                          <span className="truncate font-semibold text-slate-700 dark:text-slate-350">
+                            {item.namaPemesan}
+                          </span>
+                        </div>
                         {item.noTelepon && (
-                          <>
-                            <span className="text-slate-300">•</span>
-                            <span className="font-mono text-[11px] text-slate-450 truncate">{item.noTelepon}</span>
-                          </>
+                          <div className="font-mono text-[11px] text-slate-450 dark:text-slate-400 pl-5 leading-none">
+                            {item.noTelepon}
+                          </div>
                         )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Middle Column 1 (Cols 4-5): Product detail spec */}
+                  {/* Middle Column 1 (Cols 3-4): Product detail spec */}
                   <div className="space-y-1.5 lg:col-span-2 min-w-0">
                     <p className="text-slate-800 dark:text-slate-200 text-xs font-bold truncate">
                       {item.namaProduk} <span className="text-slate-400 dark:text-slate-500 font-semibold font-sans">({item.bahan})</span>
@@ -431,32 +434,35 @@ export default function ActiveOrders({
                     )}
                   </div>
 
-                  {/* Middle Column 2 (Cols 6-9): Financial recap Shape Banner with custom column split */}
-                  <div className="lg:col-span-4 grid grid-cols-3 gap-2 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-100 dark:border-slate-750/80 min-w-0">
-                    <div className="text-center sm:text-left pr-2 border-r border-slate-200 dark:border-slate-700/80 min-w-0">
-                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">Qty</span>
-                      <span className="text-xs md:text-xs xl:text-sm font-extrabold text-slate-800 dark:text-white block mt-1 truncate w-full" title={`${item.qty} Pcs`}>
+                  {/* Middle Column 2 (Cols 5-9): Financial recap with custom roomy flex layout to prevent text cuts */}
+                  <div className="lg:col-span-5 flex flex-row items-stretch justify-center bg-slate-50 dark:bg-slate-900/40 p-2.5 sm:p-3 rounded-xl border border-slate-100 dark:border-slate-750/80 min-w-0 w-full text-center">
+                    {/* Qty Section */}
+                    <div className="pr-2.5 max-w-[70px] border-r border-slate-205 dark:border-slate-700/80 shrink-0 flex flex-col items-center justify-center">
+                      <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none">Qty</span>
+                      <span className="text-[11px] sm:text-xs xl:text-sm font-extrabold text-slate-800 dark:text-white block mt-1.5 truncate max-w-full" title={`${item.qty} Pcs`}>
                         {item.qty} Pcs
                       </span>
                     </div>
                     
-                    <div className="text-center sm:text-left px-1.5 min-w-0">
-                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate">Total Tagihan</span>
-                      <span className="text-xs md:text-xs xl:text-sm font-extrabold text-slate-800 dark:text-white block mt-1 truncate w-full" title={formatRupiah(item.totalHarga)}>
+                    {/* Total Tagihan Section */}
+                    <div className="px-3 flex-1 min-w-0 flex flex-col items-center justify-center">
+                      <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Total Tagihan</span>
+                      <span className="text-[11px] sm:text-xs xl:text-sm font-extrabold text-slate-800 dark:text-white block mt-1.5 truncate max-w-full" title={formatRupiah(item.totalHarga)}>
                         {formatRupiah(item.totalHarga)}
                       </span>
                     </div>
 
-                    <div className="text-center sm:text-left border-l border-slate-200 dark:border-slate-700/80 pl-2.5 min-w-0">
-                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate">Sisa Bayar</span>
-                      <span className={`text-xs md:text-xs xl:text-sm font-black block mt-1 truncate w-full ${isFullyPaid ? 'text-emerald-500 dark:text-emerald-400 font-extrabold' : 'text-rose-500 font-extrabold'}`} title={isFullyPaid ? 'Lunas' : formatRupiah(item.sisaTagihan)}>
+                    {/* Sisa Bayar Section */}
+                    <div className="border-l border-slate-205 dark:border-slate-700/80 pl-3 flex-1 min-w-0 flex flex-col items-center justify-center">
+                      <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Sisa Bayar</span>
+                      <span className={`text-[11px] sm:text-xs xl:text-sm font-black block mt-1.5 truncate max-w-full ${isFullyPaid ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500'}`} title={isFullyPaid ? 'Lunas' : formatRupiah(item.sisaTagihan)}>
                         {isFullyPaid ? 'Lunas ✓' : formatRupiah(item.sisaTagihan)}
                       </span>
                     </div>
                   </div>
 
                   {/* Right Column (Cols 10-12): Status, Deadline & Actions stacked to avoid collisions */}
-                  <div className="lg:col-span-3 flex flex-row lg:flex-col items-center lg:items-end justify-between lg:justify-center gap-3.5 border-t lg:border-t-0 border-slate-100 dark:border-slate-750/80 pt-3.5 lg:pt-0 min-w-0 w-full">
+                  <div className="lg:col-span-3 flex flex-row lg:flex-col items-center lg:items-end justify-between lg:justify-center gap-3.5 border-t lg:border-t-0 border-slate-100 dark:border-slate-750/80 pt-3.5 lg:pt-0 min-w-0 w-full lg:shrink-0">
                     
                     {/* Upper row on desktop: Status tag & Deadline block */}
                     <div className="flex items-center gap-3.5 max-w-full shrink-0">
@@ -489,8 +495,8 @@ export default function ActiveOrders({
 
                     </div>
 
-                    {/* Lower row on desktop: Cetak buttons & Action helpers */}
-                    <div className="flex items-center gap-2 shrink-0 max-w-full">
+                     {/* Lower row on desktop: Cetak buttons & Action helpers */}
+                    <div className="flex items-center gap-2 shrink-0 max-w-full lg:justify-end lg:w-full">
                       
                       {/* Cetak Nota button replacement for Preview */}
                       <button

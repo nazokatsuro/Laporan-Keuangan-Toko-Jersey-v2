@@ -40,7 +40,8 @@ import {
   Cloud,
   Loader2,
   Lock,
-  Shield
+  Shield,
+  Info
 } from 'lucide-react';
 
 import { 
@@ -53,34 +54,96 @@ import {
 import { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 
-export default function App() {
-  // Load initial orders state
-  const [pesananList, setPesananList] = useState<Pesanan[]>(() => {
-    try {
-      const saved = localStorage.getItem('laporan_jersey_data');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('Gagal meload data dari LocalStorage, menggunakan default.', e);
+// Safe sanitizer/normalizer to prevent any crashes (unhandled NullPointer / substring type errors)
+function normalizePesananList(list: any[]): Pesanan[] {
+  if (!Array.isArray(list)) return [];
+  return list.map((item: any, idx: number) => {
+    const id = item.id || `ORD-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    // Ensure createdAt is a valid string
+    let createdAt = item.createdAt;
+    if (typeof createdAt !== 'string' || !createdAt) {
+      createdAt = new Date().toISOString();
     }
-    return DEFAULT_ORDERS;
-  });
+    const deadline = (typeof item.deadline === 'string' && item.deadline) ? item.deadline : new Date().toISOString().substring(0, 10);
+    const namaPemesan = item.namaPemesan || '';
+    const noTelepon = item.noTelepon || '';
+    const namaPo = item.namaPo || 'Tanpa Nama PO';
+    const namaProduk = item.namaProduk || '';
+    const bahan = item.bahan || '';
+    const keterangan = item.keterangan || '';
+    const qty = typeof item.qty === 'number' ? item.qty : 0;
+    const hargaPerPcs = typeof item.hargaPerPcs === 'number' ? item.hargaPerPcs : 0;
+    const totalHarga = typeof item.totalHarga === 'number' ? item.totalHarga : (qty * hargaPerPcs);
+    const uangMasuk = typeof item.uangMasuk === 'number' ? item.uangMasuk : 0;
+    const sisaTagihan = typeof item.sisaTagihan === 'number' ? item.sisaTagihan : (totalHarga - uangMasuk);
+    const statusProduksi = item.statusProduksi || 'Setting';
+    
+    const printPerPcs = typeof item.printPerPcs === 'number' ? item.printPerPcs : 0;
+    const jahitPerPcs = typeof item.jahitPerPcs === 'number' ? item.jahitPerPcs : 0;
+    const biayaLainnya = typeof item.biayaLainnya === 'number' ? item.biayaLainnya : 0;
+    const totalModal = typeof item.totalModal === 'number' ? item.totalModal : ((qty * printPerPcs) + (qty * jahitPerPcs) + biayaLainnya);
+    const profit = typeof item.profit === 'number' ? item.profit : (totalHarga - totalModal);
+    
+    // Normalize nested items if present
+    const rawItems = Array.isArray(item.items) ? item.items : [
+      {
+        id: `${id}-sub-0`,
+        namaProduk: namaProduk,
+        bahan: bahan,
+        keterangan: keterangan,
+        qty: qty,
+        hargaPerPcs: hargaPerPcs,
+        printPerPcs: printPerPcs,
+        jahitPerPcs: jahitPerPcs
+      }
+    ];
+    const items = rawItems.map((sub: any, subIdx: number) => ({
+      id: sub.id || `${id}-sub-${subIdx}`,
+      namaProduk: sub.namaProduk || '',
+      bahan: sub.bahan || '',
+      keterangan: sub.keterangan || '',
+      qty: typeof sub.qty === 'number' ? sub.qty : 0,
+      hargaPerPcs: typeof sub.hargaPerPcs === 'number' ? sub.hargaPerPcs : 0,
+      printPerPcs: typeof sub.printPerPcs === 'number' ? sub.printPerPcs : 0,
+      jahitPerPcs: typeof sub.jahitPerPcs === 'number' ? sub.jahitPerPcs : 0,
+    }));
 
-  // Load initial settings state
-  const [settings, setSettings] = useState<ShopSettings>(() => {
-    try {
-      const saved = localStorage.getItem('laporan_jersey_settings');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        parsed.darkMode = true; // Force dark mode enabled!
-        return parsed;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return { ...DEFAULT_SETTINGS, darkMode: true };
+    return {
+      id,
+      createdAt,
+      deadline,
+      namaPemesan,
+      noTelepon,
+      namaPo,
+      namaProduk,
+      bahan,
+      keterangan,
+      qty,
+      hargaPerPcs,
+      totalHarga,
+      uangMasuk,
+      sisaTagihan,
+      statusProduksi,
+      printPerPcs,
+      jahitPerPcs,
+      biayaLainnya,
+      totalModal,
+      profit,
+      items,
+      mockupUrl: item.mockupUrl || ''
+    };
   });
+}
+
+export default function App() {
+  // Always start with a clean workspace first, avoiding local storage cache to prevent local-cloud conflicts
+  const [pesananList, setPesananList] = useState<Pesanan[]>([]);
+
+  // Load initial settings state default, forcing dark mode
+  const [settings, setSettings] = useState<ShopSettings>({ ...DEFAULT_SETTINGS, darkMode: true });
+
+  // Guest Bypass Mode for testing when login popups are blocked inside sandboxed iframes
+  const [isGuestBypass, setIsGuestBypass] = useState<boolean>(false);
 
   // Navigation system tabs: 'dashboard' | 'transaksi' | 'formulir' | 'laporan' | 'pengaturan'
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -135,6 +198,22 @@ export default function App() {
   const isFirstRender = useRef(true);
   const lastSavedDataRef = useRef<string>('');
 
+
+
+  const [customAlert, setCustomAlert] = useState<{ message: string; title?: string } | null>(null);
+
+  useEffect(() => {
+    // Override window.alert safely with our beautiful UI modal
+    window.alert = (message: string) => {
+      setCustomAlert({
+        title: 'Pemberitahuan',
+        message: message
+      });
+    };
+  }, []);
+
+
+
   // States & handler for blocking login popup before page entry
   const [isSigningInGoogle, setIsSigningInGoogle] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
@@ -151,10 +230,16 @@ export default function App() {
         if (localStorage.getItem('laporan_jersey_gdrive_autosync') !== 'false') {
           localStorage.setItem('laporan_jersey_gdrive_autosync', 'true');
         }
+      } else {
+        setSignInError('Jendela login Google diblokir oleh browser (popup blocker) atau proses login dibatalkan. Silakan izinkan jendela pop-up di pengaturan browser Anda, atau ketuk tombol "Gunakan Mode Standalone / Lokal (Bypass)" di bawah untuk menggunakan aplikasi secara offline/lokal!');
       }
     } catch (err: any) {
       console.error('Locker Login Error:', err);
-      setSignInError(err.message || 'Keluar atau gagal melakukan login Google. Silakan coba lagi.');
+      let userFriendlyMsg = err.message || 'Keluar atau gagal melakukan login Google. Silakan coba lagi.';
+      if (err.code === 'auth/popup-closed-by-user' || (err.message && err.message.includes('popup-closed-by-user'))) {
+        userFriendlyMsg = 'Jendela login Google ditutup sebelum selesai. Silakan hubungkan kembali dengan mengetuk tombol "Masuk dengan Google" di bawah.';
+      }
+      setSignInError(userFriendlyMsg);
     } finally {
       setIsSigningInGoogle(false);
     }
@@ -187,16 +272,18 @@ export default function App() {
 
             const payload = await downloadDraftFromDrive(googleToken, meta.id);
             if (payload && Array.isArray(payload.pesananList)) {
-              setSyncMessage('Memulihkan draf pesanan & pengaturan toko...');
+              setSyncMessage('Memulihkan draf pesanan & pengaturan toko dari Google Drive...');
               await new Promise(resolve => setTimeout(resolve, 1000));
               
-              setPesananList(payload.pesananList);
-              if (payload.settings) {
-                setSettings(payload.settings);
-              }
+              const cloudOrders = normalizePesananList(payload.pesananList);
+              const cloudSettings = payload.settings || settings;
+
+              setPesananList(cloudOrders);
+              setSettings(cloudSettings);
+              
               const baselineData = JSON.stringify({
-                pesananList: payload.pesananList,
-                settings: payload.settings || settings
+                pesananList: cloudOrders,
+                settings: cloudSettings
               });
               lastSavedDataRef.current = baselineData;
               isFirstRender.current = false;
@@ -205,18 +292,27 @@ export default function App() {
               setSyncMessage('Sinkronisasi selesai! Menyiapkan dokumen workspace...');
               await new Promise(resolve => setTimeout(resolve, 800));
             } else {
-              setSyncMessage('Data cadangan kosong. Menyiapkan draf lokal...');
-              await new Promise(resolve => setTimeout(resolve, 600));
-              lastSavedDataRef.current = JSON.stringify({ pesananList, settings });
+              // Fail-safe if file is corrupted or empty
+              setSyncMessage('Memulai workspace baru...');
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              setPesananList([]);
+              lastSavedDataRef.current = JSON.stringify({ pesananList: [], settings });
               isFirstRender.current = false;
+              
+              window.alert('Berkas cadangan di Google Drive kosong atau tidak valid. Workspace Anda dimulai kosong dari awal. Harap segera impor file cadangan JSON Anda dan aktifkan fitur Auto Backup di tab Pengaturan Toko!');
             }
           } else {
-            setSyncMessage('Tidak ditemukan berkas cadangan cloud sebelumnya. Menyiapkan workspace lokal...');
+            // No file found in cloud drive - start from scratch and alert to upload JSON/enable auto backup
+            setSyncMessage('Memulai workspace baru...');
             await new Promise(resolve => setTimeout(resolve, 1000));
-            lastSavedDataRef.current = JSON.stringify({ pesananList, settings });
+            
+            setPesananList([]);
+            lastSavedDataRef.current = JSON.stringify({ pesananList: [], settings });
             isFirstRender.current = false;
+
+            window.alert('Tidak ditemukan berkas cadangan data di Google Drive Cloud Anda. Workspace dimulai kosong dari awal. Harap segera masuk ke menu Pengaturan Toko untuk mengimpor file draf JSON dan jangan lupa aktifkan fitur Auto Backup (Sinkronisasi Otomatis)!');
           }
-        } catch (err) {
+        } catch (err: any) {
           console.warn('Gagal sinkronisasi draf cloud (offline atau sesi habis):', err);
           setSyncMessage('Gagal menyinkronkan data draf dari Penyimpanan Awan.');
           await new Promise(resolve => setTimeout(resolve, 1200));
@@ -410,14 +506,29 @@ export default function App() {
   };
 
   // Import draft backups fully
-  const handleImportData = (importedOrders: Pesanan[], importedShopName?: string) => {
-    if (importedOrders && Array.isArray(importedOrders)) {
-      setPesananList(importedOrders);
-    }
-    if (importedShopName) {
+  const handleImportData = (importedOrders: Pesanan[], importedShopName?: string, importedSettings?: ShopSettings) => {
+    const normalizedOrders = importedOrders && Array.isArray(importedOrders) ? normalizePesananList(importedOrders) : [];
+
+    setPesananList(normalizedOrders);
+    if (importedSettings) {
+      setSettings(importedSettings);
+    } else if (importedShopName) {
       setSettings(prev => ({ ...prev, namaToko: importedShopName }));
     }
+
+    // Reset draft change tracking state
+    const currentDataStr = JSON.stringify({
+      pesananList: normalizedOrders,
+      settings: importedSettings || (importedShopName ? { ...settings, namaToko: importedShopName } : settings)
+    });
+    lastSavedDataRef.current = currentDataStr;
+    isFirstRender.current = false;
+
+    // Switch to Dashboard tab so the user sees results instantly
+    setActiveTab('dashboard');
   };
+
+
 
   // Reset database values back to factory defaults (Starting completely from 0)
   const handleResetAll = () => {
@@ -428,7 +539,7 @@ export default function App() {
     setActiveTab('dashboard');
   };
 
-  if (!googleUser || !googleToken) {
+  if ((!googleUser || !googleToken) && !isGuestBypass) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden font-sans">
         {/* Abstract futuristic glowing backgrounds */}
@@ -456,7 +567,7 @@ export default function App() {
           </div>
 
           <p className="text-xs text-slate-400 text-center leading-relaxed mb-6">
-            Akses ke aplikasi manajemen keuangan dan produksi ini mewajibkan sinkronisasi cloud. Keamanan data pesanan, draf cadangan, dan pengaturan toko Anda terintegrasi langsung dengan <strong>Google Drive</strong> secara otomatis dan real-time.
+            Keamanan data pesanan, draf cadangan, dan pengaturan toko Anda terintegrasi langsung dengan <strong>Google Drive</strong> secara otomatis dan real-time.
           </p>
 
           <div className="w-full border-t border-slate-800/50 pt-5 pb-5 space-y-3">
@@ -469,7 +580,7 @@ export default function App() {
             <div className="flex items-start gap-3">
               <div className="h-5 w-5 rounded-full bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 flex items-center justify-center mt-0.5 text-[10px] shrink-0 font-black">2</div>
               <p className="text-[11px] text-slate-350 leading-relaxed">
-                Login wajib dilakukan di awal sehingga draf terbaru dari Google Drive dapat dimuat secara instan dan aman.
+                Login wajib dilakukan sehingga draf terbaru dari Google Drive dapat dimuat secara instan dan aman.
               </p>
             </div>
           </div>
@@ -501,28 +612,44 @@ export default function App() {
             </div>
           )}
 
-          <button
-            onClick={handleBlockLogin}
-            disabled={isSigningInGoogle}
-            className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl bg-white hover:bg-slate-100 text-slate-900 font-extrabold text-xs tracking-wide transition-all select-none shadow-md shadow-slate-950/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-[0.98]"
-          >
-            {isSigningInGoogle ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin shrink-0 text-slate-900" />
-                <span>Menghubungkan ke Google...</span>
-              </>
-            ) : (
-              <>
-                <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
-                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-                </svg>
-                <span>Masuk dengan Google</span>
-              </>
-            )}
-          </button>
+          <div className="w-full space-y-2.5">
+            <button
+              onClick={handleBlockLogin}
+              disabled={isSigningInGoogle}
+              className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl bg-white hover:bg-slate-100 text-slate-900 font-extrabold text-xs tracking-wide transition-all select-none shadow-md shadow-slate-950/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-[0.98]"
+            >
+              {isSigningInGoogle ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0 text-slate-900" />
+                  <span>Menghubungkan ke Google...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                  </svg>
+                  <span>Masuk dengan Google</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsGuestBypass(true);
+                // Load default orders if they bypass to allow testing out of box
+                setPesananList(DEFAULT_ORDERS);
+                window.alert('Anda masuk menggunakan Mode Standalone / Lokal. Sinkronisasi pencadangan Google Drive saat ini dalam keadaan tidak aktif. Hubungkan drive Anda nanti melalui tab Pengaturan Toko untuk sinkronisasi otomatis!');
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3 px-6 rounded-2xl border border-slate-800 hover:border-slate-750 bg-slate-950/40 hover:bg-slate-950 text-slate-350 hover:text-white transition-all cursor-pointer font-bold text-xs"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+              <span>Gunakan Mode Standalone / Lokal (Bypass)</span>
+            </button>
+          </div>
 
           <span className="text-[10px] text-slate-500 font-bold tracking-wider uppercase mt-5">
             Laporan Jersey App v2.0
@@ -1140,6 +1267,35 @@ export default function App() {
               <span className="font-bold text-slate-450 uppercase">Workshop App v2.1</span>
             </div>
 
+          </div>
+        </div>
+      )}
+
+
+
+      {/* Safe Modal Notification / Toast (Prevents Sandbox Block on IFrame origin) */}
+      {customAlert && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-fade-in no-print">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative flex flex-col items-center text-center animate-scale-in text-white">
+            <div className="p-3 bg-indigo-500/15 rounded-2xl mb-4 text-indigo-400">
+              <Info className="h-6 w-6" />
+            </div>
+            
+            <h3 className="text-sm font-extrabold text-white mb-2 uppercase tracking-wide">
+              {customAlert.title || 'Pemberitahuan'}
+            </h3>
+            
+            <p className="text-xs text-slate-300 leading-relaxed mb-6 whitespace-pre-line text-center">
+              {customAlert.message}
+            </p>
+            
+            <button
+              type="button"
+              onClick={() => setCustomAlert(null)}
+              className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 active:scale-98 text-white text-xs font-black rounded-xl cursor-pointer shadow-md transition-all uppercase tracking-wider"
+            >
+              Mengerti
+            </button>
           </div>
         </div>
       )}

@@ -33,6 +33,8 @@ import {
   Bar
 } from 'recharts';
 
+import FraudScanner from './FraudScanner';
+
 interface DashboardProps {
   pesananList: Pesanan[];
   onNavigate: (tab: string) => void;
@@ -677,6 +679,17 @@ export default function Dashboard({
           </button>
         </div>
 
+      </div>
+
+      {/* Fraud Detection & Auditor AI Feature */}
+      <div className="mt-8 relative z-20">
+        <FraudScanner
+          pesananList={pesananList}
+          onSelectOrder={(order) => {
+            onSelectOrder(order);
+            onNavigate('transaksi'); // Switch to order view
+          }}
+        />
       </div>
 
     </div>

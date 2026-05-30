@@ -39,7 +39,7 @@ interface SettingsProps {
   settings: ShopSettings;
   onUpdateSettings: (settings: Partial<ShopSettings>) => void;
   pesananList: Pesanan[];
-  onImportData: (orders: Pesanan[], shopName?: string) => void;
+  onImportData: (orders: Pesanan[], shopName?: string, settings?: ShopSettings) => void;
   onResetAll: () => void;
 }
 
@@ -104,10 +104,16 @@ export default function Settings({
         setGoogleToken(result.accessToken);
         triggerSuccess(`Logged in: ${result.user.email}`);
         await checkDriveDraft(result.accessToken);
+      } else {
+        alert('Gagal login Google. Jendela pop-up diblokir oleh browser (popup blocker). Harap izinkan jendela pop-up di browser Anda agar dapat login!');
       }
     } catch (err: any) {
       console.error(err);
-      alert('Gagal login Google: ' + err.message);
+      if (err.code === 'auth/popup-closed-by-user' || (err.message && err.message.includes('popup-closed-by-user'))) {
+        alert('Proses masuk dibatalkan karena jendela login ditutup.');
+      } else {
+        alert('Gagal login Google: ' + err.message);
+      }
     } finally {
       setIsDriveSyncing(false);
     }
@@ -216,6 +222,7 @@ export default function Settings({
       appId: 'laporan-jersey-app',
       exportedAt: new Date().toISOString(),
       shopName: settings.namaToko,
+      settings,
       pesananList
     };
 
@@ -234,19 +241,38 @@ export default function Settings({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Ask user confirmation before overwriting active database values
+    const confirmMessage = `Apakah Anda yakin ingin IMPORT draft dari berkas JSON "${file.name}"?\n\nTindakan ini AKAN MENUMPUK & MENGGANTIKAN seluruh data pesanan aktif Anda saat ini di workspace perangkat ini.`;
+    const confirmed = window.confirm(confirmMessage);
+    if (!confirmed) {
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
         const parsed = JSON.parse(event.target?.result as string);
-        if (parsed && Array.isArray(parsed.pesananList)) {
-          onImportData(parsed.pesananList, parsed.shopName || '');
-          triggerSuccess('Draft Laporan Jersey berhasil diimport!');
-        } else if (Array.isArray(parsed)) {
-          // Fallback array format support
-          onImportData(parsed);
-          triggerSuccess('Data berhasil diimport!');
+        
+        let list: Pesanan[] | null = null;
+        let shopName = '';
+        let fileSettings: ShopSettings | null = null;
+
+        if (parsed) {
+          if (Array.isArray(parsed)) {
+            list = parsed;
+          } else if (typeof parsed === 'object') {
+            list = parsed.pesananList || parsed.pesanan || parsed.orders || parsed.data || null;
+            shopName = parsed.shopName || parsed.namaToko || '';
+            fileSettings = parsed.settings || null;
+          }
+        }
+
+        if (list && Array.isArray(list)) {
+          onImportData(list, shopName, fileSettings || undefined);
+          alert(`Berhasil! Draft Laporan Jersey berhasil diimport. Memulihkan ${list.length} data transaksi.`);
         } else {
-          alert('Format berkas JSON tidak sesuai standard Laporan Jersey.');
+          alert('Format berkas JSON tidak sesuai standard Laporan Jersey. Pastikan file berisi daftar pesanan.');
         }
       } catch (err) {
         console.error(err);

@@ -32,12 +32,66 @@ interface OrderFormProps {
 
 const STATUS_LIST: StatusProduksi[] = ['Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'];
 
+interface RupiahInputProps {
+  value: number;
+  onChange: (val: number) => void;
+  className?: string;
+  placeholder?: string;
+}
+
+function RupiahInput({ value, onChange, className, placeholder }: RupiahInputProps) {
+  const displayValue = value === 0 ? '' : value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value;
+    const clean = rawVal.replace(/[^0-9]/g, '');
+    const num = clean ? parseInt(clean, 10) : 0;
+    
+    const input = e.target;
+    const oldSelectionStart = input.selectionStart || 0;
+    const oldLength = rawVal.length;
+
+    onChange(num);
+
+    setTimeout(() => {
+      if (!input) return;
+      const newDisplay = num === 0 ? '' : num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      const lengthDiff = newDisplay.length - oldLength;
+      const newSelectionStart = Math.max(0, oldSelectionStart + lengthDiff);
+      input.setSelectionRange(newSelectionStart, newSelectionStart);
+    }, 0);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={displayValue}
+      onChange={handleChange}
+      className={className}
+      placeholder={placeholder || "0"}
+    />
+  );
+}
+
+// Helper to get local date in "YYYY-MM-DD" format
+const getLocalDateString = (d: Date = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function OrderForm({ pesananToEdit, onSave, onCancel }: OrderFormProps) {
   // Base fields
   const [deadline, setDeadline] = useState('');
   const [namaPemesan, setNamaPemesan] = useState('');
   const [noTelepon, setNoTelepon] = useState('');
   const [namaPo, setNamaPo] = useState('');
+  
+  // Date selection states
+  const [dateMode, setDateMode] = useState<'today' | 'manual'>('today');
+  const [customDate, setCustomDate] = useState(() => getLocalDateString());
   
   // Numerical fields
   const [uangMasuk, setUangMasuk] = useState(0);
@@ -63,6 +117,21 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel }: OrderForm
       setStatusProduksi(pesananToEdit.statusProduksi);
       setBiayaLainnya(pesananToEdit.biayaLainnya ?? 0);
       setMockupUrl(pesananToEdit.mockupUrl || '');
+
+      // Load creation date
+      if (pesananToEdit.createdAt) {
+        const orderDateStr = pesananToEdit.createdAt.substring(0, 10);
+        setCustomDate(orderDateStr);
+        const todayStr = getLocalDateString();
+        if (orderDateStr === todayStr) {
+          setDateMode('today');
+        } else {
+          setDateMode('manual');
+        }
+      } else {
+        setDateMode('today');
+        setCustomDate(getLocalDateString());
+      }
 
       if (pesananToEdit.items && pesananToEdit.items.length > 0) {
         setItems(pesananToEdit.items);
@@ -95,6 +164,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel }: OrderForm
       setStatusProduksi('Setting');
       setBiayaLainnya(0);
       setMockupUrl('');
+      setDateMode('today');
+      setCustomDate(getLocalDateString());
       setItems([
         {
           id: generateId(),
@@ -228,9 +299,35 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel }: OrderForm
 
     const firstItem = items[0] || { printPerPcs: 35000, jahitPerPcs: 20000, hargaPerPcs: 110000 };
 
+    const todayLocalStr = getLocalDateString();
+    let finalCreatedAt = '';
+    if (dateMode === 'today') {
+      if (pesananToEdit) {
+        const originalDateStr = pesananToEdit.createdAt.substring(0, 10);
+        if (originalDateStr === todayLocalStr) {
+          // Keep the exact original timestamp
+          finalCreatedAt = pesananToEdit.createdAt;
+        } else {
+          // Set to current real-time timestamp
+          finalCreatedAt = new Date().toISOString();
+        }
+      } else {
+        // New order, use current timestamp
+        finalCreatedAt = new Date().toISOString();
+      }
+    } else {
+      // Manual date mode. customDate is in "YYYY-MM-DD" format.
+      if (pesananToEdit && pesananToEdit.createdAt.startsWith(customDate)) {
+        finalCreatedAt = pesananToEdit.createdAt;
+      } else {
+        // Construct standard ISO string for that selected day (midday to avoid timezone offset issues)
+        finalCreatedAt = `${customDate}T12:00:00.000Z`;
+      }
+    }
+
     const payload: Pesanan = {
       id: pesananToEdit ? pesananToEdit.id : generateId(),
-      createdAt: pesananToEdit ? pesananToEdit.createdAt : new Date().toISOString(),
+      createdAt: finalCreatedAt,
       deadline,
       namaPemesan,
       noTelepon,
@@ -324,6 +421,55 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel }: OrderForm
                 onChange={(e) => setDeadline(e.target.value)}
                 className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all [&:not(:placeholder-shown)]:bg-white dark:[&:not(:placeholder-shown)]:bg-slate-900"
               />
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 dark:border-slate-700/60 my-2 pt-4">
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+              Tanggal Transaksi / Pembukuan PO <span className="text-rose-500">*</span>
+            </label>
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <div className="flex items-center gap-1.5 bg-slate-55 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setDateMode('today')}
+                  className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer select-none ${
+                    dateMode === 'today'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Gunakan Tanggal Hari Ini
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDateMode('manual')}
+                  className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer select-none ${
+                    dateMode === 'manual'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-905 dark:hover:text-white'
+                  }`}
+                >
+                  Pilih Tanggal Manual
+                </button>
+              </div>
+
+              {dateMode === 'manual' ? (
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <span className="text-xs text-slate-450 dark:text-slate-400 font-medium whitespace-nowrap">Atur Tanggal:</span>
+                  <input
+                    type="date"
+                    required={dateMode === 'manual'}
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all cursor-pointer"
+                  />
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-400 italic">
+                  Tanggal otomatis hari ini: <strong className="text-indigo-600 dark:text-indigo-400 font-extrabold not-italic">{new Date().toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</strong>
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -484,11 +630,9 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel }: OrderForm
                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
                       Harga Jual / Pcs (Rp)
                     </label>
-                    <input
-                      type="number"
-                      min={0}
+                    <RupiahInput
                       value={item.hargaPerPcs}
-                      onChange={(e) => updateItemField(index, 'hargaPerPcs', Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(val) => updateItemField(index, 'hargaPerPcs', val)}
                       className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-extrabold text-indigo-650 dark:text-indigo-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
@@ -497,11 +641,9 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel }: OrderForm
                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
                       Modal Sublim / Pcs (Rp)
                     </label>
-                    <input
-                      type="number"
-                      min={0}
+                    <RupiahInput
                       value={item.printPerPcs}
-                      onChange={(e) => updateItemField(index, 'printPerPcs', Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(val) => updateItemField(index, 'printPerPcs', val)}
                       className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
@@ -510,11 +652,9 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel }: OrderForm
                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
                       Modal Jahit / Pcs (Rp)
                     </label>
-                    <input
-                      type="number"
-                      min={0}
+                    <RupiahInput
                       value={item.jahitPerPcs}
-                      onChange={(e) => updateItemField(index, 'jahitPerPcs', Math.max(0, parseInt(e.target.value) || 0))}
+                      onChange={(val) => updateItemField(index, 'jahitPerPcs', val)}
                       className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
@@ -559,11 +699,9 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel }: OrderForm
               <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                 DP / Pembayaran Masuk (Rp)
               </label>
-              <input
-                type="number"
-                min={0}
+              <RupiahInput
                 value={uangMasuk}
-                onChange={(e) => setUangMasuk(Math.max(0, parseInt(e.target.value) || 0))}
+                onChange={(val) => setUangMasuk(val)}
                 className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-bold text-emerald-600 dark:text-emerald-400"
               />
             </div>
@@ -572,11 +710,9 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel }: OrderForm
               <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                 Biaya Lain - lain (Ongkir, dll) (Rp)
               </label>
-              <input
-                type="number"
-                min={0}
+              <RupiahInput
                 value={biayaLainnya}
-                onChange={(e) => setBiayaLainnya(Math.max(0, parseInt(e.target.value) || 0))}
+                onChange={(val) => setBiayaLainnya(val)}
                 className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-bold text-rose-600 dark:text-rose-400"
               />
             </div>

@@ -107,8 +107,8 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     authCallbacks.forEach(cb => cb(result.user, cachedAccessToken));
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
-    console.error('Sign-in Error:', error);
-    throw error;
+    console.warn('Google Sign-in Error (Handled internally):', error);
+    return null;
   } finally {
     isSigningIn = false;
   }
