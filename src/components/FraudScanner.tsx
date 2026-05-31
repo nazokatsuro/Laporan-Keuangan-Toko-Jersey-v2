@@ -422,16 +422,16 @@ export default function FraudScanner({
         {activeAnomalies.map(alert => (
           <div 
             key={alert.id}
-            className={`p-4 rounded-xl border flex flex-col gap-3 transition-colors relative group ${
+            className={`p-5 rounded-2xl border flex flex-col gap-3.5 transition-all relative group ${
               alert.level === 'critical' 
-                ? 'bg-rose-500/5 border-rose-500/30 hover:bg-rose-500/10'
-                : 'bg-amber-500/5 border-amber-500/30 hover:bg-amber-500/10'
+                ? 'bg-slate-900/90 border-rose-500/50 hover:border-rose-400/80 shadow-[0_0_15px_rgba(239,68,68,0.15)] hover:shadow-[0_0_20px_rgba(239,68,68,0.25)]'
+                : 'bg-slate-900/90 border-amber-500/50 hover:border-amber-400/80 shadow-[0_0_15px_rgba(245,158,11,0.15)] hover:shadow-[0_0_20px_rgba(245,158,11,0.25)]'
             }`}
           >
             {/* Dismiss Cross Icon Button */}
             <button
               onClick={() => setConfirmDismissId(alert.id)}
-              className="absolute top-3 right-3 text-slate-400 hover:text-rose-500 scale-95 hover:scale-110 transition duration-150 p-1 bg-slate-900/60 dark:bg-slate-900/80 rounded-lg border border-slate-800/80 cursor-pointer shadow-xs"
+              className="absolute top-4 right-4 text-slate-350 hover:text-white scale-100 hover:scale-115 transition duration-150 p-1.5 bg-slate-800 dark:bg-slate-800/80 hover:bg-slate-700/80 rounded-xl border border-slate-700 cursor-pointer shadow-xs"
               title="Selesaikan / Tutup"
             >
               <X className="h-3.5 w-3.5" />
@@ -439,16 +439,22 @@ export default function FraudScanner({
 
             <div className="flex items-start justify-between gap-3 pr-6">
               <div className="flex items-center gap-2.5">
-                <div className={`p-1.5 rounded-lg ${alert.level === 'critical' ? 'bg-rose-500/20 text-rose-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                <div className={`p-1.5 rounded-lg border ${
+                  alert.level === 'critical' 
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' 
+                    : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                }`}>
                   <alert.icon className="h-4 w-4" />
                 </div>
-                <span className={`font-extrabold text-xs uppercase tracking-wider ${alert.level === 'critical' ? 'text-rose-405' : 'text-amber-405'}`}>
+                <span className={`font-extrabold text-xs sm:text-sm uppercase tracking-wider ${
+                  alert.level === 'critical' ? 'text-amber-300' : 'text-yellow-400'
+                }`}>
                   {alert.title}
                 </span>
               </div>
             </div>
 
-            <p className="text-slate-300 text-xs leading-relaxed">
+            <p className="text-slate-100 dark:text-white font-medium text-xs sm:text-sm leading-relaxed">
               {alert.description}
             </p>
 
@@ -457,9 +463,9 @@ export default function FraudScanner({
                 <button
                   key={`${alert.id}-ro-${i}`}
                   onClick={() => onSelectOrder(ro)}
-                  className="bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-300 text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-colors uppercase tracking-wider cursor-pointer"
+                  className="bg-slate-900 hover:bg-slate-850 border border-slate-700 hover:border-slate-550 text-slate-105 text-[10.5px] px-3.5 py-2 rounded-xl font-bold transition-all uppercase tracking-wider cursor-pointer flex items-center gap-1.5 shadow-sm"
                 >
-                  Cek {ro.namaPo}
+                  <span className="text-yellow-400">🔍 Cek PO:</span> <span className="text-white font-black">{ro.namaPo}</span>
                 </button>
               ))}
             </div>

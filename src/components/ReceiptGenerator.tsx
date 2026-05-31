@@ -440,6 +440,9 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
         >
           {pesananArray.map((item, index) => {
             const isFullyPaid = item.sisaTagihan === 0;
+            const itemMockups = item.mockups && Array.isArray(item.mockups) && item.mockups.length > 0
+              ? [...item.mockups].sort((a, b) => a.order - b.order)
+              : (item.mockupUrl ? [{ url: item.mockupUrl, order: 1 }] : []);
             return (
               <div 
                 key={item.id}
@@ -757,15 +760,15 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                   
                   {/* Payment status badge / notes */}
                   <div className="flex-1 max-w-sm space-y-3 w-full text-left">
-                    {item.mockupUrl && (
+                    {itemMockups.length > 0 && (
                       <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-left">
                         <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-1 text-left">
-                          Mockup Desain Jersey (PO)
+                          Mockup Utama (PO)
                         </span>
                         <div className="h-40 w-full bg-white rounded-md border border-slate-100 flex items-center justify-center overflow-hidden">
                           <img 
-                            src={item.mockupUrl} 
-                            alt="Mockup Desain" 
+                            src={itemMockups[0].url} 
+                            alt="Mockup Utama" 
                             className="max-h-full max-w-full object-contain"
                             referrerPolicy="no-referrer"
                           />
@@ -837,7 +840,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                       <span>
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal(item.id, 'labelUangMasuk', 'Uang Masuk / Pembayaran DP')}
+                          value={getVal(item.id, 'labelUangMasuk', isFullyPaid ? 'Pembayaran Pelunasan / LUNAS' : 'Uang Masuk / Pembayaran DP')}
                           onChange={(val) => setVal(item.id, 'labelUangMasuk', val)}
                           className="text-slate-505"
                         />
@@ -880,6 +883,130 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                   </div>
 
                 </div>
+
+                {/* --- AUTOLAYOUT GALLERIES UNTUK MULTI MOCKUP DESAIN (1-10 GAMBAR) --- */}
+                {itemMockups.length > 0 && (
+                  <div className="mt-8 border-t border-slate-200 pt-6 text-left break-inside-avoid no-print-break">
+                    <h3 className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-widest mb-3 flex items-center gap-1.5 font-sans">
+                      <span>🖼️</span> Lampiran Gambar Detail Mockup Desain ({itemMockups.length} Gambar)
+                    </h3>
+                    
+                    {/* 1 GAMBAR: Tampil Besar */}
+                    {itemMockups.length === 1 && (
+                      <div className="w-full flex justify-center">
+                        <div className="w-full max-w-lg h-72 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center p-3 overflow-hidden">
+                          <img 
+                            src={itemMockups[0].url} 
+                            alt="Mockup Desain Utama" 
+                            className="max-h-full max-w-full object-contain rounded-lg"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 2 GAMBAR: Layout 2 Kolom */}
+                    {itemMockups.length === 2 && (
+                      <div className="grid grid-cols-2 gap-4">
+                        {itemMockups.map((m, mIdx) => (
+                          <div key={mIdx} className="h-56 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center p-3 overflow-hidden text-center">
+                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Gambar #{mIdx + 1}</span>
+                            <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
+                              <img 
+                                src={m.url} 
+                                alt={`Mockup Detail #${mIdx + 1}`} 
+                                className="max-h-full max-w-full object-contain rounded"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 3-4 GAMBAR: Grid 2x2 */}
+                    {(itemMockups.length === 3 || itemMockups.length === 4) && (
+                      <div className="grid grid-cols-2 gap-3.5">
+                        {itemMockups.map((m, mIdx) => (
+                          <div key={mIdx} className="h-44 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center p-2.5 overflow-hidden text-center">
+                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-1">Gambar #{mIdx + 1}</span>
+                            <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
+                              <img 
+                                src={m.url} 
+                                alt={`Mockup Detail #${mIdx + 1}`} 
+                                className="max-h-full max-w-full object-contain rounded"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 5-8 GAMBAR: Grid Responsif (3 Kolom Sempurna) */}
+                    {(itemMockups.length >= 5 && itemMockups.length <= 8) && (
+                      <div className="grid grid-cols-3 gap-3">
+                        {itemMockups.map((m, mIdx) => (
+                          <div key={mIdx} className="h-36 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center p-2 overflow-hidden text-center">
+                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Gambar #{mIdx + 1}</span>
+                            <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
+                              <img 
+                                src={m.url} 
+                                alt={`Mockup Detail #${mIdx + 1}`} 
+                                className="max-h-full max-w-full object-contain rounded"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 9-10 GAMBAR: Otomatis lanjut ke halaman berikutnya */}
+                    {itemMockups.length >= 9 && (
+                      <div>
+                        {/* Halaman Pertama (4 Gambar Awal) */}
+                        <div className="grid grid-cols-2 gap-3">
+                          {itemMockups.slice(0, 4).map((m, mIdx) => (
+                            <div key={mIdx} className="h-36 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center p-2 overflow-hidden text-center">
+                              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Gambar #{mIdx + 1}</span>
+                              <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
+                                <img 
+                                  src={m.url} 
+                                  alt={`Mockup Detail #${mIdx + 1}`} 
+                                  className="max-h-full max-w-full object-contain rounded"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Page break marker */}
+                        <div className="page-break my-8 border-b-2 border-dashed border-indigo-400 pt-3 pb-1 text-center text-[10px] font-black uppercase text-indigo-500 tracking-widest italic flex items-center justify-center gap-2 select-none no-print">
+                          <span>⬇️</span> HALAMAN BERIKUTNYA UNTUK LAMPIRAN TAMBAHAN <span>⬇️</span>
+                        </div>
+
+                        {/* Halaman Kedua (Gambar Sisanya) */}
+                        <div className="grid grid-cols-2 gap-3 mt-4">
+                          {itemMockups.slice(4).map((m, mIdx) => (
+                            <div key={mIdx + 4} className="h-36 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center p-2 overflow-hidden text-center">
+                              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Gambar #{mIdx + 5}</span>
+                              <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
+                                <img 
+                                  src={m.url} 
+                                  alt={`Mockup Detail #${mIdx + 5}`} 
+                                  className="max-h-full max-w-full object-contain rounded"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Stamp Sign block */}
                 <div className="mt-10 flex justify-end gap-12 text-center text-xs">
@@ -1081,7 +1208,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                         <th className="pb-3 text-left">PO / Tim & Pemesan</th>
                         <th className="pb-3 text-center w-12">Qty</th>
                         <th className="pb-3 text-right w-24">Subtotal</th>
-                        <th className="pb-3 text-right w-24">DP Masuk</th>
+                        <th className="pb-3 text-right w-24">Jumlah Bayar</th>
                         <th className="pb-3 text-right w-24 font-extrabold text-indigo-600">Sisa Tagihan</th>
                       </tr>
                     </thead>
@@ -1263,7 +1390,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                     <span>
                       <EditableText
                         isEditing={isEditingTexts}
-                        value={getVal('rekap', 'labelTotalDP', 'Total DP Masuk')}
+                        value={getVal('rekap', 'labelTotalDP', 'Total Pembayaran (DP/Lunas)')}
                         onChange={(val) => setVal('rekap', 'labelTotalDP', val)}
                         className="text-slate-500 font-bold"
                       />

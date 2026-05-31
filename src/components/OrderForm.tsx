@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Pesanan, PesananItem, StatusProduksi } from '../types';
 import { generateId, formatRupiah } from '../utils';
+import { uploadMockupToFirebaseStorage } from '../driveService';
 import { 
   Save, 
   Trash2, 
@@ -21,7 +22,13 @@ import {
   ClipboardList,
   Image as ImageIcon,
   Upload,
-  X
+  X,
+  Eye,
+  Edit2,
+  ArrowUp,
+  ArrowDown,
+  Loader2,
+  Move
 } from 'lucide-react';
 
 interface OrderFormProps {
@@ -102,7 +109,14 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
   const [statusProduksi, setStatusProduksi] = useState<StatusProduksi>('Setting');
   const [biayaLainnya, setBiayaLainnya] = useState(0);
 
-  // Mockup image URL (base64 string)
+  // Mockup list state
+  const [mockups, setMockups] = useState<Array<{ url: string; order: number }>>([]);
+  // Loading upload state
+  const [isUploading, setIsUploading] = useState(false);
+  // Previewing image state
+  const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
+
+  // Mockup image URL (base64 string - keeps first image as standard fallback)
   const [mockupUrl, setMockupUrl] = useState('');
 
   // Multiple product items inside this 1 PO
@@ -118,7 +132,14 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setUangMasuk(pesananToEdit.uangMasuk || 0);
       setStatusProduksi(pesananToEdit.statusProduksi);
       setBiayaLainnya(pesananToEdit.biayaLainnya ?? 0);
-      setMockupUrl(pesananToEdit.mockupUrl || '');
+      
+      const initialMockups = pesananToEdit.mockups && Array.isArray(pesananToEdit.mockups)
+        ? [...pesananToEdit.mockups]
+        : (pesananToEdit.mockupUrl ? [{ url: pesananToEdit.mockupUrl, order: 1 }] : []);
+      
+      const sortedMockups = initialMockups.sort((a, b) => a.order - b.order);
+      setMockups(sortedMockups);
+      setMockupUrl(pesananToEdit.mockupUrl || (sortedMockups[0]?.url || ''));
 
       // Load creation date
       if (pesananToEdit.createdAt) {
@@ -259,6 +280,146 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
     return totalHarga - totalModal;
   }, [totalHarga, totalModal]);
 
+  // --- Multiple Mockup Gallery helpers ---
+  const handleFilesUpload = async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    const validFiles = list.filter(f => ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(f.type) || f.name.match(/\.(png|jpe?g|webp)$/i));
+    
+    if (validFiles.length === 0) {
+      alert("Format berkas tidak didukung! Pastikan menggunakan PNG, JPG, JPEG, atau WEBP.");
+      return;
+    }
+    
+    if (mockups.length + validFiles.length > 10) {
+      alert("Maksimal berkas mockup adalah 10 gambar per PO!");
+      return;
+    }
+    
+    setIsUploading(true);
+    const uploadedList = [...mockups];
+    
+    for (const file of validFiles) {
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`Gambar "${file.name}" melebihi batas ukuran 10 MB!`);
+        continue;
+      }
+      
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve) => {
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.readAsDataURL(file);
+      });
+      
+      try {
+        const downloadUrl = await uploadMockupToFirebaseStorage(base64, file.name);
+        uploadedList.push({ url: downloadUrl, order: uploadedList.length + 1 });
+      } catch (err) {
+        uploadedList.push({ url: base64, order: uploadedList.length + 1 });
+      }
+    }
+    
+    const finalSet = uploadedList.map((item, idx) => ({ ...item, order: idx + 1 }));
+    setMockups(finalSet);
+    setIsUploading(false);
+  };
+
+  const handleReplaceFile = async (idxToReplace: number, file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      alert(`Berkas "${file.name}" melebihi batas ukuran maksimal 10 MB!`);
+      return;
+    }
+    
+    setIsUploading(true);
+    const reader = new FileReader();
+    const base64Data = await new Promise<string>((resolve) => {
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.readAsDataURL(file);
+    });
+    
+    let finalUrl = base64Data;
+    try {
+      finalUrl = await uploadMockupToFirebaseStorage(base64Data, file.name);
+    } catch (err) {
+      // fallback
+    }
+    
+    const updated = [...mockups];
+    updated[idxToReplace] = { ...updated[idxToReplace], url: finalUrl };
+    setMockups(updated);
+    setIsUploading(false);
+  };
+
+  const handleRemoveImage = (index: number) => {
+    const updated = mockups.filter((_, idx) => idx !== index)
+      .map((m, idx) => ({ ...m, order: idx + 1 }));
+    setMockups(updated);
+  };
+
+  const handleMoveUp = (index: number) => {
+    if (index === 0) return;
+    const updated = [...mockups];
+    const temp = updated[index];
+    updated[index] = updated[index - 1];
+    updated[index - 1] = temp;
+    
+    const reordered = updated.map((m, idx) => ({ ...m, order: idx + 1 }));
+    setMockups(reordered);
+  };
+
+  const handleMoveDown = (index: number) => {
+    if (index === mockups.length - 1) return;
+    const updated = [...mockups];
+    const temp = updated[index];
+    updated[index] = updated[index + 1];
+    updated[index + 1] = temp;
+    
+    const reordered = updated.map((m, idx) => ({ ...m, order: idx + 1 }));
+    setMockups(reordered);
+  };
+
+  // Drag and Drop ordering handlers
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (index: number) => {
+    if (draggedIndex === null || draggedIndex === index) return;
+    const updated = [...mockups];
+    const draggedItem = updated[draggedIndex];
+    
+    updated.splice(draggedIndex, 1);
+    updated.splice(index, 0, draggedItem);
+    
+    const reordered = updated.map((m, idx) => ({ ...m, order: idx + 1 }));
+    setMockups(reordered);
+    setDraggedIndex(null);
+  };
+
+  const [isDragOver, setIsDragOver] = useState(false);
+  
+  const handleZoneDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+  
+  const handleZoneDragLeave = () => {
+    setIsDragOver(false);
+  };
+  
+  const handleZoneDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesUpload(e.dataTransfer.files);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!namaPemesan.trim()) {
@@ -349,7 +510,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       totalModal,
       profit,
       items,
-      mockupUrl
+      mockupUrl: mockups[0]?.url || '',
+      mockups
     };
 
     onSave(payload);
@@ -753,77 +915,202 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
 
         {/* Step 3.5: Mockup Desain Pesanan */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/80 p-5 shadow-sm space-y-4">
-          <h3 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2 border-b border-slate-50 dark:border-slate-700 pb-2">
-            <ImageIcon className="h-4 w-4 text-indigo-500" />
-            Mockup Desain / Gambar Pesanan (Opsional)
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-50 dark:border-slate-700 pb-2">
+            <h3 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <ImageIcon className="h-4 w-4 text-indigo-500" />
+              Mockup Desain / Gambar Pesanan (Opsional)
+            </h3>
+            <span className="text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-805 text-slate-505">
+              {mockups.length} / 10 Gambar
+            </span>
+          </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Unggah gambar desain mockup jersey PO ini untuk dilampirkan langsung di dalam nota transaksi.
+            Unggah hingga 10 gambar desain mockup jersey PO ini (Tampak Depan, Belakang, Lengan, dll). Tarik & lepas (drag & drop) gambar untuk menyusun urutan yang akan otomatis tampil pada Nota PDF.
           </p>
 
-          <div className="flex flex-col md:flex-row gap-6 items-center">
-            {/* Upload Area */}
-            <div className="w-full md:flex-1">
-              <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 rounded-2xl cursor-pointer transition group">
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Upload className="h-8 w-8 text-slate-400 group-hover:text-indigo-500 transition mb-2" />
-                  <p className="text-xs font-bold text-slate-700 dark:text-slate-350">
-                    Klik atau seret gambar ke sini
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Format PNG, JPG, JPEG (Max. 5MB)
-                  </p>
-                </div>
+          <div className="space-y-4">
+            {/* Upload Area Supporting Drag & Drop and Click */}
+            <div 
+              onDragOver={handleZoneDragOver} 
+              onDragLeave={handleZoneDragLeave}
+              onDrop={handleZoneDrop}
+              className={`w-full relative transition duration-150 rounded-2xl p-6 ${
+                isDragOver 
+                  ? 'border-2 border-dashed border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20' 
+                  : 'border-2 border-dashed border-slate-205 dark:border-slate-750 hover:border-indigo-505 hover:bg-slate-50/50 dark:hover:bg-slate-900/10'
+              }`}
+            >
+              <label className="flex flex-col items-center justify-center cursor-pointer w-full h-full min-h-[110px] text-center select-none">
+                {isUploading ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
+                    <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Sedang memproses dan mengunggah ke Cloud...</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center">
+                    <Upload className="h-8 w-8 text-slate-400 group-hover:text-indigo-500 transition mb-2" />
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-350">
+                      Seret banyak gambar ke sini, atau <span className="text-indigo-600 dark:text-indigo-400 underline">klik untuk memilih</span>
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Mendukung PNG, JPG, JPEG, WEBP (Max. 10 MB per berkas)
+                    </p>
+                  </div>
+                )}
                 <input 
                   type="file" 
-                  accept="image/*" 
+                  multiple
+                  accept="image/png, image/jpeg, image/jpg, image/webp" 
                   className="hidden" 
+                  disabled={isUploading}
                   onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      if (file.size > 5 * 1024 * 1024) {
-                        alert("Ukuran gambar maksimal adalah 5MB");
-                        return;
-                      }
-                      const reader = new FileReader();
-                      reader.onload = (event) => {
-                        if (event.target?.result) {
-                          setMockupUrl(event.target.result as string);
-                        }
-                      };
-                      reader.readAsDataURL(file);
+                    const files = e.target.files;
+                    if (files && files.length > 0) {
+                      handleFilesUpload(files);
                     }
                   }}
                 />
               </label>
             </div>
 
-            {/* Preview Section */}
-            {mockupUrl ? (
-              <div className="relative w-full max-w-[200px] h-36 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-center p-2 group overflow-hidden">
-                <img 
-                  src={mockupUrl} 
-                  alt="Mockup Preview" 
-                  className="max-h-full max-w-full object-contain rounded-lg shadow-2xs"
-                  referrerPolicy="no-referrer"
-                />
-                <button
-                  type="button"
-                  onClick={() => setMockupUrl('')}
-                  className="absolute top-2 right-2 p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full shadow-md opacity-90 hover:opacity-100 transition duration-150"
-                  title="Hapus gambar mockup"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+            {/* Gallery Thumbnail Preview */}
+            {mockups.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {mockups.map((item, index) => {
+                  const isDragged = draggedIndex === index;
+                  return (
+                    <div 
+                      key={index}
+                      draggable
+                      onDragStart={() => handleDragStart(index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDrop={() => handleDrop(index)}
+                      className={`relative bg-slate-50 dark:bg-slate-900 border ${
+                        isDragged ? 'border-indigo-500 bg-indigo-50/10 opacity-60 scale-95' : 'border-slate-200 dark:border-slate-750'
+                      } rounded-2xl p-2.5 flex flex-col items-center gap-2 transition hover:shadow-xs cursor-grab active:cursor-grabbing group`}
+                    >
+                      <span className="absolute top-2 left-2 text-[10px] font-black bg-slate-950 text-white dark:bg-slate-850 rounded-lg px-2 py-0.5">
+                        #{index + 1}
+                      </span>
+                      
+                      <div className="w-full h-24 flex items-center justify-center p-1 bg-white dark:bg-slate-950 rounded-xl overflow-hidden relative border border-slate-100 dark:border-slate-850">
+                        <img 
+                          src={item.url} 
+                          alt={`Mockup #${index + 1}`}
+                          className="max-h-full max-w-full object-contain rounded-lg"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+
+                      {/* Control Panel: Preview, Ganti, Hapus */}
+                      <div className="flex items-center gap-1 mt-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setActivePreviewUrl(item.url)}
+                          className="p-1 px-1.5 bg-indigo-50 dark:bg-indigo-950 hover:bg-indigo-150 text-indigo-600 dark:text-indigo-405 rounded-lg transition text-[10px] font-bold flex items-center gap-0.5"
+                          title="Pratinjau Gambar"
+                        >
+                          <Eye className="h-3 w-3" />
+                          <span>👁 Preview</span>
+                        </button>
+
+                        <label 
+                          className="p-1 px-1.5 bg-amber-50 dark:bg-amber-950 hover:bg-amber-150 text-amber-650 dark:text-amber-400 rounded-lg transition text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
+                          title="Ganti berkas ini"
+                        >
+                          <Edit2 className="h-3 w-3" />
+                          <span>✏ Ganti</span>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            className="hidden" 
+                            disabled={isUploading}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleReplaceFile(index, file);
+                            }}
+                          />
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveImage(index)}
+                          className="p-1 px-1.5 bg-rose-50 dark:bg-rose-950 hover:bg-rose-150 text-rose-600 dark:text-rose-400 rounded-lg transition text-[10px] font-bold flex items-center gap-0.5"
+                          title="Hapus gambar"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+
+                      {/* Move Order buttons */}
+                      <div className="flex items-center justify-between w-full mt-1 border-t border-slate-100 dark:border-slate-800 pt-2">
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            onClick={() => handleMoveUp(index)}
+                            className="p-1 bg-slate-200/60 hover:bg-slate-205 dark:bg-slate-800/80 disabled:opacity-20 rounded-md transition"
+                            title="Geser Kiri / Naik"
+                          >
+                            <ArrowUp className="h-3 w-3 text-slate-600 dark:text-slate-400" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={index === mockups.length - 1}
+                            onClick={() => handleMoveDown(index)}
+                            className="p-1 bg-slate-200/60 hover:bg-slate-205 dark:bg-slate-800/80 disabled:opacity-20 rounded-md transition"
+                            title="Geser Kanan / Turun"
+                          >
+                            <ArrowDown className="h-3 w-3 text-slate-600 dark:text-slate-400" />
+                          </button>
+                        </div>
+                        <span className="text-[9.5px] text-slate-450 dark:text-slate-500 font-bold select-none cursor-move flex items-center gap-0.5" title="Tarik kartu untuk mengurutkan">
+                          <Move className="h-2.5 w-2.5" />
+                          Geser Urutan
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              <div className="w-full max-w-[200px] h-36 border border-dashed border-slate-200 dark:border-slate-750 rounded-2xl flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-900/20 text-xs">
+              <div className="w-full h-28 border border-dashed border-slate-200 dark:border-slate-750 rounded-2xl flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-900/20 text-xs select-none">
                 <ImageIcon className="h-6 w-6 mb-1 opacity-60" />
-                <span>Belum ada mockup</span>
+                <span>Belum ada gambar mockup desain</span>
               </div>
             )}
           </div>
         </div>
+
+        {/* Preview Lightbox Modal */}
+        {activePreviewUrl && (
+          <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-xs animate-fade-in no-print">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-4 shadow-2xl relative flex flex-col items-center gap-4 animate-scale-in">
+              <button 
+                type="button" 
+                onClick={() => setActivePreviewUrl(null)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white p-2 hover:bg-slate-800 rounded-xl transition cursor-pointer"
+              >
+                <X className="h-6 w-6" />
+              </button>
+              <div className="w-full max-h-[70vh] flex items-center justify-center bg-slate-950 rounded-2xl overflow-hidden p-2">
+                <img 
+                  src={activePreviewUrl} 
+                  alt="Full Mockup Preview" 
+                  className="max-h-full max-w-full object-contain rounded-lg"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setActivePreviewUrl(null)}
+                className="px-5 py-2.5 bg-slate-850 hover:bg-slate-800 text-slate-300 font-extrabold rounded-xl text-xs uppercase"
+              >
+                Tutup Pratinjau
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Step 4: Production Status */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/80 p-5 shadow-sm space-y-4">

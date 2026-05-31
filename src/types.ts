@@ -44,6 +44,7 @@ export interface Pesanan {
   items?: PesananItem[];
 
   mockupUrl?: string; // Base64 string of the jersey mockup
+  mockups?: Array<{ url: string; order: number }>;
 }
 
 export interface CashFlowTransaction {
