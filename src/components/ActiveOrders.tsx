@@ -572,16 +572,6 @@ export default function ActiveOrders({
                      {/* Lower row on desktop: Cetak buttons & Action helpers */}
                     <div className="flex items-center gap-2 shrink-0 max-w-full lg:justify-end lg:w-full">
                       
-                      {/* Preview Nota button */}
-                      <button
-                        type="button"
-                        onClick={() => onGenerateNota(item)}
-                        title="Preview susunan gambar dan tampilan nota"
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-extrabold text-slate-705 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-755 border border-slate-205 dark:border-slate-700 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
-                      >
-                        <span>📄 Preview Nota</span>
-                      </button>
-
                       {/* Cetak Nota button replacement for Preview */}
                       <button
                         type="button"

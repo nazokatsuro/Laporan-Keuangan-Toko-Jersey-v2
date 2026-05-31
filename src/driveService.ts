@@ -12,28 +12,12 @@ import {
   User,
   signOut
 } from 'firebase/auth';
-import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 import { Pesanan, ShopSettings } from './types';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const storage = getStorage(app);
-
-export const uploadMockupToFirebaseStorage = async (base64Data: string, fileName: string): Promise<string> => {
-  try {
-    // Generate simple safe filename
-    const safeName = fileName.replace(/[^a-zA-Z0-9.]/g, '_');
-    const uniqueName = `mockups/${Date.now()}_${safeName}`;
-    const storageRef = ref(storage, uniqueName);
-    await uploadString(storageRef, base64Data, 'data_url');
-    return await getDownloadURL(storageRef);
-  } catch (err) {
-    console.error('Firebase Storage Upload Failed, using base64 fallback:', err);
-    throw err;
-  }
-};
 
 const provider = new GoogleAuthProvider();
 // Request Workspace scope for access to full drive or drive.file

@@ -138,10 +138,7 @@ function normalizePesananList(list: any[]): Pesanan[] {
       totalModal,
       profit,
       items,
-      mockupUrl: item.mockupUrl || '',
-      mockups: item.mockups && Array.isArray(item.mockups)
-        ? item.mockups
-        : (item.mockupUrl ? [{ url: item.mockupUrl, order: 1 }] : [])
+      mockupUrl: item.mockupUrl || ''
     };
   });
 }

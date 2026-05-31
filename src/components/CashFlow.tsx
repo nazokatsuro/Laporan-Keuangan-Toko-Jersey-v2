@@ -71,48 +71,16 @@ export default function CashFlow({ pesananList, settings, onUpdateSettings }: Ca
     pesananList.forEach(po => {
       const dateStr = po.createdAt ? po.createdAt.substring(0, 10) : new Date().toISOString().substring(0, 10);
       
-      // A. DP (Uang Masuk) / Pelunasan
+      // A. DP (Uang Masuk)
       if (po.uangMasuk > 0) {
-        const isLunas = po.sisaTagihan <= 0;
-        
-        if (isLunas) {
-          // If the order is fully paid, let's represent the payment split: 
-          // 50% as DP Pelanggan and 50% as Pelunasan Pelanggan, representing the stages.
-          const dpPart = Math.round(po.totalHarga * 0.5);
-          const pelunasanPart = po.totalHarga - dpPart;
-          
-          if (dpPart > 0) {
-            list.push({
-              id: `AUTO-DP-${po.id}`,
-              tanggal: dateStr,
-              kategori: 'DP pelanggan',
-              keterangan: `DP PO ${po.namaPo} (${po.namaPemesan})`,
-              jenis: 'masuk',
-              nominal: dpPart
-            });
-          }
-          
-          if (pelunasanPart > 0) {
-            list.push({
-              id: `AUTO-LUNAS-${po.id}`,
-              tanggal: dateStr,
-              kategori: 'Pelunasan pelanggan',
-              keterangan: `Pembayaran Lunas PO ${po.namaPo} (${po.namaPemesan})`,
-              jenis: 'masuk',
-              nominal: pelunasanPart
-            });
-          }
-        } else {
-          // If there is still a remaining debt, the entire payment is categorized as DP pelanggan.
-          list.push({
-            id: `AUTO-DP-${po.id}`,
-            tanggal: dateStr,
-            kategori: 'DP pelanggan',
-            keterangan: `DP PO ${po.namaPo} (${po.namaPemesan})`,
-            jenis: 'masuk',
-            nominal: po.uangMasuk
-          });
-        }
+        list.push({
+          id: `AUTO-DP-${po.id}`,
+          tanggal: dateStr,
+          kategori: 'DP pelanggan',
+          keterangan: `DP PO ${po.namaPo} (${po.namaPemesan})`,
+          jenis: 'masuk',
+          nominal: po.uangMasuk
+        });
       }
     });
 
