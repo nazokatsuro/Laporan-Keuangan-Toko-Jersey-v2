@@ -36,14 +36,85 @@ interface CashFlowProps {
   pesananList: Pesanan[];
   settings: ShopSettings;
   onUpdateSettings: (updates: Partial<ShopSettings>) => void;
+  selectedMonth?: string;
+  setSelectedMonth?: (month: string) => void;
+  selectedYear?: string;
+  setSelectedYear?: (year: string) => void;
 }
 
 type FilterType = 'Harian' | 'Mingguan' | 'Bulanan' | 'Tahunan';
 
-export default function CashFlow({ pesananList, settings, onUpdateSettings }: CashFlowProps) {
+export default function CashFlow({ 
+  pesananList, 
+  settings, 
+  onUpdateSettings,
+  selectedMonth,
+  setSelectedMonth,
+  selectedYear,
+  setSelectedYear
+}: CashFlowProps) {
   const [filterType, setFilterType] = useState<FilterType>('Bulanan');
   const [showAddForm, setShowAddForm] = useState(false);
   
+  // Local fallback states if not passed as props
+  const [localMonth, setLocalMonth] = useState<string>(() => {
+    return localStorage.getItem('laporan_jersey_filter_month') || String(new Date().getMonth() + 1).padStart(2, '0');
+  });
+  const [localYear, setLocalYear] = useState<string>(() => {
+    return localStorage.getItem('laporan_jersey_filter_year') || String(new Date().getFullYear());
+  });
+
+  const activeMonth = selectedMonth !== undefined ? selectedMonth : localMonth;
+  const activeYear = selectedYear !== undefined ? selectedYear : localYear;
+
+  const handleMonthChange = (month: string) => {
+    if (setSelectedMonth) {
+      setSelectedMonth(month);
+    } else {
+      setLocalMonth(month);
+    }
+    localStorage.setItem('laporan_jersey_filter_month', month);
+  };
+
+  const handleYearChange = (year: string) => {
+    if (setSelectedYear) {
+      setSelectedYear(year);
+    } else {
+      setLocalYear(year);
+    }
+    localStorage.setItem('laporan_jersey_filter_year', year);
+  };
+
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    const currentYear = new Date().getFullYear();
+    for (let yr = 2020; yr <= currentYear + 5; yr++) {
+      years.add(String(yr));
+    }
+    pesananList.forEach(item => {
+      const dtStr = item.createdAt || new Date().toISOString();
+      const yr = dtStr.substring(0, 4);
+      if (yr) years.add(yr);
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [pesananList]);
+
+  const MONTHS_LIST = useMemo(() => [
+    { value: 'Semua', name: 'Semua Bulan' },
+    { value: '01', name: 'Januari' },
+    { value: '02', name: 'Februari' },
+    { value: '03', name: 'Maret' },
+    { value: '04', name: 'April' },
+    { value: '05', name: 'Mei' },
+    { value: '06', name: 'Juni' },
+    { value: '07', name: 'Juli' },
+    { value: '08', name: 'Agustus' },
+    { value: '09', name: 'September' },
+    { value: '10', name: 'Oktober' },
+    { value: '11', name: 'November' },
+    { value: '12', name: 'Desember' }
+  ], []);
+
   // Form States
   const [tanggal, setTanggal] = useState(new Date().toISOString().substring(0, 10));
   const [jenis, setJenis] = useState<'masuk' | 'keluar'>('masuk');
@@ -103,27 +174,34 @@ export default function CashFlow({ pesananList, settings, onUpdateSettings }: Ca
   // Compute stats and run ledger after filtering
   const filteredTransactions = useMemo(() => {
     const today = new Date();
+    const todayYear = today.getFullYear();
+    const todayMonth = today.getMonth() + 1;
+    const todayDay = today.getDate();
     
     return allTransactions.filter(t => {
-      const transDate = new Date(t.tanggal);
+      const parts = t.tanggal.split('-');
+      if (parts.length !== 3) return false;
+      const transYear = parseInt(parts[0], 10);
+      const transMonth = parseInt(parts[1], 10);
+      const transDay = parseInt(parts[2], 10);
       
       if (filterType === 'Harian') {
-        // Today
-        return transDate.toDateString() === today.toDateString();
+        return transYear === todayYear && transMonth === todayMonth && transDay === todayDay;
       } else if (filterType === 'Mingguan') {
-        // Within last 7 days
-        const diffDays = (today.getTime() - transDate.getTime()) / (1000 * 3600 * 24);
+        const tDate = new Date(transYear, transMonth - 1, transDay);
+        const currentDate = new Date(todayYear, todayMonth - 1, todayDay);
+        const diffDays = (currentDate.getTime() - tDate.getTime()) / (1000 * 3600 * 24);
         return diffDays >= 0 && diffDays <= 7;
       } else if (filterType === 'Bulanan') {
-        // Current month & year
-        return transDate.getMonth() === today.getMonth() && transDate.getFullYear() === today.getFullYear();
+        const yearMatches = transYear === parseInt(activeYear, 10);
+        const monthMatches = activeMonth === 'Semua' || transMonth === parseInt(activeMonth, 10);
+        return yearMatches && monthMatches;
       } else if (filterType === 'Tahunan') {
-        // Current year
-        return transDate.getFullYear() === today.getFullYear();
+        return transYear === parseInt(activeYear, 10);
       }
       return true;
     });
-  }, [allTransactions, filterType]);
+  }, [allTransactions, filterType, activeMonth, activeYear]);
 
   // Calculate Running Balance for the filtered ledger
   const transactionsWithBalance = useMemo(() => {
@@ -279,6 +357,35 @@ export default function CashFlow({ pesananList, settings, onUpdateSettings }: Ca
               </button>
             ))}
           </div>
+
+          {/* Month & Year Selectors, shown only when relevant */}
+          {filterType === 'Bulanan' && (
+            <select
+              value={activeMonth}
+              onChange={(e) => handleMonthChange(e.target.value)}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200/50 dark:border-slate-800 bg-slate-105 dark:bg-slate-900 text-slate-700 dark:text-slate-300 focus:outline-hidden cursor-pointer"
+            >
+              {MONTHS_LIST.map((m) => (
+                <option key={m.value} value={m.value} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {(filterType === 'Bulanan' || filterType === 'Tahunan') && (
+            <select
+              value={activeYear}
+              onChange={(e) => handleYearChange(e.target.value)}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200/50 dark:border-slate-800 bg-slate-105 dark:bg-slate-900 text-slate-700 dark:text-slate-300 focus:outline-hidden cursor-pointer"
+            >
+              {availableYears.map((y) => (
+                <option key={y} value={y} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                  {y}
+                </option>
+              ))}
+            </select>
+          )}
 
           <button
             onClick={() => {
@@ -461,7 +568,7 @@ export default function CashFlow({ pesananList, settings, onUpdateSettings }: Ca
       <div className="bg-white dark:bg-slate-805 p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-slate-750/70 shadow-3xs">
         <div className="flex items-center justify-between border-b border-slate-105 dark:border-slate-700/60 pb-4 mb-4">
           <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-400 select-none">
-            Grafik Fluktuasi Arus Kas ({filterType})
+            Grafik Fluktuasi Arus Kas ({filterType === 'Bulanan' ? `${MONTHS_LIST.find(m => m.value === activeMonth)?.name || ''} ${activeYear}` : filterType === 'Tahunan' ? activeYear : filterType})
           </h3>
           <span className="text-[10px] font-semibold text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full">
             Tervisualisasi Real-time

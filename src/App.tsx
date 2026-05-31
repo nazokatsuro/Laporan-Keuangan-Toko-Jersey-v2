@@ -1199,6 +1199,10 @@ export default function App() {
                   pesananList={pesananList}
                   settings={settings}
                   onUpdateSettings={handleUpdateSettings}
+                  selectedMonth={selectedMonth}
+                  setSelectedMonth={setSelectedMonth}
+                  selectedYear={selectedYear}
+                  setSelectedYear={setSelectedYear}
                 />
               )}
 
