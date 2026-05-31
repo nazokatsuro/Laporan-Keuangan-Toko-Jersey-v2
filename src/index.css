@@ -1,1 +1,43 @@
 @import "tailwindcss";
+
+@theme {
+  /* Colors mapping helper for invalid template color typos */
+  --color-slate-105: var(--color-slate-100);
+  --color-slate-201: var(--color-slate-200);
+  --color-slate-205: var(--color-slate-200);
+  --color-slate-250: var(--color-slate-200);
+  --color-slate-350: var(--color-slate-300);
+  --color-slate-450: var(--color-slate-400);
+  --color-slate-455: var(--color-slate-400);
+  --color-slate-505: var(--color-slate-500);
+  --color-slate-550: var(--color-slate-500);
+  --color-slate-650: var(--color-slate-600);
+  --color-slate-750: var(--color-slate-700);
+  --color-slate-755: var(--color-slate-700);
+  --color-slate-805: var(--color-slate-800);
+  --color-slate-850: var(--color-slate-800);
+
+  --color-indigo-650: var(--color-indigo-600);
+  --color-indigo-550: var(--color-indigo-500);
+  --color-indigo-505: var(--color-indigo-400);
+  --color-indigo-554: var(--color-indigo-500);
+
+  --color-emerald-650: var(--color-emerald-600);
+  --color-emerald-550: var(--color-emerald-500);
+  --color-emerald-505: var(--color-emerald-400);
+  --color-emerald-440: var(--color-emerald-400);
+
+  --color-sky-505: var(--color-sky-400);
+  --color-sky-650: var(--color-sky-600);
+
+  --color-amber-650: var(--color-amber-600);
+  --color-amber-550: var(--color-amber-500);
+  --color-amber-655: var(--color-amber-600);
+  --color-amber-450: var(--color-amber-400);
+
+  /* Spacing mapping helpers for invalid custom tailwind spacings in spacing */
+  --spacing-4.5: 1.125rem;
+
+  /* Shadow mapping helpers */
+  --shadow-3xs: 0 1px 1px rgba(0,0,0,0.01);
+}

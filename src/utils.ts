@@ -19,14 +19,111 @@ export function generateId(): string {
   return 'ORD-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 }
 
-export const DEFAULT_SETTINGS: ShopSettings = {
-  namaToko: 'Jersey Tech Indonesia',
-  logoUrl: '', // Will default to a beautiful vector logo if blank
-  darkMode: true
-};
+export function calculateCashFlowAkhir(pesananList: Pesanan[], manualList: ShopSettings['cashFlowList']): number {
+  let saldo = 0;
+  
+  // Automated DPs
+  pesananList.forEach(po => {
+    if (po.uangMasuk > 0) saldo += po.uangMasuk;
+  });
+
+  // Manual Transactions
+  if (manualList) {
+    manualList.forEach(tx => {
+      if (tx.jenis === 'masuk') saldo += tx.nominal;
+      else saldo -= tx.nominal;
+    });
+  }
+
+  return saldo;
+}
 
 const curYear = new Date().getFullYear();
 const curMonth = String(new Date().getMonth() + 1).padStart(2, '0');
+
+export const DEFAULT_SETTINGS: ShopSettings = {
+  namaToko: 'Jersey Tech Indonesia',
+  logoUrl: '', // Will default to a beautiful vector logo if blank
+  darkMode: true,
+  targetOmset: 20000000,
+  targetProduksi: 500,
+  danaDaruratTerkumpul: 12500000,
+  danaDaruratTargetMonths: 3,
+  cashFlowList: [
+    {
+      id: 'CF-001',
+      tanggal: `${curYear}-${curMonth}-01`,
+      kategori: 'Pelunasan pelanggan',
+      keterangan: 'Lunas PO Esport Legend',
+      jenis: 'masuk',
+      nominal: 2160000
+    },
+    {
+      id: 'CF-002',
+      tanggal: `${curYear}-${curMonth}-05`,
+      kategori: 'DP pelanggan',
+      keterangan: 'DP PO Garuda Jaya',
+      jenis: 'masuk',
+      nominal: 1500000
+    },
+    {
+      id: 'CF-003',
+      tanggal: `${curYear}-${curMonth}-06`,
+      kategori: 'Sublim',
+      keterangan: 'Biaya cetak sublim Garuda',
+      jenis: 'keluar',
+      nominal: 840000
+    },
+    {
+      id: 'CF-004',
+      tanggal: `${curYear}-${curMonth}-07`,
+      kategori: 'Jahit',
+      keterangan: 'Ongkos jahit Garuda',
+      jenis: 'keluar',
+      nominal: 480000
+    },
+    {
+      id: 'CF-005',
+      tanggal: `${curYear}-${curMonth}-10`,
+      kategori: 'Pelunasan pelanggan',
+      keterangan: 'Lunas PO Srikandi FC',
+      jenis: 'masuk',
+      nominal: 2025000
+    },
+    {
+      id: 'CF-006',
+      tanggal: `${curYear}-${curMonth}-11`,
+      kategori: 'Jahit',
+      keterangan: 'Ongkos jahit Srikandi VC',
+      jenis: 'keluar',
+      nominal: 270000
+    },
+    {
+      id: 'CF-007',
+      tanggal: `${curYear}-${curMonth}-12`,
+      kategori: 'Pendapatan lain',
+      keterangan: 'Penjualan sisa bahan poliester',
+      jenis: 'masuk',
+      nominal: 350000
+    },
+    {
+      id: 'CF-008',
+      tanggal: `${curYear}-${curMonth}-14`,
+      kategori: 'Pembelian bahan',
+      keterangan: 'Beli bahan Milano & Jarum',
+      jenis: 'keluar',
+      nominal: 1200000
+    },
+    {
+      id: 'CF-009',
+      tanggal: `${curYear}-${curMonth}-15`,
+      kategori: 'Operasional',
+      keterangan: 'Biaya listrik workshop',
+      jenis: 'keluar',
+      nominal: 350000
+    }
+  ]
+};
 
 export const DEFAULT_ORDERS: Pesanan[] = [
   {

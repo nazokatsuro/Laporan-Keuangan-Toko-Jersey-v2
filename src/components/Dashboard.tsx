@@ -16,8 +16,12 @@ import {
   Clock, 
   CheckCircle2,
   Calendar,
-  Layers
+  Layers,
+  ShieldCheck,
+  MessageSquare,
+  Send
 } from 'lucide-react';
+import { ShopSettings } from '../types';
 import { 
   AreaChart, 
   Area, 
@@ -43,6 +47,8 @@ interface DashboardProps {
   setSelectedMonth: (month: string) => void;
   selectedYear: string;
   setSelectedYear: (year: string) => void;
+  settings: ShopSettings;
+  onUpdateSettings: (updates: Partial<ShopSettings>) => void;
 }
 
 export default function Dashboard({ 
@@ -52,8 +58,48 @@ export default function Dashboard({
   selectedMonth,
   setSelectedMonth,
   selectedYear,
-  setSelectedYear
+  setSelectedYear,
+  settings,
+  onUpdateSettings
 }: DashboardProps) {
+  // Config states for targets editing on Dashboard
+  const [isEditingOmset, setIsEditingOmset] = useState(false);
+  const [tempOmset, setTempOmset] = useState(settings.targetOmset || 100000000);
+  const [isEditingProduksi, setIsEditingProduksi] = useState(false);
+  const [tempProduksi, setTempProduksi] = useState(settings.targetProduksi || 1000);
+
+  // Compute average monthly operational outflows (historical)
+  const averageMonthlyExpenseGlobal = useMemo(() => {
+    const monthlyExpensesMap: Record<string, number> = {};
+
+    pesananList.forEach(po => {
+      const dateStr = po.createdAt ? po.createdAt.substring(0, 7) : new Date().toISOString().substring(0, 7);
+      const sublimCost = po.qty * (po.printPerPcs || 0);
+      const jahitCost = po.qty * (po.jahitPerPcs || 0);
+      const otherCost = po.biayaLainnya || 0;
+      const totalPoExpense = sublimCost + jahitCost + otherCost;
+      if (totalPoExpense > 0) {
+        monthlyExpensesMap[dateStr] = (monthlyExpensesMap[dateStr] || 0) + totalPoExpense;
+      }
+    });
+
+    const manualList = settings.cashFlowList || [];
+    manualList.forEach(tx => {
+      if (tx.jenis === 'keluar') {
+        const dateStr = tx.tanggal.substring(0, 7);
+        monthlyExpensesMap[dateStr] = (monthlyExpensesMap[dateStr] || 0) + tx.nominal;
+      }
+    });
+
+    const months = Object.keys(monthlyExpensesMap);
+    const totalOutflow = Object.values(monthlyExpensesMap).reduce((sum, curr) => sum + curr, 0);
+
+    if (months.length === 0) {
+      return 6500000;
+    }
+    return totalOutflow / months.length;
+  }, [pesananList, settings.cashFlowList]);
+
   // Derive unique years from actual transaction history
   const availableYears = useMemo(() => {
     const years = new Set<string>();
@@ -63,7 +109,8 @@ export default function Dashboard({
       years.add(String(yr));
     }
     pesananList.forEach(item => {
-      const yr = item.createdAt.substring(0, 4);
+      const dtStr = item.createdAt || new Date().toISOString();
+      const yr = dtStr.substring(0, 4);
       if (yr) years.add(yr);
     });
     return Array.from(years).sort((a, b) => b.localeCompare(a));
@@ -104,8 +151,9 @@ export default function Dashboard({
     let filteredOrdersCount = 0;
 
     pesananList.forEach(item => {
-      const itemYear = item.createdAt.substring(0, 4);
-      const itemMonth = item.createdAt.substring(5, 7); // "MM"
+      const dtStr = item.createdAt || new Date().toISOString();
+      const itemYear = dtStr.substring(0, 4);
+      const itemMonth = dtStr.substring(5, 7); // "MM"
       
       const yearMatches = selectedYear === 'Semua' || itemYear === selectedYear;
       const monthMatches = selectedMonth === 'Semua' || itemMonth === selectedMonth;
@@ -148,8 +196,9 @@ export default function Dashboard({
     };
 
     pesananList.forEach(item => {
-      const itemYear = item.createdAt.substring(0, 4);
-      const itemMonth = item.createdAt.substring(5, 7);
+      const dtStr = item.createdAt || new Date().toISOString();
+      const itemYear = dtStr.substring(0, 4);
+      const itemMonth = dtStr.substring(5, 7);
       
       const yearMatches = selectedYear === 'Semua' || itemYear === selectedYear;
       const monthMatches = selectedMonth === 'Semua' || itemMonth === selectedMonth;
@@ -185,7 +234,8 @@ export default function Dashboard({
     }
 
     pesananList.forEach(item => {
-      const mKey = item.createdAt.substring(0, 7);
+      const dtStr = item.createdAt || new Date().toISOString();
+      const mKey = dtStr.substring(0, 7);
       if (!monthlyGroups[mKey]) {
         monthlyGroups[mKey] = { omset: 0, modal: 0, profit: 0 };
       }
@@ -215,8 +265,9 @@ export default function Dashboard({
     const today = new Date();
 
     pesananList.forEach(item => {
-      const itemYear = item.createdAt.substring(0, 4);
-      const itemMonth = item.createdAt.substring(5, 7);
+      const dtStr = item.createdAt || new Date().toISOString();
+      const itemYear = dtStr.substring(0, 4);
+      const itemMonth = dtStr.substring(5, 7);
       
       const yearMatches = selectedYear === 'Semua' || itemYear === selectedYear;
       const monthMatches = selectedMonth === 'Semua' || itemMonth === selectedMonth;
@@ -401,6 +452,171 @@ export default function Dashboard({
             <p className="text-amber-100 text-xs mt-1">Akumulasi {stats.totalPesanan} Pesanan</p>
           </div>
         </div>
+      </div>
+
+      {/* KPI TARGETS & EMERGENCY FUNDS (FITUR 1, 3, 4) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 no-print">
+        
+        {/* Widget 1: Target Omset Bulanan */}
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
+          <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-700/60 pb-3 mb-3">
+            <div>
+              <h4 className="font-extrabold text-xs uppercase text-slate-400 tracking-wider">Target Omset Bulanan</h4>
+              <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Periode {selectedMonthName}</p>
+            </div>
+            <span className="p-2 bg-indigo-500/10 text-indigo-505 dark:text-indigo-400 rounded-lg">
+              <TrendingUp className="h-4 w-4" />
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex justify-between text-slate-500 dark:text-slate-400 font-bold text-[11px]">
+              <span>Capaian: <b className="text-slate-800 dark:text-white font-extrabold">{formatRupiah(stats.omsetBulanIni)}</b></span>
+              <span>Target: <b className="text-slate-800 dark:text-white font-extrabold">{formatRupiah(settings.targetOmset || 100000000)}</b></span>
+            </div>
+
+            {/* Progress bar */}
+            <div className="space-y-1">
+              <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-900 rounded-full p-[2px] overflow-hidden border border-slate-205/40 dark:border-slate-850">
+                <div 
+                  className="h-full rounded-full bg-indigo-600 transition-all duration-700"
+                  style={{ width: `${Math.min(100, Math.round((stats.omsetBulanIni / (settings.targetOmset || 100000000)) * 100))}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] font-black uppercase text-slate-450 tracking-wider">
+                <span>{Math.min(100, Math.round((stats.omsetBulanIni / (settings.targetOmset || 100000000)) * 100))}% Tercapai</span>
+                {Math.max(0, (settings.targetOmset || 100000000) - stats.omsetBulanIni) > 0 ? (
+                  <span className="text-rose-500 font-bold">Sisa: -{formatRupiah((settings.targetOmset || 100000000) - stats.omsetBulanIni)}</span>
+                ) : (
+                  <span className="text-emerald-500 font-black">Target Terlampaui! 🎉</span>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-50 dark:border-slate-700/60 flex items-center justify-between">
+              {isEditingOmset ? (
+                <div className="flex items-center gap-1 w-full" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="number"
+                    className="px-2 py-1 text-2xs font-extrabold border border-indigo-500 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white rounded-md w-full focus:outline-hidden"
+                    placeholder="Contoh: 100000000"
+                    value={tempOmset}
+                    onChange={(e) => setTempOmset(Number(e.target.value))}
+                  />
+                  <button
+                    onClick={() => {
+                      onUpdateSettings({ targetOmset: Math.max(0, tempOmset) });
+                      setIsEditingOmset(false);
+                    }}
+                    className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-2xs rounded-lg cursor-pointer"
+                  >
+                    Simpan
+                  </button>
+                  <button
+                    onClick={() => setIsEditingOmset(false)}
+                    className="px-2 py-1 text-slate-450 font-bold text-2xs hover:underline"
+                  >
+                    Batal
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <span className="text-[10px] text-slate-455 font-bold">Atur target manual:</span>
+                  <button
+                    onClick={() => {
+                      setTempOmset(settings.targetOmset || 100000000);
+                      setIsEditingOmset(true);
+                    }}
+                    className="text-[10.5px] font-black text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    ✎ Ubah Target
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Widget 2: Target Produksi Bulanan */}
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
+          <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-700/60 pb-3 mb-3">
+            <div>
+              <h4 className="font-extrabold text-xs uppercase text-slate-400 tracking-wider">Target Qty Produksi</h4>
+              <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Periode {selectedMonthName}</p>
+            </div>
+            <span className="p-2 bg-amber-500/10 text-amber-500 dark:text-amber-450 rounded-lg">
+              <ShoppingBag className="h-4 w-4" />
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex justify-between text-slate-500 dark:text-slate-400 font-bold text-[11px]">
+              <span>Capaian: <b className="text-slate-800 dark:text-white font-extrabold">{stats.totalProduksi} Pcs</b></span>
+              <span>Target: <b className="text-slate-800 dark:text-white font-extrabold">{settings.targetProduksi || 1000} Pcs</b></span>
+            </div>
+
+            {/* Progress bar */}
+            <div className="space-y-1">
+              <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-900 rounded-full p-[2px] overflow-hidden border border-slate-205/40 dark:border-slate-850">
+                <div 
+                  className="h-full rounded-full bg-amber-500 transition-all duration-700"
+                  style={{ width: `${Math.min(100, Math.round((stats.totalProduksi / (settings.targetProduksi || 1000)) * 100))}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] font-black uppercase text-slate-455 tracking-wider">
+                <span>{Math.min(100, Math.round((stats.totalProduksi / (settings.targetProduksi || 1000)) * 100))}% Tercapai</span>
+                {Math.max(0, (settings.targetProduksi || 1000) - stats.totalProduksi) > 0 ? (
+                  <span className="text-amber-600 dark:text-amber-450 font-bold">Sisa: -{(settings.targetProduksi || 1000) - stats.totalProduksi} Pcs</span>
+                ) : (
+                  <span className="text-emerald-500 font-black">Target Terlampaui! 🎉</span>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-50 dark:border-slate-700/60 flex items-center justify-between">
+              {isEditingProduksi ? (
+                <div className="flex items-center gap-1 w-full" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="number"
+                    className="px-2 py-1 text-2xs font-extrabold border border-amber-500 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white rounded-md w-full focus:outline-hidden"
+                    placeholder="Contoh: 1000"
+                    value={tempProduksi}
+                    onChange={(e) => setTempProduksi(Number(e.target.value))}
+                  />
+                  <button
+                    onClick={() => {
+                      onUpdateSettings({ targetProduksi: Math.max(0, tempProduksi) });
+                      setIsEditingProduksi(false);
+                    }}
+                    className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-2xs rounded-lg cursor-pointer"
+                  >
+                    Simpan
+                  </button>
+                  <button
+                    onClick={() => setIsEditingProduksi(false)}
+                    className="px-2 py-1 text-slate-455 font-bold text-2xs hover:underline"
+                  >
+                    Batal
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <span className="text-[10px] text-slate-455 font-bold">Atur target manual:</span>
+                  <button
+                    onClick={() => {
+                      setTempProduksi(settings.targetProduksi || 1000);
+                      setIsEditingProduksi(true);
+                    }}
+                    className="text-[10.5px] font-black text-amber-655 dark:text-amber-455 hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    ✎ Ubah Target
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
       </div>
 
       {/* Secondary Row Stats */}
@@ -615,9 +831,37 @@ export default function Dashboard({
                       </p>
                     </div>
                   </div>
-                  <div className="mt-3 sm:mt-0 flex items-center justify-end">
-                    <span className="text-xs bg-white dark:bg-slate-900 px-2 py-1 rounded-lg shadow-2xs font-semibold text-slate-700 dark:text-slate-300 group-hover:bg-indigo-50 border border-slate-100 dark:border-slate-800">
-                      Tampilkan Detail &rarr;
+                  <div className="mt-3 sm:mt-0 flex flex-wrap items-center gap-2 justify-end no-print">
+                    {alert.order.noTelepon && (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        {alert.type === 'unpaid' && (
+                          <a
+                            href={`https://wa.me/${alert.order.noTelepon.replace(/[^0-9]/g, '').startsWith('0') ? '62' + alert.order.noTelepon.replace(/[^0-9]/g, '').substring(1) : alert.order.noTelepon.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Halo Kak,\n\nMengingatkan sisa pembayaran PO:\n\n*${alert.order.namaPo}*\n\nSisa Tagihan:\n*${formatRupiah(alert.order.sisaTagihan)}*\n\nTerima kasih.`)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-3 py-1.5 rounded-lg shadow-3xs flex items-center gap-1 cursor-pointer select-none"
+                            title="Kirim WA Tagihan"
+                          >
+                            <MessageSquare className="h-3 w-3 shrink-0" />
+                            <span>Kirim WA Tagihan</span>
+                          </a>
+                        )}
+                        {(alert.type === 'deadline' || alert.type === 'overdue') && (
+                          <a
+                            href={`https://wa.me/${alert.order.noTelepon.replace(/[^0-9]/g, '').startsWith('0') ? '62' + alert.order.noTelepon.replace(/[^0-9]/g, '').substring(1) : alert.order.noTelepon.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Halo Kak,\n\nPesanan *${alert.order.namaPo}* sedang dalam proses produksi.\n\nEstimasi selesai:\n*${alert.order.deadline}*\n\nTerima kasih.`)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] bg-sky-600 hover:bg-sky-700 text-white font-extrabold px-3 py-1.5 rounded-lg shadow-3xs flex items-center gap-1 cursor-pointer select-none"
+                            title="Kirim WA Deadline"
+                          >
+                            <Send className="h-3 w-3 shrink-0" />
+                            <span>Kirim WA Deadline</span>
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    <span className="text-[10px] bg-white dark:bg-slate-900 px-2.5 py-1.5 rounded-lg shadow-3xs font-bold text-slate-700 dark:text-slate-350 hover:bg-indigo-50 dark:hover:bg-slate-800 border border-slate-100 dark:border-slate-800 shrink-0 select-none">
+                      Detail &rarr;
                     </span>
                   </div>
                 </div>

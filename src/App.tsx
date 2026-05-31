@@ -9,7 +9,8 @@ import {
   DEFAULT_ORDERS, 
   DEFAULT_SETTINGS, 
   generateId, 
-  formatRupiah 
+  formatRupiah,
+  calculateCashFlowAkhir 
 } from './utils';
 
 // Import Modular Components
@@ -19,6 +20,9 @@ import OrderForm from './components/OrderForm';
 import FinancialReports from './components/FinancialReports';
 import ReceiptGenerator from './components/ReceiptGenerator';
 import Settings from './components/Settings';
+import CashFlow from './components/CashFlow';
+import ProductionCalendar from './components/ProductionCalendar';
+import BusinessAnalysis from './components/BusinessAnalysis';
 
 // Lucide Icons
 import { 
@@ -41,7 +45,11 @@ import {
   Loader2,
   Lock,
   Shield,
-  Info
+  Info,
+  Wallet,
+  Calendar,
+  BarChart4,
+  ShieldCheck
 } from 'lucide-react';
 
 import { 
@@ -136,11 +144,35 @@ function normalizePesananList(list: any[]): Pesanan[] {
 }
 
 export default function App() {
-  // Always start with a clean workspace first, avoiding local storage cache to prevent local-cloud conflicts
-  const [pesananList, setPesananList] = useState<Pesanan[]>([]);
+  // Always start with loading from local storage if available to preserve transaction history
+  const [pesananList, setPesananList] = useState<Pesanan[]>(() => {
+    try {
+      const localData = localStorage.getItem('laporan_jersey_data');
+      if (localData) {
+        const parsed = JSON.parse(localData);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return normalizePesananList(parsed);
+        }
+      }
+    } catch (e) {
+      console.error("Gagal memuat pesananList dari localStorage:", e);
+    }
+    return [];
+  });
 
-  // Load initial settings state default, forcing dark mode
-  const [settings, setSettings] = useState<ShopSettings>({ ...DEFAULT_SETTINGS, darkMode: true });
+  // Load initial settings state default, forcing dark mode but preserving configurations
+  const [settings, setSettings] = useState<ShopSettings>(() => {
+    try {
+      const localSettings = localStorage.getItem('laporan_jersey_settings');
+      if (localSettings) {
+        const parsed = JSON.parse(localSettings);
+        return { ...DEFAULT_SETTINGS, ...parsed, darkMode: true };
+      }
+    } catch (e) {
+      console.error("Gagal memuat settings dari localStorage:", e);
+    }
+    return { ...DEFAULT_SETTINGS, darkMode: true };
+  });
 
   // Guest Bypass Mode for testing when login popups are blocked inside sandboxed iframes
   const [isGuestBypass, setIsGuestBypass] = useState<boolean>(false);
@@ -387,7 +419,7 @@ export default function App() {
   const warningDetails = useMemo(() => {
     const list: Array<{
       id: string;
-      type: 'unpaid' | 'deadline' | 'overdue';
+      type: 'unpaid' | 'deadline' | 'overdue' | 'vendor';
       title: string;
       message: string;
       severity: 'high' | 'medium';
@@ -395,6 +427,8 @@ export default function App() {
     }> = [];
     const today = new Date();
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const cfList = settings.cashFlowList || [];
 
     pesananList.forEach(item => {
       // 1. Unpaid debt alert
@@ -438,10 +472,41 @@ export default function App() {
           }
         }
       }
+
+      // 3. Vendor Payment Alerts (Sublim & Jahit)
+      const sublimCost = item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
+      if (sublimCost > 0) {
+        const hasPaidSublim = cfList.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`));
+        if (!hasPaidSublim && (item.statusProduksi === 'Print Press' || item.statusProduksi === 'Jahit' || item.statusProduksi === 'Tinggal Kirim' || item.statusProduksi === 'Beres')) {
+           list.push({
+             id: `${item.id}-sublim-unpaid`,
+             type: 'vendor',
+             title: `HPP Belum Dibayar: Sublim/Print ${item.namaPo}`,
+             message: `Segera catat pembayaran HPP untuk Sublim/Print sejumlah ${formatRupiah(sublimCost)} agar Arus Kas sinkron.`,
+             severity: 'medium',
+             order: item
+           });
+        }
+      }
+
+      const jahitCost = item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
+      if (jahitCost > 0) {
+        const hasPaidJahit = cfList.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
+        if (!hasPaidJahit && (item.statusProduksi === 'Jahit' || item.statusProduksi === 'Tinggal Kirim' || item.statusProduksi === 'Beres')) {
+           list.push({
+             id: `${item.id}-jahit-unpaid`,
+             type: 'vendor',
+             title: `HPP Belum Dibayar: Jahit ${item.namaPo}`,
+             message: `Segera catat pembayaran HPP untuk ongkos Jahit sejumlah ${formatRupiah(jahitCost)} agar Arus Kas sinkron.`,
+             severity: 'medium',
+             order: item
+           });
+        }
+      }
     });
 
     return list;
-  }, [pesananList]);
+  }, [pesananList, settings.cashFlowList]);
 
   // Notifications summary list (for badge indicator)
   const notificationsOverview = useMemo(() => {
@@ -469,10 +534,26 @@ export default function App() {
         return [newOrUpdated, ...prev];
       }
     });
-    
+
     // Clear out edit pointers and return back to list
     setPesananToEdit(null);
     setActiveTab('transaksi');
+  };
+
+  const handleLogToCashFlow = (kategori: string, jenis: 'masuk'|'keluar', nominal: number, keterangan: string) => {
+    setSettings(prev => {
+      const newLogs = [...(prev.cashFlowList || [])];
+      newLogs.push({
+        id: generateId(),
+        tanggal: new Date().toISOString().substring(0, 10),
+        kategori,
+        keterangan,
+        jenis,
+        nominal
+      });
+      return { ...prev, cashFlowList: newLogs };
+    });
+    alert(`Berhasil mencatat ${jenis} sejumlah Rp ${nominal.toLocaleString('id-ID')} ke Arus Kas!`);
   };
 
   const handleDeletePesanan = (id: string) => {
@@ -573,13 +654,13 @@ export default function App() {
           <div className="w-full border-t border-slate-800/50 pt-5 pb-5 space-y-3">
             <div className="flex items-start gap-3">
               <div className="h-5 w-5 rounded-full bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 flex items-center justify-center mt-0.5 text-[10px] shrink-0 font-black">1</div>
-              <p className="text-[11px] text-slate-350 leading-relaxed">
+              <p className="text-[11px] text-slate-300 leading-relaxed">
                 Setiap kali membuka halaman atau refresh, Anda akan otomatis logout demi keamanan data keuangan.
               </p>
             </div>
             <div className="flex items-start gap-3">
               <div className="h-5 w-5 rounded-full bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 flex items-center justify-center mt-0.5 text-[10px] shrink-0 font-black">2</div>
-              <p className="text-[11px] text-slate-350 leading-relaxed">
+              <p className="text-[11px] text-slate-300 leading-relaxed">
                 Login wajib dilakukan sehingga draf terbaru dari Google Drive dapat dimuat secara instan dan aman.
               </p>
             </div>
@@ -640,11 +721,13 @@ export default function App() {
               type="button"
               onClick={() => {
                 setIsGuestBypass(true);
-                // Load default orders if they bypass to allow testing out of box
-                setPesananList(DEFAULT_ORDERS);
+                // Only load default orders if there is no pre-existing local data
+                if (pesananList.length === 0) {
+                  setPesananList(DEFAULT_ORDERS);
+                }
                 window.alert('Anda masuk menggunakan Mode Standalone / Lokal. Sinkronisasi pencadangan Google Drive saat ini dalam keadaan tidak aktif. Hubungkan drive Anda nanti melalui tab Pengaturan Toko untuk sinkronisasi otomatis!');
               }}
-              className="w-full flex items-center justify-center gap-2 py-3 px-6 rounded-2xl border border-slate-800 hover:border-slate-750 bg-slate-950/40 hover:bg-slate-950 text-slate-350 hover:text-white transition-all cursor-pointer font-bold text-xs"
+              className="w-full flex items-center justify-center gap-2 py-3 px-6 rounded-2xl border border-slate-800 hover:border-slate-700 bg-slate-950/40 hover:bg-slate-950 text-slate-300 hover:text-white transition-all cursor-pointer font-bold text-xs"
             >
               <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
               <span>Gunakan Mode Standalone / Lokal (Bypass)</span>
@@ -663,8 +746,8 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans select-none text-slate-100">
         {/* Futuristic glowing radial particles */}
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-550/10 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-505/10 blur-[120px]" />
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-500/10 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-500/10 blur-[120px]" />
 
         {/* Outer orbital path simulation */}
         <div className="relative flex flex-col items-center z-10">
@@ -676,7 +759,7 @@ export default function App() {
             <motion.div 
               animate={{ rotate: 360 }}
               transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-              className="absolute inset-0 border-4 border-t-indigo-550 border-r-indigo-400 border-b-transparent border-l-transparent rounded-full"
+              className="absolute inset-0 border-4 border-t-indigo-500 border-r-indigo-400 border-b-transparent border-l-transparent rounded-full"
             />
             
             {/* Pulsing glow inside */}
@@ -751,7 +834,7 @@ export default function App() {
               <img 
                 src={settings.logoUrl} 
                 alt="Logo Toko" 
-                className="h-9 w-9 object-contain rounded-lg border border-slate-105"
+                className="h-9 w-9 object-contain rounded-lg border border-slate-200 dark:border-slate-700"
                 referrerPolicy="no-referrer"
               />
             ) : (
@@ -848,7 +931,7 @@ export default function App() {
         
         {/* Responsive Desktop Left Sidebar Menu */}
         <aside className="w-full md:w-64 shrink-0 no-print hidden md:block">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-750 p-4 shadow-3xs sticky top-24 space-y-6">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-4 shadow-3xs sticky top-24 space-y-6">
             
             <p className="text-[10px] font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase px-3">
               Menu Utama
@@ -934,6 +1017,68 @@ export default function App() {
                 </div>
               </button>
 
+              {/* SECTION: KEUANGAN & ARUS KAS */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-700/40">
+                <p className="text-[9px] font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase px-3.5 mb-1.5">
+                  Pengelolaan Keuangan
+                </p>
+                <div className="space-y-1">
+                  {/* Cash Flow Tab */}
+                  <button
+                    onClick={() => {
+                      setPesananForNota(null);
+                      setActiveTab('cashflow');
+                    }}
+                    className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                      activeTab === 'cashflow' && !pesananForNota
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Wallet className="h-4 w-4 text-emerald-500" />
+                      <span>Arus Kas (Cash Flow)</span>
+                    </div>
+                  </button>
+
+                  {/* Production Calendar Tab */}
+                  <button
+                    onClick={() => {
+                      setPesananForNota(null);
+                      setActiveTab('kalender');
+                    }}
+                    className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                      activeTab === 'kalender' && !pesananForNota
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Calendar className="h-4 w-4 text-indigo-500" />
+                      <span>Kalender Produksi</span>
+                    </div>
+                  </button>
+
+                  {/* Business Analysis Tab */}
+                  <button
+                    onClick={() => {
+                      setPesananForNota(null);
+                      setActiveTab('analisa');
+                    }}
+                    className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                      activeTab === 'analisa' && !pesananForNota
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <BarChart4 className="h-4 w-4 text-pink-500" />
+                      <span>Analisa Bisnis & Produk</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               {/* Configuration panel */}
               <button
                 onClick={() => {
@@ -963,9 +1108,9 @@ export default function App() {
                   <div className="absolute right-[-12px] bottom-[-12px] opacity-10">
                     <DollarSign className="h-14 w-14 text-emerald-400" />
                   </div>
-                  <span className="text-[10px] text-emerald-400 block uppercase leading-none font-black tracking-wider">Uang Terkumpul</span>
+                  <span className="text-[10px] text-emerald-400 block uppercase leading-none font-black tracking-wider">Saldo Akhir</span>
                   <p className="text-base font-black text-white mt-2 leading-none">
-                    {formatRupiah(pesananList.reduce((acc, item) => acc + item.uangMasuk, 0))}
+                    {formatRupiah(calculateCashFlowAkhir(pesananList, settings.cashFlowList))}
                   </p>
                 </div>
               </div>
@@ -997,6 +1142,8 @@ export default function App() {
                   setSelectedMonth={setSelectedMonth}
                   selectedYear={selectedYear}
                   setSelectedYear={setSelectedYear}
+                  settings={settings}
+                  onUpdateSettings={handleUpdateSettings}
                 />
               )}
 
@@ -1026,6 +1173,7 @@ export default function App() {
                     setPesananToEdit(null);
                     setActiveTab('transaksi');
                   }}
+                  onLogToCashFlow={handleLogToCashFlow}
                 />
               )}
 
@@ -1046,6 +1194,29 @@ export default function App() {
                   pesananList={pesananList}
                   onImportData={handleImportData}
                   onResetAll={handleResetAll}
+                />
+              )}
+
+              {activeTab === 'cashflow' && (
+                <CashFlow 
+                  pesananList={pesananList}
+                  settings={settings}
+                  onUpdateSettings={handleUpdateSettings}
+                />
+              )}
+
+              {activeTab === 'kalender' && (
+                <ProductionCalendar 
+                  pesananList={pesananList}
+                  onSelectOrder={(order) => {
+                    setPesananForNota(order);
+                  }}
+                />
+              )}
+
+              {activeTab === 'analisa' && (
+                <BusinessAnalysis 
+                  pesananList={pesananList}
                 />
               )}
             </>
@@ -1264,7 +1435,7 @@ export default function App() {
             {/* Modal Footer Info block */}
             <div className="pt-4 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-400 shrink-0">
               <p>Klik tombol untuk memperbarui status pesanan secepat kilat.</p>
-              <span className="font-bold text-slate-450 uppercase">Workshop App v2.1</span>
+              <span className="font-bold text-slate-400 uppercase">Workshop App v2.1</span>
             </div>
 
           </div>
@@ -1292,7 +1463,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setCustomAlert(null)}
-              className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 active:scale-98 text-white text-xs font-black rounded-xl cursor-pointer shadow-md transition-all uppercase tracking-wider"
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white text-xs font-black rounded-xl cursor-pointer shadow-md transition-all uppercase tracking-wider"
             >
               Mengerti
             </button>

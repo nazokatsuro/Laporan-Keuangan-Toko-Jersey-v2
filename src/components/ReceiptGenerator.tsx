@@ -21,7 +21,9 @@ import {
   FileImage,
   Layers,
   ChevronRight,
-  Instagram
+  Instagram,
+  MessageSquare,
+  Send
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
@@ -381,6 +383,39 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
           </button>
         </div>
       </div>
+
+      {/* WhatsApp Reminders (Single Order only) */}
+      {!isBatch && pesananArray.length > 0 && pesananArray[0].noTelepon && (
+        <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in no-print shadow-4xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-xl shrink-0">📱</span>
+            <div>
+              <strong className="font-extrabold text-xs text-slate-900 dark:text-white">Pengingat WhatsApp Otomatis</strong>
+              <p className="text-[11px] text-slate-500 mt-0.5">Kirim penagihan sisa pembayaran atau estimasi selesainya pengerjaan jersey langsung ke nomor pelanggan.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={`https://wa.me/${pesananArray[0].noTelepon.replace(/[^0-9]/g, '').startsWith('0') ? '62' + pesananArray[0].noTelepon.replace(/[^0-9]/g, '').substring(1) : pesananArray[0].noTelepon.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Halo Kak,\n\nMengingatkan sisa pembayaran PO:\n\n*${pesananArray[0].namaPo}*\n\nSisa Tagihan:\n*${formatRupiah(pesananArray[0].sisaTagihan)}*\n\nTerima kasih.`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-3xs"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span>WA Tagihan</span>
+            </a>
+            <a
+              href={`https://wa.me/${pesananArray[0].noTelepon.replace(/[^0-9]/g, '').startsWith('0') ? '62' + pesananArray[0].noTelepon.replace(/[^0-9]/g, '').substring(1) : pesananArray[0].noTelepon.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Halo Kak,\n\nPesanan *${pesananArray[0].namaPo}* sedang dalam proses produksi.\n\nEstimasi selesai:\n*${pesananArray[0].deadline}*\n\nTerima kasih.`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-3xs"
+            >
+              <Send className="h-3.5 w-3.5" />
+              <span>WA Deadline</span>
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Info Warning Banner when Manual Edit is Engaged */}
       {isEditingTexts && (
@@ -768,7 +803,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                     <div className="text-[9px] text-slate-400 leading-relaxed italic block w-full text-left font-sans">
                       <EditableText
                         isEditing={isEditingTexts}
-                        value={getVal(item.id, 'terms', '* Syarat & Ketentuan:\n1. Barang yang sudah diproduksi tidak dapat dibatalkan atau direvisi.\n2. Pelunasan sisa tagihan wajib diselesaikan saat pengambilan/pengiriman jersey.')}
+                        value={getVal(item.id, 'terms', '* Syarat & Ketentuan:\n1. Pesanan (PO) akan langsung masuk antrean PRE-ORDER dan mulai diproduksi (siap cetak) setelah kami menerima Down Payment (DP) minimal 50% dari total tagihan.\n2. Barang yang sudah diproduksi tidak dapat dibatalkan atau direvisi.\n3. Pelunasan sisa tagihan wajib diselesaikan saat pengambilan/pengiriman.')}
                         onChange={(val) => setVal(item.id, 'terms', val)}
                         isTextArea={true}
                         rows={3}

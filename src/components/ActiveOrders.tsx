@@ -24,7 +24,9 @@ import {
   MoreVertical,
   XSquare,
   ArrowUpDown,
-  Eye
+  Eye,
+  MessageSquare,
+  Send
 } from 'lucide-react';
 
 interface ActiveOrdersProps {
@@ -58,6 +60,9 @@ export default function ActiveOrders({
   const [statusFilter, setStatusFilter] = useState<StatusProduksi | 'Semua'>('Semua');
   const [sortBy, setSortBy] = useState<'deadline' | 'qty' | 'totalHarga' | 'createdAt'>('deadline');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  
+  const [tableMonth, setTableMonth] = useState<string>('Semua');
+  const [tableYear, setTableYear] = useState<string>('Semua');
   
   // Selection state for batch receipts
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -131,21 +136,23 @@ export default function ActiveOrders({
   const filteredAndSortedList = useMemo(() => {
     return pesananList
       .filter(item => {
+        const safeSearch = searchTerm.toLowerCase();
         const matchesSearch = 
-          item.namaPemesan.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.namaPo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.namaProduk.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (item.noTelepon && item.noTelepon.includes(searchTerm));
+          (item.namaPemesan || '').toLowerCase().includes(safeSearch) ||
+          (item.namaPo || '').toLowerCase().includes(safeSearch) ||
+          (item.id || '').toLowerCase().includes(safeSearch) ||
+          (item.namaProduk || '').toLowerCase().includes(safeSearch) ||
+          (item.noTelepon || '').includes(searchTerm);
 
         const matchesStatus = statusFilter === 'Semua' || item.statusProduksi === statusFilter;
         
-        // Month and year boundaries
-        const itemYear = item.createdAt.substring(0, 4);
-        const itemMonth = item.createdAt.substring(5, 7); // "MM"
-        
-        const yearMatches = selectedYear === 'Semua' || itemYear === selectedYear;
-        const monthMatches = selectedMonth === 'Semua' || itemMonth === selectedMonth;
+        // Month and year boundaries (fallback securely if createdAt missing to stop crash)
+        const dtStr = item.createdAt || '';
+        const itemYear = dtStr.substring(0, 4);
+        const itemMonth = dtStr.substring(5, 7); // "MM"
+
+        const yearMatches = tableYear === 'Semua' || itemYear === tableYear;
+        const monthMatches = tableMonth === 'Semua' || itemMonth === tableMonth;
 
         return matchesSearch && matchesStatus && yearMatches && monthMatches;
       })
@@ -162,7 +169,7 @@ export default function ActiveOrders({
         if (valueA > valueB) return sortOrder === 'asc' ? 1 : -1;
         return 0;
       });
-  }, [pesananList, searchTerm, statusFilter, sortBy, sortOrder, selectedMonth, selectedYear]);
+  }, [pesananList, searchTerm, statusFilter, sortBy, sortOrder, tableMonth, tableYear]);
 
   // Color mapping function
   const getStatusStyle = (status: StatusProduksi) => {
@@ -220,8 +227,8 @@ export default function ActiveOrders({
           <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
             <Calendar className="h-3.5 w-3.5 text-indigo-500" />
             <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
+              value={tableMonth}
+              onChange={(e) => setTableMonth(e.target.value)}
               className="bg-transparent focus:outline-hidden cursor-pointer"
             >
               {MONTHS_LIST.map(m => (
@@ -236,8 +243,8 @@ export default function ActiveOrders({
           <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
             <Calendar className="h-3.5 w-3.5 text-indigo-500" />
             <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
+              value={tableYear}
+              onChange={(e) => setTableYear(e.target.value)}
               className="bg-transparent focus:outline-hidden cursor-pointer"
             >
               <option value="Semua" className="bg-white dark:bg-slate-900 text-slate-850 dark:text-white">Semua Tahun</option>
@@ -397,8 +404,32 @@ export default function ActiveOrders({
                           </span>
                         </div>
                         {item.noTelepon && (
-                          <div className="font-mono text-[11px] text-slate-450 dark:text-slate-400 pl-5 leading-none">
-                            {item.noTelepon}
+                          <div className="flex flex-col gap-1 pl-5 mt-0.5">
+                            <div className="font-mono text-[11px] text-slate-450 dark:text-slate-400 leading-none">
+                              {item.noTelepon}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1 no-print">
+                              <a
+                                href={`https://wa.me/${item.noTelepon.replace(/[^0-9]/g, '').startsWith('0') ? '62' + item.noTelepon.replace(/[^0-9]/g, '').substring(1) : item.noTelepon.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Halo Kak,\n\nMengingatkan sisa pembayaran PO:\n\n*${item.namaPo}*\n\nSisa Tagihan:\n*${formatRupiah(item.sisaTagihan)}*\n\nTerima kasih.`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[9px] font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white transition-all cursor-pointer shadow-4xs shrink-0 select-none"
+                                title="Kirim WA Pengingat Sisa Pembayaran Tagihan"
+                              >
+                                <MessageSquare className="h-2.5 w-2.5 shrink-0" />
+                                <span>WA Tagihan</span>
+                              </a>
+                              <a
+                                href={`https://wa.me/${item.noTelepon.replace(/[^0-9]/g, '').startsWith('0') ? '62' + item.noTelepon.replace(/[^0-9]/g, '').substring(1) : item.noTelepon.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Halo Kak,\n\nPesanan *${item.namaPo}* sedang dalam proses produksi.\n\nEstimasi selesai:\n*${item.deadline}*\n\nTerima kasih.`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[9px] font-black bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 hover:bg-sky-500 hover:text-white transition-all cursor-pointer shadow-4xs shrink-0 select-none"
+                                title="Kirim WA Pembaruan Estimasi Selesai Produksi"
+                              >
+                                <Send className="h-2.5 w-2.5 shrink-0" />
+                                <span>WA Deadline</span>
+                              </a>
+                            </div>
                           </div>
                         )}
                       </div>
