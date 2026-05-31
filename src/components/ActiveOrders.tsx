@@ -635,57 +635,6 @@ export default function ActiveOrders({
 
                 </div>
 
-                {/* Sublim/Jahit Unpaid Tracking Indicator at Bottom */}
-                {((sublimCost > 0 && !hasPaidSublim && ['Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi)) || 
-                  (jahitCost > 0 && !hasPaidJahit && ['Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi))) && (
-                  <div className="mt-4 pt-3 border-t border-dashed border-rose-200 dark:border-rose-900/50 flex flex-wrap items-center justify-between gap-3 bg-rose-50/50 dark:bg-rose-950/20 px-3 py-2.5 rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-rose-500 animate-pulse" />
-                      <span className="text-xs font-bold text-rose-600 dark:text-rose-400">Peringatan: HPP Produksi Belum Dibayar</span>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      {sublimCost > 0 && !hasPaidSublim && ['Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi) && (
-                        <button 
-                          onClick={() => {
-                            if (window.confirm(`Konfirmasi pembayaran Sublim otomatis sejumlah ${formatRupiah(sublimCost)} untuk ${item.namaPo}?`)) {
-                              onLogToCashFlow(
-                                'Sublim',
-                                'keluar',
-                                sublimCost,
-                                `Bayar Sublim/Print PO ${item.namaPo} sebanyak ${item.qty} Pcs`
-                              );
-                            }
-                          }}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-[10px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer shadow-3xs"
-                        >
-                          <DollarSign className="h-3 w-3" />
-                          Belum Bayar Sublim
-                        </button>
-                      )}
-
-                      {jahitCost > 0 && !hasPaidJahit && ['Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi) && (
-                        <button 
-                          onClick={() => {
-                            if (window.confirm(`Konfirmasi pembayaran Jahit otomatis sejumlah ${formatRupiah(jahitCost)} untuk ${item.namaPo}?`)) {
-                              onLogToCashFlow(
-                                'Jahit',
-                                'keluar',
-                                jahitCost,
-                                `Bayar Jahit PO ${item.namaPo} sebanyak ${item.qty} Pcs`
-                              );
-                            }
-                          }}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-[10px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer shadow-3xs"
-                        >
-                          <DollarSign className="h-3 w-3" />
-                          Belum Bayar Jahit
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
               </div>
             );
           })}

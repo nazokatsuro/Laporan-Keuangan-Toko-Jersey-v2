@@ -929,6 +929,8 @@ export default function Dashboard({
       <div className="mt-8 relative z-20">
         <FraudScanner
           pesananList={pesananList}
+          settings={settings}
+          onUpdateSettings={onUpdateSettings}
           onSelectOrder={(order) => {
             onSelectOrder(order);
             onNavigate('transaksi'); // Switch to order view

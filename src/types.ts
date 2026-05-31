@@ -55,6 +55,15 @@ export interface CashFlowTransaction {
   nominal: number;
 }
 
+export interface AuditorDismissedAlert {
+  id: string;
+  dismissedAt: string;
+  dismissedBy: string;
+  title: string;
+  description: string;
+  relatedPoNames: string[];
+}
+
 export interface ShopSettings {
   namaToko: string;
   logoUrl: string; // Base64 or standard placeholder
@@ -64,6 +73,7 @@ export interface ShopSettings {
   danaDaruratTerkumpul?: number;
   danaDaruratTargetMonths?: number;
   cashFlowList?: CashFlowTransaction[];
+  dismissedAuditorAlerts?: AuditorDismissedAlert[];
 }
 
 export interface FinancialStats {

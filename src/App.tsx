@@ -475,33 +475,27 @@ export default function App() {
 
       // 3. Vendor Payment Alerts (Sublim & Jahit)
       const sublimCost = item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
-      if (sublimCost > 0) {
-        const hasPaidSublim = cfList.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`));
-        if (!hasPaidSublim && (item.statusProduksi === 'Print Press' || item.statusProduksi === 'Jahit' || item.statusProduksi === 'Tinggal Kirim' || item.statusProduksi === 'Beres')) {
-           list.push({
-             id: `${item.id}-sublim-unpaid`,
-             type: 'vendor',
-             title: `HPP Belum Dibayar: Sublim/Print ${item.namaPo}`,
-             message: `Segera catat pembayaran HPP untuk Sublim/Print sejumlah ${formatRupiah(sublimCost)} agar Arus Kas sinkron.`,
-             severity: 'medium',
-             order: item
-           });
-        }
-      }
+      const hasPaidSublim = cfList.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`));
+      const isSublimUnpaid = sublimCost > 0 && !hasPaidSublim && (item.statusProduksi === 'Print Press' || item.statusProduksi === 'Jahit' || item.statusProduksi === 'Tinggal Kirim' || item.statusProduksi === 'Beres');
 
       const jahitCost = item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
-      if (jahitCost > 0) {
-        const hasPaidJahit = cfList.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
-        if (!hasPaidJahit && (item.statusProduksi === 'Jahit' || item.statusProduksi === 'Tinggal Kirim' || item.statusProduksi === 'Beres')) {
-           list.push({
-             id: `${item.id}-jahit-unpaid`,
-             type: 'vendor',
-             title: `HPP Belum Dibayar: Jahit ${item.namaPo}`,
-             message: `Segera catat pembayaran HPP untuk ongkos Jahit sejumlah ${formatRupiah(jahitCost)} agar Arus Kas sinkron.`,
-             severity: 'medium',
-             order: item
-           });
-        }
+      const hasPaidJahit = cfList.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
+      const isJahitUnpaid = jahitCost > 0 && !hasPaidJahit && (item.statusProduksi === 'Jahit' || item.statusProduksi === 'Tinggal Kirim' || item.statusProduksi === 'Beres');
+
+      if (isSublimUnpaid || isJahitUnpaid) {
+         let issueMsg = '';
+         if (isSublimUnpaid && isJahitUnpaid) issueMsg = 'BELUM BAYAR SUBLIM • BELUM BAYAR JAHIT';
+         else if (isSublimUnpaid) issueMsg = 'BELUM BAYAR SUBLIM';
+         else if (isJahitUnpaid) issueMsg = 'BELUM BAYAR JAHIT';
+
+         list.push({
+           id: `${item.id}-vendor`,
+           type: 'vendor',
+           title: `Produksi: ${item.namaPo}`,
+           message: issueMsg,
+           severity: 'medium',
+           order: item
+         });
       }
     });
 
@@ -1346,92 +1340,166 @@ export default function App() {
                   <p className="text-xs text-slate-400 mt-1">Tidak ada sisa tagihan terutang maupun batas deadline kritis.</p>
                 </div>
               ) : (
-                warningDetails.map((alert) => (
-                  <div 
-                    key={alert.id}
-                    className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                      alert.severity === 'high' 
-                        ? 'bg-rose-500/5 border-rose-500/20 text-slate-100' 
-                        : 'bg-amber-500/5 border-amber-500/20 text-slate-100'
-                    }`}
-                  >
-                    {/* Warning Information Description Block */}
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <span className="mt-1 shrink-0">
-                        {alert.type === 'overdue' ? (
-                          <AlertTriangle className="h-5 w-5 text-rose-500 animate-pulse" />
-                        ) : alert.type === 'deadline' ? (
-                          <Clock className="h-5 w-5 text-rose-400" />
-                        ) : (
-                          <DollarSign className="h-5 w-5 text-amber-500" />
+                <>
+                  {(() => {
+                    const customerAlerts = warningDetails.filter(w => w.type !== 'vendor');
+                    const vendorAlerts = warningDetails.filter(w => w.type === 'vendor');
+
+                    vendorAlerts.sort((a, b) => {
+                      const getWeight = (msg: string) => {
+                        if (msg.includes('SUBLIM') && msg.includes('JAHIT')) return 3;
+                        if (msg.includes('SUBLIM')) return 2;
+                        if (msg.includes('JAHIT')) return 1;
+                        return 0;
+                      };
+                      const weightA = getWeight(a.message);
+                      const weightB = getWeight(b.message);
+                      if (weightA !== weightB) return weightB - weightA;
+                      return new Date(a.order.deadline).getTime() - new Date(b.order.deadline).getTime();
+                    });
+
+                    return (
+                      <div className="space-y-6">
+                        {/* Customer & Deadline Alerts Segment */}
+                        {customerAlerts.length > 0 && (
+                          <div className="space-y-3">
+                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest pl-1 border-l-2 border-indigo-500">
+                              Sisa Tagihan Pelanggan & Deadline
+                            </h4>
+                            <div className="space-y-3">
+                              {customerAlerts.map(alert => (
+                                <div 
+                                  key={alert.id}
+                                  className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                                    alert.severity === 'high' 
+                                      ? 'bg-rose-500/5 border-rose-500/20 text-slate-100' 
+                                      : 'bg-amber-500/5 border-amber-500/20 text-slate-100'
+                                  }`}
+                                >
+                                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                                    <span className="mt-1 shrink-0">
+                                      {alert.type === 'overdue' ? (
+                                        <AlertTriangle className="h-5 w-5 text-rose-500 animate-pulse" />
+                                      ) : alert.type === 'deadline' ? (
+                                        <Clock className="h-5 w-5 text-rose-400" />
+                                      ) : (
+                                        <DollarSign className="h-5 w-5 text-amber-500" />
+                                      )}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <h4 className="font-extrabold text-sm text-white truncate">{alert.title}</h4>
+                                        <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase text-[10px] tracking-wide border ${
+                                          alert.severity === 'high' 
+                                            ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' 
+                                            : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                                        }`}>
+                                          {alert.type === 'unpaid' ? 'Belum Lunas' : alert.type === 'overdue' ? 'MENDESAK' : 'Hari H Dekat'}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-slate-350 mt-1 leading-relaxed">
+                                        {alert.message}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-2 shrink-0 md:justify-end">
+                                    {alert.type !== 'unpaid' && (
+                                      <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1 border border-slate-700/80">
+                                        <span className="text-[10px] px-1.5 text-slate-400 font-bold">Fase:</span>
+                                        <select
+                                          value={alert.order.statusProduksi}
+                                          onChange={(e) => handleUpdateStatus(alert.order.id, e.target.value)}
+                                          className="bg-transparent focus:outline-hidden text-xs text-white rounded outline-hidden border-none font-bold py-0.5 pl-0.5 pr-4 cursor-pointer"
+                                        >
+                                          <option value="Setting" className="bg-slate-900 text-white">Setting</option>
+                                          <option value="Print Press" className="bg-slate-900 text-white">Print Press</option>
+                                          <option value="Jahit" className="bg-slate-900 text-white">Jahit</option>
+                                          <option value="Tinggal Kirim" className="bg-slate-900 text-white">Tinggal Kirim</option>
+                                          <option value="Beres" className="bg-slate-900 text-white">Beres</option>
+                                        </select>
+                                      </div>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleLaunchNota(alert.order);
+                                        setShowAlertsModal(false);
+                                      }}
+                                      className="text-[10px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 font-bold rounded-lg text-slate-200 transition-all cursor-pointer"
+                                    >
+                                      Nota
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleLaunchEdit(alert.order);
+                                        setShowAlertsModal(false);
+                                      }}
+                                      className="text-[10px] px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 font-bold rounded-lg text-white transition-all cursor-pointer shadow-xs"
+                                    >
+                                      Edit PO
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         )}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="font-extrabold text-sm text-white truncate">{alert.title}</h4>
-                          <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase text-[10px] tracking-wide border ${
-                            alert.severity === 'high' 
-                              ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' 
-                              : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                          }`}>
-                            {alert.type === 'unpaid' ? 'Belum Lunas' : alert.type === 'overdue' ? 'MENDESAK' : 'Hari H Dekat'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-350 mt-1 leading-relaxed">
-                          {alert.message}
-                        </p>
+
+                        {/* Vendor Payments Alert Segment */}
+                        {vendorAlerts.length > 0 && (
+                          <div className="space-y-3">
+                            <h4 className="text-xs font-black text-rose-500 uppercase tracking-widest pl-1 border-l-2 border-rose-500 mt-2">
+                              Produksi Belum Dibayar
+                            </h4>
+                            <div className="space-y-3">
+                              {vendorAlerts.map(alert => (
+                                <div 
+                                  key={alert.id}
+                                  className="p-4 rounded-2xl border bg-rose-950/20 border-rose-500/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
+                                >
+                                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                                    <span className="mt-1 shrink-0">
+                                      <AlertTriangle className="h-5 w-5 text-rose-500 animate-pulse" />
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                                        <h4 className="font-extrabold text-sm text-white truncate">🔴 {alert.title}</h4>
+                                      </div>
+                                      <p className="text-xs font-black text-[#ff3b5c] uppercase leading-relaxed tracking-wider">
+                                        {alert.message}
+                                      </p>
+                                      <p className="text-[11px] text-slate-400 mt-1 font-semibold flex items-center gap-1.5">
+                                        <Clock className="h-3 w-3" />
+                                        Deadline: {alert.order.deadline}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-2 shrink-0 md:justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleLaunchEdit(alert.order);
+                                        setShowAlertsModal(false);
+                                      }}
+                                      className="text-[10px] px-3 py-1.5 bg-rose-600 hover:bg-rose-700 font-bold rounded-lg text-white transition-all cursor-pointer shadow-xs"
+                                    >
+                                      Edit PO
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-
-                    {/* Quick Interactive Actions Panel */}
-                    <div className="flex flex-wrap items-center gap-2 shrink-0 md:justify-end">
-                      
-                      {/* Interactive Live Status Selector */}
-                      {alert.type !== 'unpaid' && (
-                        <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1 border border-slate-700/80">
-                          <span className="text-[10px] px-1.5 text-slate-400 font-bold">Fase:</span>
-                          <select
-                            value={alert.order.statusProduksi}
-                            onChange={(e) => handleUpdateStatus(alert.order.id, e.target.value)}
-                            className="bg-transparent focus:outline-hidden text-xs text-white rounded outline-hidden border-none font-bold py-0.5 pl-0.5 pr-4 cursor-pointer"
-                          >
-                            <option value="Setting" className="bg-slate-900 text-white">Setting</option>
-                            <option value="Print Press" className="bg-slate-900 text-white">Print Press</option>
-                            <option value="Jahit" className="bg-slate-900 text-white">Jahit</option>
-                            <option value="Tinggal Kirim" className="bg-slate-900 text-white">Tinggal Kirim</option>
-                            <option value="Beres" className="bg-slate-900 text-white">Beres</option>
-                          </select>
-                        </div>
-                      )}
-
-                      {/* Action trigger: view invoice preview */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleLaunchNota(alert.order);
-                          setShowAlertsModal(false);
-                        }}
-                        className="text-[10px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 font-bold rounded-lg text-slate-200 transition-all cursor-pointer"
-                      >
-                        Nota
-                      </button>
-
-                      {/* Action trigger: edit full order details */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleLaunchEdit(alert.order);
-                          setShowAlertsModal(false);
-                        }}
-                        className="text-[10px] px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 font-bold rounded-lg text-white transition-all cursor-pointer shadow-xs"
-                      >
-                        Edit PO
-                      </button>
-
-                    </div>
-
-                  </div>
-                ))
+                    );
+                  })()}
+                </>
               )}
             </div>
 
