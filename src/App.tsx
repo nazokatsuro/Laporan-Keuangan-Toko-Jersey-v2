@@ -1150,6 +1150,8 @@ export default function App() {
               {activeTab === 'transaksi' && (
                 <ActiveOrders 
                   pesananList={pesananList}
+                  settings={settings}
+                  onLogToCashFlow={handleLogToCashFlow}
                   onAddNew={() => {
                     setPesananToEdit(null);
                     setActiveTab('formulir');
@@ -1168,6 +1170,7 @@ export default function App() {
               {activeTab === 'formulir' && (
                 <OrderForm 
                   pesananToEdit={pesananToEdit}
+                  cashFlowList={settings.cashFlowList}
                   onSave={handleSavePesanan}
                   onCancel={() => {
                     setPesananToEdit(null);

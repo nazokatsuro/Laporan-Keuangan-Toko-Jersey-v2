@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { Pesanan, StatusProduksi } from '../types';
+import { Pesanan, StatusProduksi, ShopSettings, CashFlowTransaction } from '../types';
 import { formatRupiah } from '../utils';
 import { 
   Search, 
@@ -26,11 +26,15 @@ import {
   ArrowUpDown,
   Eye,
   MessageSquare,
-  Send
+  Send,
+  AlertTriangle,
+  DollarSign
 } from 'lucide-react';
 
 interface ActiveOrdersProps {
   pesananList: Pesanan[];
+  settings: ShopSettings;
+  onLogToCashFlow: (kategori: string, jenis: 'masuk'|'keluar', nominal: number, keterangan: string) => void;
   onAddNew: () => void;
   onEdit: (pesanan: Pesanan) => void;
   onDelete: (id: string) => void;
@@ -42,10 +46,12 @@ interface ActiveOrdersProps {
   setSelectedYear: (year: string) => void;
 }
 
-const ALL_STATUSES: Array<StatusProduksi | 'Semua'> = ['Semua', 'Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'];
+const ALL_STATUSES = ['Semua', 'Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres', 'Belum Bayar Sublim', 'Belum Bayar Jahit'];
 
 export default function ActiveOrders({ 
   pesananList, 
+  settings,
+  onLogToCashFlow,
   onAddNew, 
   onEdit, 
   onDelete, 
@@ -57,7 +63,7 @@ export default function ActiveOrders({
   setSelectedYear
 }: ActiveOrdersProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusProduksi | 'Semua'>('Semua');
+  const [statusFilter, setStatusFilter] = useState<string>('Semua');
   const [sortBy, setSortBy] = useState<'deadline' | 'qty' | 'totalHarga' | 'createdAt'>('deadline');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   
@@ -144,7 +150,20 @@ export default function ActiveOrders({
           (item.namaProduk || '').toLowerCase().includes(safeSearch) ||
           (item.noTelepon || '').includes(searchTerm);
 
-        const matchesStatus = statusFilter === 'Semua' || item.statusProduksi === statusFilter;
+        let matchesStatus = false;
+        if (statusFilter === 'Semua') {
+          matchesStatus = true;
+        } else if (statusFilter === 'Belum Bayar Sublim') {
+          const sublimCost = item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
+          const hasPaidSublim = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`));
+          matchesStatus = sublimCost > 0 && !hasPaidSublim && ['Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi);
+        } else if (statusFilter === 'Belum Bayar Jahit') {
+          const jahitCost = item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
+          const hasPaidJahit = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
+          matchesStatus = jahitCost > 0 && !hasPaidJahit && ['Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi);
+        } else {
+          matchesStatus = item.statusProduksi === statusFilter;
+        }
         
         // Month and year boundaries (fallback securely if createdAt missing to stop crash)
         const dtStr = item.createdAt || '';
@@ -349,6 +368,11 @@ export default function ActiveOrders({
           {filteredAndSortedList.map((item) => {
             const nearDeadline = isNearDeadline(item.deadline, item.statusProduksi === 'Beres');
             const isFullyPaid = item.sisaTagihan === 0;
+            
+            const sublimCost = item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
+            const hasPaidSublim = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`));
+            const jahitCost = item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
+            const hasPaidJahit = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
 
             return (
               <div 
@@ -591,6 +615,57 @@ export default function ActiveOrders({
                   </div>
 
                 </div>
+
+                {/* Sublim/Jahit Unpaid Tracking Indicator at Bottom */}
+                {((sublimCost > 0 && !hasPaidSublim && ['Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi)) || 
+                  (jahitCost > 0 && !hasPaidJahit && ['Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi))) && (
+                  <div className="mt-4 pt-3 border-t border-dashed border-rose-200 dark:border-rose-900/50 flex flex-wrap items-center justify-between gap-3 bg-rose-50/50 dark:bg-rose-950/20 px-3 py-2.5 rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-rose-500 animate-pulse" />
+                      <span className="text-xs font-bold text-rose-600 dark:text-rose-400">Peringatan: HPP Produksi Belum Dibayar</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      {sublimCost > 0 && !hasPaidSublim && ['Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi) && (
+                        <button 
+                          onClick={() => {
+                            if (window.confirm(`Konfirmasi pembayaran Sublim otomatis sejumlah ${formatRupiah(sublimCost)} untuk ${item.namaPo}?`)) {
+                              onLogToCashFlow(
+                                'Sublim',
+                                'keluar',
+                                sublimCost,
+                                `Bayar Sublim/Print PO ${item.namaPo} sebanyak ${item.qty} Pcs`
+                              );
+                            }
+                          }}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-[10px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer shadow-3xs"
+                        >
+                          <DollarSign className="h-3 w-3" />
+                          Belum Bayar Sublim
+                        </button>
+                      )}
+
+                      {jahitCost > 0 && !hasPaidJahit && ['Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi) && (
+                        <button 
+                          onClick={() => {
+                            if (window.confirm(`Konfirmasi pembayaran Jahit otomatis sejumlah ${formatRupiah(jahitCost)} untuk ${item.namaPo}?`)) {
+                              onLogToCashFlow(
+                                'Jahit',
+                                'keluar',
+                                jahitCost,
+                                `Bayar Jahit PO ${item.namaPo} sebanyak ${item.qty} Pcs`
+                              );
+                            }
+                          }}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-[10px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer shadow-3xs"
+                        >
+                          <DollarSign className="h-3 w-3" />
+                          Belum Bayar Jahit
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
               </div>
             );

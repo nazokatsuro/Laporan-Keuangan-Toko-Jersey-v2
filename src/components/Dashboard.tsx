@@ -498,7 +498,7 @@ export default function Dashboard({
                 <div className="flex items-center gap-1 w-full" onClick={(e) => e.stopPropagation()}>
                   <input
                     type="number"
-                    className="px-2 py-1 text-2xs font-extrabold border border-indigo-500 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white rounded-md w-full focus:outline-hidden"
+                    className="px-2 py-1 text-[10px] font-extrabold border border-indigo-500 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white rounded-md w-full focus:outline-hidden"
                     placeholder="Contoh: 100000000"
                     value={tempOmset}
                     onChange={(e) => setTempOmset(Number(e.target.value))}
@@ -508,13 +508,13 @@ export default function Dashboard({
                       onUpdateSettings({ targetOmset: Math.max(0, tempOmset) });
                       setIsEditingOmset(false);
                     }}
-                    className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-2xs rounded-lg cursor-pointer"
+                    className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] rounded-lg cursor-pointer"
                   >
                     Simpan
                   </button>
                   <button
                     onClick={() => setIsEditingOmset(false)}
-                    className="px-2 py-1 text-slate-450 font-bold text-2xs hover:underline"
+                    className="px-2 py-1 text-slate-455 font-bold text-[10px] hover:underline"
                   >
                     Batal
                   </button>
@@ -578,7 +578,7 @@ export default function Dashboard({
                 <div className="flex items-center gap-1 w-full" onClick={(e) => e.stopPropagation()}>
                   <input
                     type="number"
-                    className="px-2 py-1 text-2xs font-extrabold border border-amber-500 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white rounded-md w-full focus:outline-hidden"
+                    className="px-2 py-1 text-[10px] font-extrabold border border-amber-500 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white rounded-md w-full focus:outline-hidden"
                     placeholder="Contoh: 1000"
                     value={tempProduksi}
                     onChange={(e) => setTempProduksi(Number(e.target.value))}
@@ -588,13 +588,13 @@ export default function Dashboard({
                       onUpdateSettings({ targetProduksi: Math.max(0, tempProduksi) });
                       setIsEditingProduksi(false);
                     }}
-                    className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-2xs rounded-lg cursor-pointer"
+                    className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-[10px] rounded-lg cursor-pointer"
                   >
                     Simpan
                   </button>
                   <button
                     onClick={() => setIsEditingProduksi(false)}
-                    className="px-2 py-1 text-slate-455 font-bold text-2xs hover:underline"
+                    className="px-2 py-1 text-slate-455 font-bold text-[10px] hover:underline"
                   >
                     Batal
                   </button>

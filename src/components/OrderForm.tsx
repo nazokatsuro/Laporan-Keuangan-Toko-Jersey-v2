@@ -29,6 +29,7 @@ interface OrderFormProps {
   onSave: (pesanan: Pesanan) => void;
   onCancel: () => void;
   onLogToCashFlow?: (kategori: string, jenis: 'masuk'|'keluar', nominal: number, keterangan: string) => void;
+  cashFlowList?: any[]; // using any temporarily, or import CashFlowTransaction
 }
 
 const STATUS_LIST: StatusProduksi[] = ['Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'];
@@ -83,7 +84,7 @@ const getLocalDateString = (d: Date = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
-export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCashFlow }: OrderFormProps) {
+export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCashFlow, cashFlowList }: OrderFormProps) {
   // Base fields
   const [deadline, setDeadline] = useState('');
   const [namaPemesan, setNamaPemesan] = useState('');
@@ -878,13 +879,9 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                   <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Uang Masuk / DP: <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatRupiah(uangMasuk)}</span></p>
                   <p className="text-xs font-semibold text-rose-500 dark:text-rose-400 mb-3">Sisa Tagihan: {formatRupiah(sisaTagihan)}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => uangMasuk > 0 ? onLogToCashFlow('DP pelanggan', 'masuk', uangMasuk, `Uang Masuk / DP PO ${namaPo} - ${namaPemesan}`) : alert('Uang masuk masih 0.')}
-                  className="w-full text-center px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-400 rounded-xl font-bold text-xs transition border border-emerald-200 dark:border-emerald-800"
-                >
-                  Catat Uang Masuk (DP)
-                </button>
+                <div className="w-full text-center px-4 py-2 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 rounded-xl font-bold text-[10px] uppercase tracking-wider border border-emerald-200 dark:border-emerald-800/50">
+                  DP otomatis tercatat di Arus Kas
+                </div>
               </div>
 
               <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-4 flex flex-col justify-between">
@@ -893,26 +890,40 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                   <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Est. Total Modal: <span className="text-amber-600 dark:text-amber-400 font-bold">{formatRupiah(totalModal)}</span></p>
                 </div>
                 <div className="flex flex-col gap-2 mt-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sublim = items.reduce((sum, it) => sum + (it.qty * it.printPerPcs), 0);
-                      if(sublim > 0) onLogToCashFlow('Bayar vendor/HPP', 'keluar', sublim, `Bayar Sublim/Print PO ${namaPo} - ${namaPemesan}`); else alert('Biaya sublim 0');
-                    }}
-                    className="w-full text-center px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 dark:text-rose-400 rounded-xl font-bold text-xs transition border border-rose-200 dark:border-rose-800"
-                  >
-                    Bayar Sublim / Print
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const jahit = items.reduce((sum, it) => sum + (it.qty * it.jahitPerPcs), 0);
-                      if(jahit > 0) onLogToCashFlow('Bayar vendor/HPP', 'keluar', jahit, `Bayar Jahit PO ${namaPo} - ${namaPemesan}`); else alert('Biaya jahit 0');
-                    }}
-                    className="w-full text-center px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 dark:text-amber-400 rounded-xl font-bold text-xs transition border border-amber-200 dark:border-amber-800"
-                  >
-                    Bayar Jahit
-                  </button>
+                  {(() => {
+                    const sumSublim = items.reduce((sum, it) => sum + (it.qty * it.printPerPcs), 0);
+                    const isSublimPaid = pesananToEdit && cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${pesananToEdit.namaPo}`));
+                    return (
+                      <button
+                        type="button"
+                        disabled={isSublimPaid || sumSublim <= 0}
+                        onClick={() => {
+                          if (!onLogToCashFlow) return;
+                          if (sumSublim > 0) onLogToCashFlow('Sublim', 'keluar', sumSublim, `Bayar Sublim/Print PO ${namaPo}`); else alert('Biaya sublim 0');
+                        }}
+                        className={`w-full text-center px-4 py-2 ${isSublimPaid ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 cursor-not-allowed' : 'bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 dark:text-rose-400 border-rose-200 dark:border-rose-800 cursor-pointer'} rounded-xl font-bold text-xs transition border`}
+                      >
+                        {isSublimPaid ? 'Pelunasan Sublim Lunas' : 'Bayar Sublim / Print'}
+                      </button>
+                    );
+                  })()}
+                  {(() => {
+                    const sumJahit = items.reduce((sum, it) => sum + (it.qty * it.jahitPerPcs), 0);
+                    const isJahitPaid = pesananToEdit && cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${pesananToEdit.namaPo}`));
+                    return (
+                      <button
+                        type="button"
+                        disabled={isJahitPaid || sumJahit <= 0}
+                        onClick={() => {
+                          if (!onLogToCashFlow) return;
+                          if (sumJahit > 0) onLogToCashFlow('Jahit', 'keluar', sumJahit, `Bayar Jahit PO ${namaPo}`); else alert('Biaya jahit 0');
+                        }}
+                        className={`w-full text-center px-4 py-2 ${isJahitPaid ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 cursor-not-allowed' : 'bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 dark:text-amber-400 border-amber-200 dark:border-amber-800 cursor-pointer'} rounded-xl font-bold text-xs transition border`}
+                      >
+                        {isJahitPaid ? 'Pelunasan Jahit Lunas' : 'Bayar Jahit'}
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
