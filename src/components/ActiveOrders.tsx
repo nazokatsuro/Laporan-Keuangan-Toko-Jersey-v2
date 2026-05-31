@@ -490,30 +490,49 @@ export default function ActiveOrders({
                   </div>
 
                   {/* Middle Column 2 (Cols 5-9): Financial recap with custom roomy flex layout to prevent text cuts */}
-                  <div className="lg:col-span-5 flex flex-row items-stretch justify-center bg-slate-50 dark:bg-slate-900/40 p-2.5 sm:p-3 rounded-xl border border-slate-100 dark:border-slate-750/80 min-w-0 w-full text-center">
-                    {/* Qty Section */}
-                    <div className="pr-2.5 max-w-[70px] border-r border-slate-205 dark:border-slate-700/80 shrink-0 flex flex-col items-center justify-center">
-                      <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none">Qty</span>
-                      <span className="text-[11px] sm:text-xs xl:text-sm font-extrabold text-slate-800 dark:text-white block mt-1.5 truncate max-w-full" title={`${item.qty} Pcs`}>
-                        {item.qty} Pcs
-                      </span>
-                    </div>
-                    
-                    {/* Total Tagihan Section */}
-                    <div className="px-3 flex-1 min-w-0 flex flex-col items-center justify-center">
-                      <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Total Tagihan</span>
-                      <span className="text-[11px] sm:text-xs xl:text-sm font-extrabold text-slate-800 dark:text-white block mt-1.5 truncate max-w-full" title={formatRupiah(item.totalHarga)}>
-                        {formatRupiah(item.totalHarga)}
-                      </span>
+                  <div className="lg:col-span-5 flex flex-col items-center justify-center min-w-0 w-full gap-2">
+                    <div className="flex flex-row items-stretch justify-center bg-slate-50 dark:bg-slate-900/40 p-2.5 sm:p-3 rounded-xl border border-slate-100 dark:border-slate-750/80 min-w-0 w-full text-center">
+                      {/* Qty Section */}
+                      <div className="pr-2.5 max-w-[70px] border-r border-slate-205 dark:border-slate-700/80 shrink-0 flex flex-col items-center justify-center">
+                        <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none">Qty</span>
+                        <span className="text-[11px] sm:text-xs xl:text-sm font-extrabold text-slate-800 dark:text-white block mt-1.5 truncate max-w-full" title={`${item.qty} Pcs`}>
+                          {item.qty} Pcs
+                        </span>
+                      </div>
+                      
+                      {/* Total Tagihan Section */}
+                      <div className="px-3 flex-1 min-w-0 flex flex-col items-center justify-center">
+                        <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Total Tagihan</span>
+                        <span className="text-[11px] sm:text-xs xl:text-sm font-extrabold text-slate-800 dark:text-white block mt-1.5 truncate max-w-full" title={formatRupiah(item.totalHarga)}>
+                          {formatRupiah(item.totalHarga)}
+                        </span>
+                      </div>
+
+                      {/* Sisa Bayar Section */}
+                      <div className="border-l border-slate-205 dark:border-slate-700/80 pl-3 flex-1 min-w-0 flex flex-col items-center justify-center">
+                        <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Sisa Bayar</span>
+                        <span className={`text-[11px] sm:text-xs xl:text-sm font-black block mt-1.5 truncate max-w-full ${isFullyPaid ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500'}`} title={isFullyPaid ? 'Lunas' : formatRupiah(item.sisaTagihan)}>
+                          {isFullyPaid ? 'Lunas ✓' : formatRupiah(item.sisaTagihan)}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Sisa Bayar Section */}
-                    <div className="border-l border-slate-205 dark:border-slate-700/80 pl-3 flex-1 min-w-0 flex flex-col items-center justify-center">
-                      <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Sisa Bayar</span>
-                      <span className={`text-[11px] sm:text-xs xl:text-sm font-black block mt-1.5 truncate max-w-full ${isFullyPaid ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500'}`} title={isFullyPaid ? 'Lunas' : formatRupiah(item.sisaTagihan)}>
-                        {isFullyPaid ? 'Lunas ✓' : formatRupiah(item.sisaTagihan)}
-                      </span>
-                    </div>
+                    {/* Notifikasi Pembayaran Produksi */}
+                    {((!hasPaidSublim && sublimCost > 0) || (!hasPaidJahit && jahitCost > 0)) && (
+                      <div 
+                        className="text-[10px] sm:text-[11px] font-bold text-[#ff3b5c] animate-pulse truncate"
+                        style={{ animationDuration: '1s' }}
+                        title="Masih ada biaya produksi yang belum dibayar"
+                      >
+                        {(!hasPaidSublim && sublimCost > 0) && (!hasPaidJahit && jahitCost > 0) ? (
+                          '🔴 BELUM BAYAR SUBLIM • BELUM BAYAR JAHIT'
+                        ) : (!hasPaidSublim && sublimCost > 0) ? (
+                          '🔴 BELUM BAYAR SUBLIM'
+                        ) : (
+                          '🔴 BELUM BAYAR JAHIT'
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Right Column (Cols 10-12): Status, Deadline & Actions stacked to avoid collisions */}
