@@ -144,11 +144,14 @@ export default function CashFlow({
       
       // A. DP (Uang Masuk)
       if (po.uangMasuk > 0) {
+        const isLunas = po.sisaTagihan <= 0 || po.uangMasuk >= po.totalHarga;
         list.push({
           id: `AUTO-DP-${po.id}`,
           tanggal: dateStr,
-          kategori: 'DP pelanggan',
-          keterangan: `DP PO ${po.namaPo} (${po.namaPemesan})`,
+          kategori: isLunas ? 'Pelunasan pelanggan' : 'DP pelanggan',
+          keterangan: isLunas 
+            ? `Pelunasan PO ${po.namaPo} (${po.namaPemesan})`
+            : `DP PO ${po.namaPo} (${po.namaPemesan})`,
           jenis: 'masuk',
           nominal: po.uangMasuk
         });
