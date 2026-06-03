@@ -552,83 +552,25 @@ export default function ActiveOrders({
                   </div>
 
                   {/* Right Column (Cols 10-12): Status, Deadline & Actions stacked to avoid collisions */}
-                  <div className="lg:col-span-3 flex flex-row lg:flex-col items-center lg:items-end justify-between lg:justify-center gap-3.5 border-t lg:border-t-0 border-slate-100 dark:border-slate-750/80 pt-3.5 lg:pt-0 min-w-0 w-full lg:shrink-0">
+                  <div className="lg:col-span-3 flex flex-col items-stretch justify-start gap-2.5 border-t lg:border-t-0 border-slate-100 dark:border-slate-755/80 pt-3.5 lg:pt-0 min-w-0 w-full lg:shrink-0">
                     
-                    {/* Upper row on desktop: Status tag & Deadline block */}
-                    <div className="flex items-center gap-3.5 max-w-full shrink-0">
-                      
-                      {/* Status Produksi badge */}
-                      <div className="flex flex-col items-start lg:items-end shrink-0">
-                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-1">Status Produksi</span>
-                        <button
-                          type="button"
-                          onClick={() => triggerNextStatus(item)}
-                          disabled={item.statusProduksi === 'Beres'}
-                          title={item.statusProduksi === 'Beres' ? 'Produksi Selesai!' : 'Klik untuk ubah status pengerjaan'}
-                          className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border flex items-center gap-1 transition-all ${getStatusStyle(item.statusProduksi)} ${
-                            item.statusProduksi !== 'Beres' ? 'hover:scale-105 active:scale-95 cursor-pointer shadow-3xs' : 'cursor-default'
-                          }`}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse shrink-0" />
-                          <span className="truncate max-w-[85px]">{item.statusProduksi}</span>
-                          {item.statusProduksi !== 'Beres' && (
-                            <Play className="h-2 w-2 ml-0.5 animate-pulse text-current shrink-0" />
-                          )}
-                        </button>
+                    {/* Top row: Deadline badge and Edit/Trash Action helpers */}
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Deadline:</span>
+                        <span className="text-[11px] font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/35 px-1.5 py-0.5 rounded-md leading-none">{item.deadline}</span>
                       </div>
-
-                      {/* Deadline label */}
-                      <div className="flex flex-col justify-start lg:items-end shrink-0 min-w-[75px]">
-                        <span className="block text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-none mb-1">Deadline</span>
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 inline-block">{item.deadline}</span>
-                      </div>
-
-                    </div>
-
-                     {/* Lower row on desktop: Cetak buttons & Action helpers */}
-                    <div className="flex flex-wrap items-center gap-1.5 shrink-0 max-w-full lg:justify-end lg:w-full">
-                      
-                      {/* Cetak Nota button options */}
-                      <button
-                        type="button"
-                        onClick={() => onGenerateNota(item, 'pelanggan')}
-                        title="Cetak Nota / Invoice Transaksi Pelanggan"
-                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/45 hover:bg-indigo-100 dark:hover:bg-indigo-950/75 border border-indigo-150 dark:border-indigo-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
-                      >
-                        <FileText className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                        <span>Nota</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => onGenerateNota(item, 'sublim')}
-                        title="Cetak Nota Pembayaran vendor Sublim"
-                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-pink-600 dark:text-pink-400 bg-pink-50/70 dark:bg-pink-950/45 hover:bg-pink-100 dark:hover:bg-pink-950/75 border border-pink-150 dark:border-pink-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
-                      >
-                        <Printer className="h-3.5 w-3.5 text-pink-500 shrink-0" />
-                        <span>Nota Sublim</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => onGenerateNota(item, 'jahit')}
-                        title="Cetak Nota Pembayaran vendor Jahit"
-                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50/70 dark:bg-amber-950/45 hover:bg-amber-100 dark:hover:bg-amber-950/75 border border-amber-150 dark:border-amber-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
-                      >
-                        <Scissors className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                        <span>Nota Jahit</span>
-                      </button>
 
                       {/* Edit / Trash Actions panel */}
-                      <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 border border-slate-150 dark:border-slate-750 p-1 rounded-xl shrink-0">
+                      <div className="flex items-center gap-0.5 bg-slate-50 dark:bg-slate-900 border border-slate-150 dark:border-slate-750 p-0.5 rounded-lg shrink-0">
                         {/* 1. Edit button */}
                         <button
                           type="button"
                           onClick={() => onEdit(item)}
                           title="Ubah Rincian Pesanan"
-                          className="p-1.5 text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
+                          className="p-1 text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-white dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer shrink-0"
                         >
-                          <Edit2 className="h-4 w-4" />
+                          <Edit2 className="h-3.5 w-3.5" />
                         </button>
 
                         {/* 2. Deletion action */}
@@ -641,14 +583,14 @@ export default function ActiveOrders({
                                 onDelete(item.id);
                                 setConfirmDeleteId(null);
                               }}
-                              className="p-1 text-rose-600 hover:bg-rose-100 rounded-md transition-colors font-black text-[11px]"
+                              className="p-1 text-rose-600 hover:bg-rose-100 rounded-md transition-colors font-black text-[10px]"
                             >
                               ✓
                             </button>
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteId(null)}
-                              className="p-1 text-slate-400 hover:bg-slate-200 rounded-md transition-colors text-[11px]"
+                              className="p-1 text-slate-400 hover:bg-slate-200 rounded-md transition-colors text-[10px]"
                             >
                               ✕
                             </button>
@@ -658,19 +600,80 @@ export default function ActiveOrders({
                             type="button"
                             onClick={() => setConfirmDeleteId(item.id)}
                             title="Hapus Pesanan Jersey"
-                            className="p-1.5 text-slate-700 dark:text-slate-300 hover:text-rose-600 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
+                            className="p-1 text-slate-700 dark:text-slate-300 hover:text-rose-600 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>
-
                     </div>
 
+                    {/* Vertically stacked aligned buttons (Sejajar dari atas ke bawah) */}
+                    <div className="flex flex-col gap-1.5 w-full">
+                      
+                      {/* 1. Status Produksi */}
+                      <button
+                        type="button"
+                        onClick={() => triggerNextStatus(item)}
+                        disabled={item.statusProduksi === 'Beres'}
+                        title={item.statusProduksi === 'Beres' ? 'Produksi Selesai!' : 'Klik untuk ubah status pengerjaan'}
+                        className={`w-full px-2.5 py-1.5 text-xs font-bold rounded-lg border flex items-center justify-between gap-1.5 transition-all ${getStatusStyle(item.statusProduksi)} ${
+                          item.statusProduksi !== 'Beres' ? 'hover:scale-[1.01] active:scale-[0.99] cursor-pointer shadow-3xs' : 'cursor-default opacity-85'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse shrink-0" />
+                          <span className="truncate">Status: {item.statusProduksi}</span>
+                        </div>
+                        {item.statusProduksi !== 'Beres' && (
+                          <Play className="h-2.5 w-2.5 ml-0.5 animate-pulse text-current shrink-0" />
+                        )}
+                      </button>
+
+                      {/* 2. Cetak Nota Pelanggan */}
+                      <button
+                        type="button"
+                        onClick={() => onGenerateNota(item, 'pelanggan')}
+                        title="Cetak Nota / Invoice Transaksi Pelanggan"
+                        className="w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/45 hover:bg-indigo-100 dark:hover:bg-indigo-950/75 border border-indigo-150 dark:border-indigo-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <FileText className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                          <span>Cetak Nota PO</span>
+                        </div>
+                        <span className="text-[10px] text-indigo-400 font-normal">Pelanggan</span>
+                      </button>
+
+                      {/* 3. Cetak Nota Sublim */}
+                      <button
+                        type="button"
+                        onClick={() => onGenerateNota(item, 'sublim')}
+                        title="Cetak Nota Pembayaran vendor Sublim"
+                        className="w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-xs font-bold text-pink-600 dark:text-pink-400 bg-pink-50/70 dark:bg-pink-950/45 hover:bg-pink-100 dark:hover:bg-pink-950/75 border border-pink-150 dark:border-pink-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Printer className="h-3.5 w-3.5 text-pink-500 shrink-0" />
+                          <span>Nota Sublim</span>
+                        </div>
+                        <span className="text-[10px] text-pink-400 font-normal">Vendor</span>
+                      </button>
+
+                      {/* 4. Cetak Nota Jahit */}
+                      <button
+                        type="button"
+                        onClick={() => onGenerateNota(item, 'jahit')}
+                        title="Cetak Nota Pembayaran vendor Jahit"
+                        className="w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50/70 dark:bg-amber-950/45 hover:bg-amber-100 dark:hover:bg-amber-950/75 border border-amber-150 dark:border-amber-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Scissors className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                          <span>Nota Jahit</span>
+                        </div>
+                        <span className="text-[10px] text-amber-400 font-normal">Vendor</span>
+                      </button>
+                    </div>
                   </div>
-
                 </div>
-
               </div>
             );
           })}
