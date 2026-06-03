@@ -28,7 +28,9 @@ import {
   MessageSquare,
   Send,
   AlertTriangle,
-  DollarSign
+  DollarSign,
+  Printer,
+  Scissors
 } from 'lucide-react';
 
 interface ActiveOrdersProps {
@@ -38,7 +40,7 @@ interface ActiveOrdersProps {
   onAddNew: () => void;
   onEdit: (pesanan: Pesanan) => void;
   onDelete: (id: string) => void;
-  onGenerateNota: (pesanan: Pesanan | Pesanan[]) => void;
+  onGenerateNota: (pesanan: Pesanan | Pesanan[], type?: 'pelanggan' | 'sublim' | 'jahit') => void;
   onUpdateStatus: (id: string, newStatus: StatusProduksi) => void;
   selectedMonth: string;
   setSelectedMonth: (month: string) => void;
@@ -130,11 +132,11 @@ export default function ActiveOrders({
     }
   };
 
-  const handleGenerateBatchNota = () => {
+  const handleGenerateBatchNota = (type: 'pelanggan' | 'sublim' | 'jahit' = 'pelanggan') => {
     const filteredOrderIds = filteredAndSortedList.map(o => o.id);
     const selectedOrders = pesananList.filter(o => selectedIds.includes(o.id) && filteredOrderIds.includes(o.id));
     if (selectedOrders.length > 0) {
-      onGenerateNota(selectedOrders);
+      onGenerateNota(selectedOrders, type);
     }
   };
 
@@ -341,16 +343,30 @@ export default function ActiveOrders({
               {selectedIds.length === filteredAndSortedList.length ? 'Batal Pilih Semua' : 'Pilih Semua'}
             </button>
             {selectedIds.length > 0 && (
-              <>
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-slate-300 dark:text-slate-700 text-xs">|</span>
                 <button
-                  onClick={handleGenerateBatchNota}
-                  className="flex items-center gap-1.5 bg-indigo-650 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-xs font-extrabold shadow-sm transition-all cursor-pointer border-none"
+                  onClick={() => handleGenerateBatchNota('pelanggan')}
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer border-none"
                 >
                   <FileText className="h-3.5 w-3.5" />
-                  Cetak Batch Nota ({selectedIds.length})
+                  <span>Batch Nota ({selectedIds.length})</span>
                 </button>
-              </>
+                <button
+                  onClick={() => handleGenerateBatchNota('sublim')}
+                  className="flex items-center gap-1.5 bg-pink-600 hover:bg-pink-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer border-none"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  <span>Batch Sublim ({selectedIds.length})</span>
+                </button>
+                <button
+                  onClick={() => handleGenerateBatchNota('jahit')}
+                  className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer border-none"
+                >
+                  <Scissors className="h-3.5 w-3.5" />
+                  <span>Batch Jahit ({selectedIds.length})</span>
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -570,17 +586,37 @@ export default function ActiveOrders({
                     </div>
 
                      {/* Lower row on desktop: Cetak buttons & Action helpers */}
-                    <div className="flex items-center gap-2 shrink-0 max-w-full lg:justify-end lg:w-full">
+                    <div className="flex flex-wrap items-center gap-1.5 shrink-0 max-w-full lg:justify-end lg:w-full">
                       
-                      {/* Cetak Nota button replacement for Preview */}
+                      {/* Cetak Nota button options */}
                       <button
                         type="button"
-                        onClick={() => onGenerateNota(item)}
-                        title="Cetak Nota / Invoice Transaksi"
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/45 hover:bg-indigo-100 dark:hover:bg-indigo-950/75 border border-indigo-150 dark:border-indigo-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
+                        onClick={() => onGenerateNota(item, 'pelanggan')}
+                        title="Cetak Nota / Invoice Transaksi Pelanggan"
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/45 hover:bg-indigo-100 dark:hover:bg-indigo-950/75 border border-indigo-150 dark:border-indigo-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
                       >
                         <FileText className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                        <span>Cetak Nota</span>
+                        <span>Nota</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onGenerateNota(item, 'sublim')}
+                        title="Cetak Nota Pembayaran vendor Sublim"
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-pink-600 dark:text-pink-400 bg-pink-50/70 dark:bg-pink-950/45 hover:bg-pink-100 dark:hover:bg-pink-950/75 border border-pink-150 dark:border-pink-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
+                      >
+                        <Printer className="h-3.5 w-3.5 text-pink-500 shrink-0" />
+                        <span>Nota Sublim</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onGenerateNota(item, 'jahit')}
+                        title="Cetak Nota Pembayaran vendor Jahit"
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50/70 dark:bg-amber-950/45 hover:bg-amber-100 dark:hover:bg-amber-950/75 border border-amber-150 dark:border-amber-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
+                      >
+                        <Scissors className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                        <span>Nota Jahit</span>
                       </button>
 
                       {/* Edit / Trash Actions panel */}

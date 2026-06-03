@@ -73,10 +73,11 @@ function EditableText({ isEditing, value, onChange, className = '', placeholder 
 interface ReceiptGeneratorProps {
   pesanan: Pesanan | Pesanan[];
   settings: ShopSettings;
+  notaType?: 'pelanggan' | 'sublim' | 'jahit';
   onCancel: () => void;
 }
 
-export default function ReceiptGenerator({ pesanan, settings, onCancel }: ReceiptGeneratorProps) {
+export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelanggan', onCancel }: ReceiptGeneratorProps) {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [isEditingTexts, setIsEditingTexts] = useState(false);
@@ -101,10 +102,66 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
   const pesananArray = Array.isArray(pesanan) ? pesanan : [pesanan];
   const isBatch = Array.isArray(pesanan);
 
+  // Helper to calculate sublim cost for an individual PO/order
+  const getSublimCost = (item: Pesanan) => {
+    return (item.items && item.items.length > 0)
+      ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
+      : (item.qty * (item.printPerPcs || 0));
+  };
+
+  // Helper to check if sublim is paid
+  const isSublimPaid = (item: Pesanan) => {
+    return settings.cashFlowList?.some(cf => 
+      cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`)
+    ) || false;
+  };
+
+  // Helper to calculate jahit cost for an individual PO/order
+  const getJahitCost = (item: Pesanan) => {
+    return (item.items && item.items.length > 0)
+      ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
+      : (item.qty * (item.jahitPerPcs || 0));
+  };
+
+  // Helper to check if jahit is paid
+  const isJahitPaid = (item: Pesanan) => {
+    return settings.cashFlowList?.some(cf => 
+      cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`)
+    ) || false;
+  };
+
   const totalQty = pesananArray.reduce((acc, curr) => acc + curr.qty, 0);
-  const totalHargaSum = pesananArray.reduce((acc, curr) => acc + curr.totalHarga, 0);
-  const totalUangMasukSum = pesananArray.reduce((acc, curr) => acc + curr.uangMasuk, 0);
-  const totalSisaTagihanSum = pesananArray.reduce((acc, curr) => acc + curr.sisaTagihan, 0);
+
+  // Custom total sums based on invoice type
+  const totalHargaSum = React.useMemo(() => {
+    if (notaType === 'sublim') {
+      return pesananArray.reduce((acc, curr) => acc + getSublimCost(curr), 0);
+    }
+    if (notaType === 'jahit') {
+      return pesananArray.reduce((acc, curr) => acc + getJahitCost(curr), 0);
+    }
+    return pesananArray.reduce((acc, curr) => acc + curr.totalHarga, 0);
+  }, [pesananArray, notaType, settings.cashFlowList]);
+
+  const totalUangMasukSum = React.useMemo(() => {
+    if (notaType === 'sublim') {
+      return pesananArray.reduce((acc, curr) => acc + (isSublimPaid(curr) ? getSublimCost(curr) : 0), 0);
+    }
+    if (notaType === 'jahit') {
+      return pesananArray.reduce((acc, curr) => acc + (isJahitPaid(curr) ? getJahitCost(curr) : 0), 0);
+    }
+    return pesananArray.reduce((acc, curr) => acc + curr.uangMasuk, 0);
+  }, [pesananArray, notaType, settings.cashFlowList]);
+
+  const totalSisaTagihanSum = React.useMemo(() => {
+    if (notaType === 'sublim') {
+      return pesananArray.reduce((acc, curr) => acc + (isSublimPaid(curr) ? 0 : getSublimCost(curr)), 0);
+    }
+    if (notaType === 'jahit') {
+      return pesananArray.reduce((acc, curr) => acc + (isJahitPaid(curr) ? 0 : getJahitCost(curr)), 0);
+    }
+    return pesananArray.reduce((acc, curr) => acc + curr.sisaTagihan, 0);
+  }, [pesananArray, notaType, settings.cashFlowList]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -327,12 +384,15 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
           </button>
           <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <FileText className="h-5 w-5 text-indigo-500" />
-            {isBatch ? `Pratinjau Batch Nota (${pesananArray.length} Transaksi)` : 'Pratinjau Nota Transaksi'}
+            {isBatch 
+              ? `Pratinjau Batch Nota ${notaType === 'sublim' ? 'Sublim' : notaType === 'jahit' ? 'Jahit' : ''} (${pesananArray.length} Transaksi)` 
+              : `Pratinjau Nota ${notaType === 'sublim' ? 'Bayar Sublim' : notaType === 'jahit' ? 'Bayar Jahit' : 'Transaksi'}`
+            }
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             {isBatch 
-              ? `Preview batch ${pesananArray.length} transaksi. Unduh JPG massal, gabung satu PDF, atau cetak sekaligus.`
-              : 'Preview, ubah tulisan secara manual, unduh JPG/PDF HD, atau print langsung sebagai bukti transaksi.'
+              ? `Preview batch ${pesananArray.length} transaksi pembayaran vendor. Unduh JPG massal, gabung satu PDF, atau cetak sekaligus.`
+              : `Preview, ubah rincian bayar secara manual, unduh JPG/PDF HD, atau print langsung sebagai bukti pembayaran.`
             }
           </p>
         </div>
@@ -376,10 +436,15 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
           {/* Print */}
           <button
             onClick={handlePrint}
-            className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
           >
             <Printer className="h-4 w-4" />
-            {isBatch ? 'Cetak Semua Nota' : 'Cetak Nota'}
+            <span>
+              {isBatch 
+                ? `Cetak Semua Nota ${notaType === 'sublim' ? 'Sublim' : notaType === 'jahit' ? 'Jahit' : ''}` 
+                : `Cetak Nota ${notaType === 'sublim' ? 'Sublim' : notaType === 'jahit' ? 'Jahit' : ''}`
+              }
+            </span>
           </button>
         </div>
       </div>
@@ -439,7 +504,28 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
           className="w-full flex flex-col items-center gap-6 no-print-gap"
         >
           {pesananArray.map((item, index) => {
-            const isFullyPaid = item.sisaTagihan === 0;
+            const currentOrderSubtotalCost = 
+              notaType === 'sublim' 
+                ? getSublimCost(item) 
+                : notaType === 'jahit' 
+                  ? getJahitCost(item) 
+                  : item.totalHarga;
+
+            const currentOrderPaidCost = 
+              notaType === 'sublim' 
+                ? (isSublimPaid(item) ? getSublimCost(item) : 0) 
+                : notaType === 'jahit' 
+                  ? (isJahitPaid(item) ? getJahitCost(item) : 0) 
+                  : item.uangMasuk;
+
+            const currentOrderUnpaidCost = 
+              notaType === 'sublim' 
+                ? (isSublimPaid(item) ? 0 : getSublimCost(item)) 
+                : notaType === 'jahit' 
+                  ? (isJahitPaid(item) ? 0 : getJahitCost(item)) 
+                  : item.sisaTagihan;
+
+            const isFullyPaid = currentOrderUnpaidCost === 0;
             return (
               <div 
                 key={item.id}
@@ -533,7 +619,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block w-full">
                       <EditableText
                         isEditing={isEditingTexts}
-                        value={getVal(item.id, 'labelNota', 'Nota Bukti Pesanan')}
+                        value={getVal(item.id, 'labelNota', notaType === 'sublim' ? 'Nota Pembayaran Sublim' : notaType === 'jahit' ? 'Nota Pembayaran Jahit' : 'Nota Bukti Pesanan')}
                         onChange={(val) => setVal(item.id, 'labelNota', val)}
                         className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left sm:text-right"
                       />
@@ -592,7 +678,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 text-left">
                       <EditableText
                         isEditing={isEditingTexts}
-                        value={getVal(item.id, 'labelKlien', 'Informasi Klien')}
+                        value={getVal(item.id, 'labelKlien', notaType === 'sublim' ? 'Detail Vendor Sublim' : notaType === 'jahit' ? 'Detail Vendor Jahit' : 'Informasi Klien')}
                         onChange={(val) => setVal(item.id, 'labelKlien', val)}
                         className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left"
                       />
@@ -662,7 +748,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                   <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">
                     <EditableText
                       isEditing={isEditingTexts}
-                      value={getVal(item.id, 'labelDetailRincian', 'Detail Rincian Pembelian')}
+                      value={getVal(item.id, 'labelDetailRincian', notaType === 'sublim' ? 'Detail Rincian Cetak Sublim' : notaType === 'jahit' ? 'Detail Rincian Ongkos Jahit' : 'Detail Rincian Pembelian')}
                       onChange={(val) => setVal(item.id, 'labelDetailRincian', val)}
                       className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left"
                     />
@@ -674,7 +760,9 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                         <th className="pb-3 width-auto text-left">Deskripsi Item</th>
                         <th className="pb-3 text-center w-24">Bahan</th>
                         <th className="pb-3 text-center w-12">Qty</th>
-                        <th className="pb-3 text-right w-28">Harga / pcs</th>
+                        <th className="pb-3 text-right w-28">
+                          {notaType === 'sublim' ? 'Biaya Sublim' : notaType === 'jahit' ? 'Ongkos Jahit' : 'Harga / pcs'}
+                        </th>
                         <th className="pb-3 text-right w-28">Jumlah</th>
                       </tr>
                     </thead>
@@ -686,8 +774,17 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                         keterangan: item.keterangan,
                         qty: item.qty,
                         hargaPerPcs: item.hargaPerPcs,
+                        printPerPcs: item.printPerPcs,
+                        jahitPerPcs: item.jahitPerPcs,
                       }]).map((subItem, idx) => {
                         const sId = subItem.id || `idx_${idx}`;
+                        const unitRate = 
+                          notaType === 'sublim' 
+                            ? (subItem.printPerPcs ?? item.printPerPcs ?? 0)
+                            : notaType === 'jahit'
+                              ? (subItem.jahitPerPcs ?? item.jahitPerPcs ?? 0)
+                              : subItem.hargaPerPcs;
+
                         return (
                           <tr key={sId} className="border-b border-slate-100 font-medium table-row text-left">
                             <td className="py-3 pr-3 text-left">
@@ -732,7 +829,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                             <td className="py-3 text-right text-slate-655 font-medium">
                               <EditableText
                                 isEditing={isEditingTexts}
-                                value={getVal(item.id, `subitem_${sId}_hargaPerPcs`, formatRupiah(subItem.hargaPerPcs))}
+                                value={getVal(item.id, `subitem_${sId}_hargaPerPcs`, formatRupiah(unitRate))}
                                 onChange={(val) => setVal(item.id, `subitem_${sId}_hargaPerPcs`, val)}
                                 className="text-right text-slate-655 text-xs"
                               />
@@ -740,7 +837,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                             <td className="py-3 text-right font-bold text-slate-900">
                               <EditableText
                                 isEditing={isEditingTexts}
-                                value={getVal(item.id, `subitem_${sId}_jumlah`, formatRupiah(subItem.qty * subItem.hargaPerPcs))}
+                                value={getVal(item.id, `subitem_${sId}_jumlah`, formatRupiah(subItem.qty * unitRate))}
                                 onChange={(val) => setVal(item.id, `subitem_${sId}_jumlah`, val)}
                                 className="text-right font-bold text-slate-900 text-xs"
                               />
@@ -818,7 +915,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                       <span>
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal(item.id, 'labelSubtotal', 'Subtotal Harga')}
+                          value={getVal(item.id, 'labelSubtotal', notaType === 'sublim' ? 'Total Cetak Sublim' : notaType === 'jahit' ? 'Total Ongkos Jahit' : 'Subtotal Harga')}
                           onChange={(val) => setVal(item.id, 'labelSubtotal', val)}
                           className="text-slate-505"
                         />
@@ -826,7 +923,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                       <span className="font-semibold text-slate-800 text-right">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal(item.id, 'valSubtotal', formatRupiah(item.totalHarga))}
+                          value={getVal(item.id, 'valSubtotal', formatRupiah(currentOrderSubtotalCost))}
                           onChange={(val) => setVal(item.id, 'valSubtotal', val)}
                           className="font-semibold text-slate-800"
                         />
@@ -837,7 +934,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                       <span>
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal(item.id, 'labelUangMasuk', 'Uang Masuk / Pembayaran DP')}
+                          value={getVal(item.id, 'labelUangMasuk', notaType === 'sublim' || notaType === 'jahit' ? 'Jumlah Terbayar ✓' : 'Uang Masuk / Pembayaran DP')}
                           onChange={(val) => setVal(item.id, 'labelUangMasuk', val)}
                           className="text-slate-505"
                         />
@@ -845,7 +942,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                       <span className="font-semibold text-emerald-600 text-right">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal(item.id, 'valUangMasuk', formatRupiah(item.uangMasuk))}
+                          value={getVal(item.id, 'valUangMasuk', formatRupiah(currentOrderPaidCost))}
                           onChange={(val) => setVal(item.id, 'valUangMasuk', val)}
                           className="font-semibold text-emerald-650"
                         />
@@ -863,7 +960,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                       <span className="text-[10px] uppercase font-bold tracking-wider">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal(item.id, 'labelSisa', (isFullyPaid ? 'Status Bayar' : 'Sisa Tagihan'))}
+                          value={getVal(item.id, 'labelSisa', notaType === 'sublim' ? 'Sisa Bayar Sublim' : notaType === 'jahit' ? 'Sisa Bayar Jahit' : (isFullyPaid ? 'Status Bayar' : 'Sisa Tagihan'))}
                           onChange={(val) => setVal(item.id, 'labelSisa', val)}
                           className="text-[10px] uppercase font-bold tracking-wider"
                         />
@@ -871,7 +968,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                       <span className="text-sm font-black">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal(item.id, 'valSisa', (isFullyPaid ? 'LUNAS ✓' : formatRupiah(item.sisaTagihan)))}
+                          value={getVal(item.id, 'valSisa', isFullyPaid ? 'LUNAS ✓' : formatRupiah(currentOrderUnpaidCost))}
                           onChange={(val) => setVal(item.id, 'valSisa', val)}
                           className="text-sm font-black"
                         />
@@ -1080,14 +1177,41 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                         <th className="pb-3 w-20 text-left">ID</th>
                         <th className="pb-3 text-left">PO / Tim & Pemesan</th>
                         <th className="pb-3 text-center w-12">Qty</th>
-                        <th className="pb-3 text-right w-24">Subtotal</th>
-                        <th className="pb-3 text-right w-24">DP Masuk</th>
-                        <th className="pb-3 text-right w-24 font-extrabold text-indigo-600">Sisa Tagihan</th>
+                        <th className="pb-3 text-right w-24">
+                          {notaType === 'sublim' ? 'Sublim' : notaType === 'jahit' ? 'Jahit' : 'Subtotal'}
+                        </th>
+                        <th className="pb-3 text-right w-24">
+                          {notaType !== 'pelanggan' ? 'Terbayar' : 'DP Masuk'}
+                        </th>
+                        <th className="pb-3 text-right w-24 font-extrabold text-indigo-600">
+                          {notaType === 'sublim' ? 'Sisa Sublim' : notaType === 'jahit' ? 'Sisa Jahit' : 'Sisa Tagihan'}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {pesananArray.map((item) => {
                         const recId = item.id;
+                        const rowSubtotal = 
+                          notaType === 'sublim' 
+                            ? getSublimCost(item) 
+                            : notaType === 'jahit' 
+                              ? getJahitCost(item) 
+                              : item.totalHarga;
+
+                        const rowPaidValue = 
+                          notaType === 'sublim' 
+                            ? (isSublimPaid(item) ? getSublimCost(item) : 0) 
+                            : notaType === 'jahit' 
+                              ? (isJahitPaid(item) ? getJahitCost(item) : 0) 
+                              : item.uangMasuk;
+
+                        const rowUnpaidValue = 
+                          notaType === 'sublim' 
+                            ? (isSublimPaid(item) ? 0 : getSublimCost(item)) 
+                            : notaType === 'jahit' 
+                              ? (isJahitPaid(item) ? 0 : getJahitCost(item)) 
+                              : item.sisaTagihan;
+
                         return (
                           <tr key={recId} className="border-b border-slate-100 font-medium text-left">
                             <td className="py-3 font-mono text-indigo-650 font-bold">
@@ -1127,7 +1251,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                             <td className="py-3 text-right text-slate-700 font-medium">
                               <EditableText
                                 isEditing={isEditingTexts}
-                                value={getVal(`rekap_${recId}`, 'totalHarga', formatRupiah(item.totalHarga))}
+                                value={getVal(`rekap_${recId}`, 'totalHarga', formatRupiah(rowSubtotal))}
                                 onChange={(val) => setVal(`rekap_${recId}`, 'totalHarga', val)}
                                 className="text-right text-slate-705 text-xs"
                               />
@@ -1135,7 +1259,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                             <td className="py-3 text-right font-semibold text-emerald-600">
                               <EditableText
                                 isEditing={isEditingTexts}
-                                value={getVal(`rekap_${recId}`, 'uangMasuk', formatRupiah(item.uangMasuk))}
+                                value={getVal(`rekap_${recId}`, 'uangMasuk', formatRupiah(rowPaidValue))}
                                 onChange={(val) => setVal(`rekap_${recId}`, 'uangMasuk', val)}
                                 className="text-right font-semibold text-emerald-600 text-xs"
                               />
@@ -1143,7 +1267,7 @@ export default function ReceiptGenerator({ pesanan, settings, onCancel }: Receip
                             <td className="py-3 text-right font-bold text-rose-600">
                               <EditableText
                                 isEditing={isEditingTexts}
-                                value={getVal(`rekap_${recId}`, 'sisaTagihan', formatRupiah(item.sisaTagihan))}
+                                value={getVal(`rekap_${recId}`, 'sisaTagihan', formatRupiah(rowUnpaidValue))}
                                 onChange={(val) => setVal(`rekap_${recId}`, 'sisaTagihan', val)}
                                 className="text-right font-bold text-rose-600 text-xs"
                               />
