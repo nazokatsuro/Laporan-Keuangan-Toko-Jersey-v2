@@ -1231,7 +1231,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                                   className="font-bold text-slate-900 text-xs text-left"
                                 />
                               </p>
-                              <p className="text-[10px] text-slate-500 text-left">
+                              <p className="text-[10px] text-slate-500 text-left mb-1">
                                 <EditableText
                                   isEditing={isEditingTexts}
                                   value={getVal(`rekap_${recId}`, 'namaPemesan', item.namaPemesan)}
@@ -1239,6 +1239,95 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                                   className="text-[10px] text-slate-500 text-left"
                                 />
                               </p>
+
+                              {/* Rincian Deskripsi Item PO */}
+                              <div className="mt-1.5 space-y-1 block max-w-xs">
+                                {((item.items && item.items.length > 0) ? item.items : [{
+                                  id: 'default',
+                                  namaProduk: item.namaProduk,
+                                  bahan: item.bahan,
+                                  keterangan: item.keterangan || '',
+                                  qty: item.qty,
+                                  hargaPerPcs: item.hargaPerPcs,
+                                  printPerPcs: item.printPerPcs,
+                                  jahitPerPcs: item.jahitPerPcs
+                                }]).map((sub, sIdx) => {
+                                  const s_Id = sub.id || `rekap_sub_${sIdx}`;
+                                  const unitRate = 
+                                    notaType === 'sublim' 
+                                      ? (sub.printPerPcs ?? item.printPerPcs ?? 0)
+                                      : notaType === 'jahit'
+                                        ? (sub.jahitPerPcs ?? item.jahitPerPcs ?? 0)
+                                        : (sub.hargaPerPcs ?? item.hargaPerPcs ?? 0);
+
+                                  return (
+                                    <div key={s_Id} className="pl-1.5 border-l border-indigo-100 text-[10px] text-slate-600 space-y-0.5">
+                                      <div className="flex items-center gap-1 text-left flex-wrap">
+                                        <span className="font-bold text-indigo-400">●</span>
+                                        <span className="font-semibold text-slate-700">
+                                          <EditableText
+                                            isEditing={isEditingTexts}
+                                            value={getVal(item.id, `subitem_${s_Id}_namaProduk_rekap`, sub.namaProduk)}
+                                            onChange={(val) => setVal(item.id, `subitem_${s_Id}_namaProduk_rekap`, val)}
+                                            className="font-semibold text-slate-700 text-[10px]"
+                                          />
+                                        </span>
+                                        <span className="text-slate-500 text-[10px]">
+                                          (
+                                          <EditableText
+                                            isEditing={isEditingTexts}
+                                            value={getVal(item.id, `subitem_${s_Id}_qty_rekap`, `${sub.qty} pcs`)}
+                                            onChange={(val) => setVal(item.id, `subitem_${s_Id}_qty_rekap`, val)}
+                                            className="text-slate-500 text-[10px]"
+                                          />
+                                          )
+                                        </span>
+                                        {(sub.bahan || isEditingTexts) && (
+                                          <span className="text-[9px] bg-slate-100 text-slate-500 px-1 rounded truncate max-w-[80px]">
+                                            <EditableText
+                                              isEditing={isEditingTexts}
+                                              value={getVal(item.id, `subitem_${s_Id}_bahan_rekap`, sub.bahan || 'Standar')}
+                                              onChange={(val) => setVal(item.id, `subitem_${s_Id}_bahan_rekap`, val)}
+                                              className="text-[9px] text-slate-500"
+                                            />
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Baris Informasi Harga Satuan & Total Subitem */}
+                                      <div className="flex items-center gap-1.5 pl-3 text-[9px] text-slate-500 flex-wrap">
+                                        <span className="text-slate-400">@</span>
+                                        <EditableText
+                                          isEditing={isEditingTexts}
+                                          value={getVal(item.id, `subitem_${s_Id}_hargaPerPcs_rekap`, formatRupiah(unitRate))}
+                                          onChange={(val) => setVal(item.id, `subitem_${s_Id}_hargaPerPcs_rekap`, val)}
+                                          className="text-slate-500 text-[9px]"
+                                        />
+                                        <span className="text-slate-400">=</span>
+                                        <span className="font-bold text-slate-700 dark:text-slate-300">
+                                          <EditableText
+                                            isEditing={isEditingTexts}
+                                            value={getVal(item.id, `subitem_${s_Id}_jumlah_rekap`, formatRupiah(sub.qty * unitRate))}
+                                            onChange={(val) => setVal(item.id, `subitem_${s_Id}_jumlah_rekap`, val)}
+                                            className="font-bold text-slate-700 dark:text-slate-300 text-[9px]"
+                                          />
+                                        </span>
+                                      </div>
+
+                                      {(sub.keterangan || isEditingTexts) && (
+                                        <p className="text-[9px] text-slate-450 italic leading-none pl-3 whitespace-pre-wrap text-left">
+                                          <EditableText
+                                            isEditing={isEditingTexts}
+                                            value={getVal(item.id, `subitem_${s_Id}_keterangan_rekap`, sub.keterangan || '')}
+                                            onChange={(val) => setVal(item.id, `subitem_${s_Id}_keterangan_rekap`, val)}
+                                            className="text-[9px] text-slate-450 italic text-left"
+                                          />
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </td>
                             <td className="py-3 text-center font-bold text-slate-800">
                               <EditableText
