@@ -14,6 +14,7 @@ export interface PesananItem {
   hargaPerPcs: number;
   printPerPcs: number;
   jahitPerPcs: number;
+  modelKerah?: string;
 }
 
 export interface Pesanan {
@@ -32,6 +33,7 @@ export interface Pesanan {
   uangMasuk: number; // DP / Uang Masuk
   sisaTagihan: number; // totalHarga - uangMasuk
   statusProduksi: StatusProduksi;
+  modelKerah?: string; // Model Kerah PO
   
   // Perhitungan Modal
   printPerPcs: number;
@@ -74,6 +76,7 @@ export interface ShopSettings {
   danaDaruratTargetMonths?: number;
   cashFlowList?: CashFlowTransaction[];
   dismissedAuditorAlerts?: AuditorDismissedAlert[];
+  customCollars?: string[];
 }
 
 export interface FinancialStats {

@@ -156,11 +156,11 @@ export default function ActiveOrders({
         if (statusFilter === 'Semua') {
           matchesStatus = true;
         } else if (statusFilter === 'Belum Bayar Sublim') {
-          const sublimCost = item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
+          const sublimCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
           const hasPaidSublim = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`));
           matchesStatus = sublimCost > 0 && !hasPaidSublim && ['Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi);
         } else if (statusFilter === 'Belum Bayar Jahit') {
-          const jahitCost = item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
+          const jahitCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
           const hasPaidJahit = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
           matchesStatus = jahitCost > 0 && !hasPaidJahit && ['Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi);
         } else {
@@ -385,9 +385,9 @@ export default function ActiveOrders({
             const nearDeadline = isNearDeadline(item.deadline, item.statusProduksi === 'Beres');
             const isFullyPaid = item.sisaTagihan === 0;
             
-            const sublimCost = item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
+            const sublimCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
             const hasPaidSublim = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`));
-            const jahitCost = item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
+            const jahitCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
             const hasPaidJahit = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
 
             return (

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Pesanan, PesananItem, StatusProduksi } from '../types';
+import { Pesanan, PesananItem, StatusProduksi, ShopSettings } from '../types';
 import { generateId, formatRupiah } from '../utils';
 import { 
   Save, 
@@ -30,9 +30,24 @@ interface OrderFormProps {
   onCancel: () => void;
   onLogToCashFlow?: (kategori: string, jenis: 'masuk'|'keluar', nominal: number, keterangan: string) => void;
   cashFlowList?: any[]; // using any temporarily, or import CashFlowTransaction
+  settings?: ShopSettings;
+  onUpdateSettings?: (s: ShopSettings) => void;
 }
 
 const STATUS_LIST: StatusProduksi[] = ['Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'];
+
+const BASELINE_COLLARS = [
+  "O-Neck (Standar)",
+  "V-Neck",
+  "V-Persikab/kombinasi",
+  "V-Daun",
+  "V-Daun+Lidah",
+  "V+Lidah",
+  "O-Neck Kombinasi",
+  "Kerah Polo",
+  "Kerah Sleting",
+  "Kerah Shanghai"
+];
 
 interface RupiahInputProps {
   value: number;
@@ -84,7 +99,7 @@ const getLocalDateString = (d: Date = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
-export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCashFlow, cashFlowList }: OrderFormProps) {
+export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCashFlow, cashFlowList, settings, onUpdateSettings }: OrderFormProps) {
   // Base fields
   const [deadline, setDeadline] = useState('');
   const [namaPemesan, setNamaPemesan] = useState('');
@@ -107,6 +122,13 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
 
   // Multiple product items inside this 1 PO
   const [items, setItems] = useState<PesananItem[]>([]);
+
+  // Memoized lists of collars combining baseline and custom ones
+  const availableCollars = useMemo(() => {
+    const customList = settings?.customCollars || [];
+    const uniqueCustom = customList.filter(col => col && !BASELINE_COLLARS.includes(col));
+    return [...BASELINE_COLLARS, ...uniqueCustom];
+  }, [settings?.customCollars]);
 
   // Load existing pesanan details if editing
   useEffect(() => {
@@ -136,7 +158,10 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       }
 
       if (pesananToEdit.items && pesananToEdit.items.length > 0) {
-        setItems(pesananToEdit.items);
+        setItems(pesananToEdit.items.map(it => ({
+          ...it,
+          modelKerah: it.modelKerah || pesananToEdit.modelKerah || 'O-Neck (Standar)'
+        })));
       } else {
         // Fallback for older historic single-item POs
         setItems([
@@ -149,6 +174,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
             hargaPerPcs: pesananToEdit.hargaPerPcs || 110000,
             printPerPcs: pesananToEdit.printPerPcs ?? 35000,
             jahitPerPcs: pesananToEdit.jahitPerPcs ?? 20000,
+            modelKerah: pesananToEdit.modelKerah || 'O-Neck (Standar)',
           }
         ]);
       }
@@ -178,6 +204,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
           hargaPerPcs: 110000,
           printPerPcs: 35000,
           jahitPerPcs: 20000,
+          modelKerah: 'O-Neck (Standar)',
         }
       ]);
     }
@@ -204,6 +231,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
         hargaPerPcs: 110000,
         printPerPcs: 35000,
         jahitPerPcs: 20000,
+        modelKerah: 'O-Neck (Standar)',
       }
     ]);
   };
@@ -299,6 +327,10 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       ? items[0].keterangan 
       : items.map((item, idx) => `[Item ${idx + 1}] ${item.namaProduk}: ${item.keterangan || '-'}`).join('; ');
 
+    const summaryModelKerah = items.length === 1
+      ? (items[0].modelKerah || 'O-Neck (Standar)')
+      : items.map(item => item.modelKerah || 'O-Neck (Standar)').filter((v, idx, arr) => arr.indexOf(v) === idx).join(', ');
+
     const firstItem = items[0] || { printPerPcs: 35000, jahitPerPcs: 20000, hargaPerPcs: 110000 };
 
     const todayLocalStr = getLocalDateString();
@@ -343,6 +375,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       uangMasuk,
       sisaTagihan,
       statusProduksi,
+      modelKerah: summaryModelKerah,
       printPerPcs: firstItem.printPerPcs,
       jahitPerPcs: firstItem.jahitPerPcs,
       biayaLainnya,
@@ -351,6 +384,32 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       items,
       mockupUrl
     };
+
+    // Automatically register any newly entered custom collar models in the shop settings for next transactions
+    if (onUpdateSettings && settings) {
+      const existingCustom = settings.customCollars || [];
+      const newCustomsToRegister: string[] = [];
+      
+      items.forEach(it => {
+        const collar = (it.modelKerah || '').trim();
+        if (collar && collar !== 'Kustom' && collar !== 'Lainnya') {
+          const isInBaseline = BASELINE_COLLARS.some(bc => bc.toLowerCase() === collar.toLowerCase());
+          const isInCustom = existingCustom.some(ec => ec.toLowerCase() === collar.toLowerCase());
+          const isInWorkingList = newCustomsToRegister.some(n => n.toLowerCase() === collar.toLowerCase());
+          
+          if (!isInBaseline && !isInCustom && !isInWorkingList) {
+            newCustomsToRegister.push(collar);
+          }
+        }
+      });
+      
+      if (newCustomsToRegister.length > 0) {
+        onUpdateSettings({
+          ...settings,
+          customCollars: [...existingCustom, ...newCustomsToRegister]
+        });
+      }
+    }
 
     onSave(payload);
   };
@@ -538,7 +597,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                 </div>
 
                 {/* Main product specs input fields */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                       Nama Produk Jersey <span className="text-rose-500">*</span>
@@ -565,6 +624,44 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                       onChange={(e) => updateItemField(index, 'bahan', e.target.value)}
                       className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Model Kerah <span className="text-indigo-500 font-semibold">*</span>
+                    </label>
+                    <select
+                      value={
+                        availableCollars.includes(item.modelKerah || 'O-Neck (Standar)')
+                          ? (item.modelKerah || 'O-Neck (Standar)')
+                          : 'Lainnya'
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'Lainnya') {
+                          updateItemField(index, 'modelKerah', 'Kustom');
+                        } else {
+                          updateItemField(index, 'modelKerah', val);
+                        }
+                      }}
+                      className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-1 focus:ring-indigo-500 focus:outline-hidden cursor-pointer"
+                    >
+                      {availableCollars.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                      <option value="Lainnya">Lainnya (Ketik Manual...)</option>
+                    </select>
+
+                    {!availableCollars.includes(item.modelKerah || 'O-Neck (Standar)') && (
+                      <input
+                        type="text"
+                        placeholder="Ketik model kerah manual..."
+                        required
+                        value={item.modelKerah === 'Kustom' ? '' : (item.modelKerah || '')}
+                        onChange={(e) => updateItemField(index, 'modelKerah', e.target.value)}
+                        className="w-full mt-2 px-3.5 py-2 text-xs rounded-xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/20 dark:bg-indigo-950/20 text-slate-800 dark:text-white focus:ring-1 focus:ring-indigo-500 focus:outline-hidden animate-fade-in"
+                      />
+                    )}
                   </div>
 
                   {/* Template pricing for this item SPECIFICALLY */}

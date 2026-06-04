@@ -740,6 +740,16 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                         />
                       </strong>
                     </p>
+                    <p className="text-xs text-slate-500 mt-0.5 text-left sm:text-right">
+                      Model Kerah: <strong className="font-medium text-slate-700 text-left sm:text-right">
+                        <EditableText
+                          isEditing={isEditingTexts}
+                          value={getVal(item.id, 'modelKerahHeader', item.modelKerah || 'O-Neck (Standar)')}
+                          onChange={(val) => setVal(item.id, 'modelKerahHeader', val)}
+                          className="font-medium text-slate-700 text-xs text-left sm:text-right"
+                        />
+                      </strong>
+                    </p>
                   </div>
                 </div>
 
@@ -776,6 +786,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                         hargaPerPcs: item.hargaPerPcs,
                         printPerPcs: item.printPerPcs,
                         jahitPerPcs: item.jahitPerPcs,
+                        modelKerah: item.modelKerah,
                       }]).map((subItem, idx) => {
                         const sId = subItem.id || `idx_${idx}`;
                         const unitRate = 
@@ -788,14 +799,24 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                         return (
                           <tr key={sId} className="border-b border-slate-100 font-medium table-row text-left">
                             <td className="py-3 pr-3 text-left">
-                              <p className="font-bold text-slate-900 text-xs text-left">
-                                <EditableText
-                                  isEditing={isEditingTexts}
-                                  value={getVal(item.id, `subitem_${sId}_namaProduk`, subItem.namaProduk)}
-                                  onChange={(val) => setVal(item.id, `subitem_${sId}_namaProduk`, val)}
-                                  className="font-bold text-slate-900 text-xs text-left"
-                                />
-                              </p>
+                              <div className="flex items-center gap-2 flex-wrap text-left">
+                                <span className="font-bold text-slate-900 text-xs text-left">
+                                  <EditableText
+                                    isEditing={isEditingTexts}
+                                    value={getVal(item.id, `subitem_${sId}_namaProduk`, subItem.namaProduk)}
+                                    onChange={(val) => setVal(item.id, `subitem_${sId}_namaProduk`, val)}
+                                    className="font-bold text-slate-900 text-xs text-left"
+                                  />
+                                </span>
+                                <span className="text-[9px] bg-slate-50 text-indigo-600 px-1 py-0.5 rounded border border-indigo-100/60 font-semibold select-none">
+                                  Kerah: <EditableText
+                                    isEditing={isEditingTexts}
+                                    value={getVal(item.id, `subitem_${sId}_modelKerah`, subItem.modelKerah || 'O-Neck (Standar)')}
+                                    onChange={(val) => setVal(item.id, `subitem_${sId}_modelKerah`, val)}
+                                    className="font-semibold text-[9px] text-indigo-600 inline-block"
+                                  />
+                                </span>
+                              </div>
                               {(subItem.keterangan || isEditingTexts) && (
                                 <p className="text-[11px] text-slate-550 mt-1 italic tracking-wide max-w-[280px] whitespace-pre-wrap flex items-start gap-1 text-left">
                                   <span className="shrink-0 text-[11px] text-slate-500 italic">Catatan:</span>
@@ -1250,7 +1271,8 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                                   qty: item.qty,
                                   hargaPerPcs: item.hargaPerPcs,
                                   printPerPcs: item.printPerPcs,
-                                  jahitPerPcs: item.jahitPerPcs
+                                  jahitPerPcs: item.jahitPerPcs,
+                                  modelKerah: item.modelKerah,
                                 }]).map((sub, sIdx) => {
                                   const s_Id = sub.id || `rekap_sub_${sIdx}`;
                                   const unitRate = 
@@ -1289,6 +1311,16 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                                               value={getVal(item.id, `subitem_${s_Id}_bahan_rekap`, sub.bahan || 'Standar')}
                                               onChange={(val) => setVal(item.id, `subitem_${s_Id}_bahan_rekap`, val)}
                                               className="text-[9px] text-slate-500"
+                                            />
+                                          </span>
+                                        )}
+                                        {(sub.modelKerah || isEditingTexts) && (
+                                          <span className="text-[9px] bg-indigo-50 text-indigo-600 px-1 rounded truncate max-w-[100px] border border-indigo-100/60 font-semibold select-none">
+                                            Kerah: <EditableText
+                                              isEditing={isEditingTexts}
+                                              value={getVal(item.id, `subitem_${s_Id}_modelKerah_rekap`, sub.modelKerah || 'O-Neck (Standar)')}
+                                              onChange={(val) => setVal(item.id, `subitem_${s_Id}_modelKerah_rekap`, val)}
+                                              className="text-[9px] text-indigo-600 font-semibold"
                                             />
                                           </span>
                                         )}

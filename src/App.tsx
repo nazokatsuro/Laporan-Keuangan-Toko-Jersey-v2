@@ -475,11 +475,11 @@ export default function App() {
       }
 
       // 3. Vendor Payment Alerts (Sublim & Jahit)
-      const sublimCost = item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
+      const sublimCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
       const hasPaidSublim = cfList.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`));
       const isSublimUnpaid = sublimCost > 0 && !hasPaidSublim && (item.statusProduksi === 'Print Press' || item.statusProduksi === 'Jahit' || item.statusProduksi === 'Tinggal Kirim' || item.statusProduksi === 'Beres');
 
-      const jahitCost = item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
+      const jahitCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
       const hasPaidJahit = cfList.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
       const isJahitUnpaid = jahitCost > 0 && !hasPaidJahit && (item.statusProduksi === 'Jahit' || item.statusProduksi === 'Tinggal Kirim' || item.statusProduksi === 'Beres');
 
@@ -1174,6 +1174,8 @@ export default function App() {
                     setActiveTab('transaksi');
                   }}
                   onLogToCashFlow={handleLogToCashFlow}
+                  settings={settings}
+                  onUpdateSettings={setSettings}
                 />
               )}
 

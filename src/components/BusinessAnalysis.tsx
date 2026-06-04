@@ -61,8 +61,14 @@ export default function BusinessAnalysis({ pesananList }: BusinessAnalysisProps)
     const collarCounts: Record<string, number> = {
       'O-Neck (Standar)': 0,
       'V-Neck': 0,
-      'Kerah Shanghai': 0,
-      'Kerah Polo': 0
+      'V-Persikab/kombinasi': 0,
+      'V-Daun': 0,
+      'V-Daun+Lidah': 0,
+      'V+Lidah': 0,
+      'O-Neck Kombinasi': 0,
+      'Kerah Polo': 0,
+      'Kerah Sleting': 0,
+      'Kerah Shanghai': 0
     };
 
     // C. Jersey Type (Heuristic parsing)
@@ -91,23 +97,85 @@ export default function BusinessAnalysis({ pesananList }: BusinessAnalysisProps)
       const cleanBahan = rawBahan.charAt(0).toUpperCase() + rawBahan.slice(1).toLowerCase();
       bahanCounts[cleanBahan] = (bahanCounts[cleanBahan] || 0) + gQty;
 
-      // 2. Classify Collar Type via heuristic scan
       const textBlock = `${item.namaProduk} ${item.keterangan}`.toLowerCase();
-      if (textBlock.includes('o-neck') || textBlock.includes('o neck') || textBlock.includes('kerah bulat') || textBlock.includes('o_neck')) {
-        collarCounts['O-Neck (Standar)'] += gQty;
-      } else if (textBlock.includes('v-neck') || textBlock.includes('v neck') || textBlock.includes('lancip') || textBlock.includes('kerah v')) {
-        collarCounts['V-Neck'] += gQty;
-      } else if (textBlock.includes('shanghai') || textBlock.includes('sanghai') || textBlock.includes('koko')) {
-        collarCounts['Kerah Shanghai'] += gQty;
-      } else if (textBlock.includes('polo') || textBlock.includes('wangky') || textBlock.includes('kerah lipat')) {
-        collarCounts['Kerah Polo'] += gQty;
+
+      // 2. Classify Collar Type via manual field or fallback heuristic scan
+      const manualCollar = (item.modelKerah || '').trim();
+      if (manualCollar) {
+        let matched = false;
+        const lowerC = manualCollar.toLowerCase();
+        
+        // Exact case-insensitive match against standard keys
+        const matchedKey = Object.keys(collarCounts).find(k => k.toLowerCase() === lowerC);
+        if (matchedKey) {
+          collarCounts[matchedKey] += gQty;
+          matched = true;
+        } else {
+          // Specific fuzzy mappings
+          if (lowerC.includes('persikab')) {
+            collarCounts['V-Persikab/kombinasi'] += gQty;
+            matched = true;
+          } else if (lowerC.includes('v-daun+lidah') || (lowerC.includes('daun') && lowerC.includes('lidah'))) {
+            collarCounts['V-Daun+Lidah'] += gQty;
+            matched = true;
+          } else if (lowerC.includes('v-daun') || lowerC.includes('daun')) {
+            collarCounts['V-Daun'] += gQty;
+            matched = true;
+          } else if (lowerC.includes('v+lidah') || lowerC.includes('v + lidah') || lowerC.includes('vlidah')) {
+            collarCounts['V+Lidah'] += gQty;
+            matched = true;
+          } else if (lowerC.includes('sleting') || lowerC.includes('zipper') || lowerC.includes('resleting')) {
+            collarCounts['Kerah Sleting'] += gQty;
+            matched = true;
+          } else if (lowerC.includes('o-neck kombinasi') || lowerC.includes('neck kombinasi') || (lowerC.includes('o') && lowerC.includes('kombinasi'))) {
+            collarCounts['O-Neck Kombinasi'] += gQty;
+            matched = true;
+          } else if (lowerC.includes('o-neck') || lowerC.includes('o neck') || lowerC.includes('bulat') || lowerC.includes('o_neck')) {
+            collarCounts['O-Neck (Standar)'] += gQty;
+            matched = true;
+          } else if (lowerC.includes('v-neck') || lowerC.includes('v neck') || lowerC.includes('lancip') || lowerC.includes('v')) {
+            collarCounts['V-Neck'] += gQty;
+            matched = true;
+          } else if (lowerC.includes('shanghai') || lowerC.includes('sanghai') || lowerC.includes('koko')) {
+            collarCounts['Kerah Shanghai'] += gQty;
+            matched = true;
+          } else if (lowerC.includes('polo') || lowerC.includes('wangky') || lowerC.includes('lipat')) {
+            collarCounts['Kerah Polo'] += gQty;
+            matched = true;
+          }
+        }
+        
+        if (!matched) {
+          // Capitalize and add customized collar type dynamically
+          const formattedCollar = manualCollar.charAt(0).toUpperCase() + manualCollar.slice(1);
+          collarCounts[formattedCollar] = (collarCounts[formattedCollar] || 0) + gQty;
+        }
       } else {
-        // Fallback default distribution based on PO ID hash to keep it elegant and populated
-        const rem = item.id.charCodeAt(item.id.length - 1) % 4;
-        if (rem === 0) collarCounts['O-Neck (Standar)'] += gQty;
-        else if (rem === 1) collarCounts['V-Neck'] += gQty;
-        else if (rem === 2) collarCounts['Kerah Shanghai'] += gQty;
-        else collarCounts['Kerah Polo'] += gQty;
+        // Fallback heuristic based on text description
+        if (textBlock.includes('o-neck kombinasi') || textBlock.includes('neck-kombinasi')) {
+          collarCounts['O-Neck Kombinasi'] += gQty;
+        } else if (textBlock.includes('persikab')) {
+          collarCounts['V-Persikab/kombinasi'] += gQty;
+        } else if (textBlock.includes('v-daun+lidah')) {
+          collarCounts['V-Daun+Lidah'] += gQty;
+        } else if (textBlock.includes('v-daun')) {
+          collarCounts['V-Daun'] += gQty;
+        } else if (textBlock.includes('v+lidah')) {
+          collarCounts['V+Lidah'] += gQty;
+        } else if (textBlock.includes('sleting') || textBlock.includes('resleting')) {
+          collarCounts['Kerah Sleting'] += gQty;
+        } else if (textBlock.includes('o-neck') || textBlock.includes('o neck') || textBlock.includes('kerah bulat') || textBlock.includes('o_neck')) {
+          collarCounts['O-Neck (Standar)'] += gQty;
+        } else if (textBlock.includes('v-neck') || textBlock.includes('v neck') || textBlock.includes('lancip') || textBlock.includes('kerah v')) {
+          collarCounts['V-Neck'] += gQty;
+        } else if (textBlock.includes('shanghai') || textBlock.includes('sanghai') || textBlock.includes('koko')) {
+          collarCounts['Kerah Shanghai'] += gQty;
+        } else if (textBlock.includes('polo') || textBlock.includes('wangky') || textBlock.includes('kerah lipat')) {
+          collarCounts['Kerah Polo'] += gQty;
+        } else {
+          // Fall back to general O-Neck (Standar) safely without artificial noise
+          collarCounts['O-Neck (Standar)'] += gQty;
+        }
       }
 
       // 3. Classify Jersey Type
@@ -315,7 +383,7 @@ export default function BusinessAnalysis({ pesananList }: BusinessAnalysisProps)
               <div className="border-b border-slate-105 dark:border-slate-700/60 pb-3 mb-4 flex justify-between items-center select-none">
                 <h3 className="font-extrabold text-xs uppercase text-slate-450 tracking-wider flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-purple-505" />
-                  Morfologi Model Kerah (Heuristik)
+                  Morfologi Model Kerah
                 </h3>
               </div>
               <div className="h-56 w-full flex flex-col md:flex-row items-center justify-around">

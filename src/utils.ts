@@ -49,6 +49,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   targetProduksi: 500,
   danaDaruratTerkumpul: 12500000,
   danaDaruratTargetMonths: 3,
+  customCollars: [],
   cashFlowList: [
     {
       id: 'CF-001',
