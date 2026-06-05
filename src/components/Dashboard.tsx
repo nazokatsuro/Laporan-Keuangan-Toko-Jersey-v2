@@ -196,20 +196,13 @@ export default function Dashboard({
     };
 
     pesananList.forEach(item => {
-      const dtStr = item.createdAt || new Date().toISOString();
-      const itemYear = dtStr.substring(0, 4);
-      const itemMonth = dtStr.substring(5, 7);
-      
-      const yearMatches = selectedYear === 'Semua' || itemYear === selectedYear;
-      const monthMatches = selectedMonth === 'Semua' || itemMonth === selectedMonth;
-
-      if (yearMatches && monthMatches) {
+      if (counts[item.statusProduksi] !== undefined) {
         counts[item.statusProduksi]++;
       }
     });
 
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [pesananList, selectedMonth, selectedYear]);
+  }, [pesananList]);
 
   // Colors for each status
   const COLORS = {
@@ -760,7 +753,7 @@ export default function Dashboard({
             {/* Center Label */}
             <div className="absolute text-center">
               <span className="text-xs text-slate-400 uppercase font-semibold">Total Pesanan</span>
-              <p className="text-3xl font-black text-slate-800 dark:text-white">{stats.totalPesanan}</p>
+              <p className="text-3xl font-black text-slate-800 dark:text-white">{pesananList.length}</p>
             </div>
           </div>
 
