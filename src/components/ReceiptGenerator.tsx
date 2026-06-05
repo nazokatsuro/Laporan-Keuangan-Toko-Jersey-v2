@@ -73,7 +73,7 @@ function EditableText({ isEditing, value, onChange, className = '', placeholder 
 interface ReceiptGeneratorProps {
   pesanan: Pesanan | Pesanan[];
   settings: ShopSettings;
-  notaType?: 'pelanggan' | 'sublim' | 'jahit';
+  notaType?: 'pelanggan' | 'sublim' | 'jahit' | 'komisi';
   onCancel: () => void;
 }
 
@@ -130,6 +130,25 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
     ) || false;
   };
 
+  // Helper to calculate commission cost for an individual PO/order
+  const getKomisiCost = (item: Pesanan) => {
+    const baseKomisi = item.komisiPerPcs || 0;
+    if (item.items && item.items.length > 0) {
+      return item.items.reduce((sum, it) => {
+        const itemRate = it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi;
+        return sum + (it.qty * itemRate);
+      }, 0);
+    }
+    return item.qty * baseKomisi;
+  };
+
+  // Helper to check if commission is paid via cash flow
+  const isKomisiPaid = (item: Pesanan) => {
+    return settings.cashFlowList?.some(cf => 
+      cf.keterangan.toLowerCase().includes(`komisi`) && cf.keterangan.includes(item.namaPo)
+    ) || false;
+  };
+
   const totalQty = pesananArray.reduce((acc, curr) => acc + curr.qty, 0);
 
   // Custom total sums based on invoice type
@@ -139,6 +158,9 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
     }
     if (notaType === 'jahit') {
       return pesananArray.reduce((acc, curr) => acc + getJahitCost(curr), 0);
+    }
+    if (notaType === 'komisi') {
+      return pesananArray.reduce((acc, curr) => acc + getKomisiCost(curr), 0);
     }
     return pesananArray.reduce((acc, curr) => acc + curr.totalHarga, 0);
   }, [pesananArray, notaType, settings.cashFlowList]);
@@ -150,6 +172,9 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
     if (notaType === 'jahit') {
       return pesananArray.reduce((acc, curr) => acc + (isJahitPaid(curr) ? getJahitCost(curr) : 0), 0);
     }
+    if (notaType === 'komisi') {
+      return pesananArray.reduce((acc, curr) => acc + (isKomisiPaid(curr) ? getKomisiCost(curr) : 0), 0);
+    }
     return pesananArray.reduce((acc, curr) => acc + curr.uangMasuk, 0);
   }, [pesananArray, notaType, settings.cashFlowList]);
 
@@ -159,6 +184,9 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
     }
     if (notaType === 'jahit') {
       return pesananArray.reduce((acc, curr) => acc + (isJahitPaid(curr) ? 0 : getJahitCost(curr)), 0);
+    }
+    if (notaType === 'komisi') {
+      return pesananArray.reduce((acc, curr) => acc + (isKomisiPaid(curr) ? 0 : getKomisiCost(curr)), 0);
     }
     return pesananArray.reduce((acc, curr) => acc + curr.sisaTagihan, 0);
   }, [pesananArray, notaType, settings.cashFlowList]);
@@ -509,21 +537,27 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                 ? getSublimCost(item) 
                 : notaType === 'jahit' 
                   ? getJahitCost(item) 
-                  : item.totalHarga;
+                  : notaType === 'komisi'
+                    ? getKomisiCost(item)
+                    : item.totalHarga;
 
             const currentOrderPaidCost = 
               notaType === 'sublim' 
                 ? (isSublimPaid(item) ? getSublimCost(item) : 0) 
                 : notaType === 'jahit' 
                   ? (isJahitPaid(item) ? getJahitCost(item) : 0) 
-                  : item.uangMasuk;
+                  : notaType === 'komisi'
+                    ? (isKomisiPaid(item) ? getKomisiCost(item) : 0)
+                    : item.uangMasuk;
 
             const currentOrderUnpaidCost = 
               notaType === 'sublim' 
                 ? (isSublimPaid(item) ? 0 : getSublimCost(item)) 
                 : notaType === 'jahit' 
                   ? (isJahitPaid(item) ? 0 : getJahitCost(item)) 
-                  : item.sisaTagihan;
+                  : notaType === 'komisi'
+                    ? (isKomisiPaid(item) ? 0 : getKomisiCost(item))
+                    : item.sisaTagihan;
 
             const isFullyPaid = currentOrderUnpaidCost === 0;
             return (
@@ -619,7 +653,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block w-full">
                       <EditableText
                         isEditing={isEditingTexts}
-                        value={getVal(item.id, 'labelNota', notaType === 'sublim' ? 'Nota Pembayaran Sublim' : notaType === 'jahit' ? 'Nota Pembayaran Jahit' : 'Nota Bukti Pesanan')}
+                        value={getVal(item.id, 'labelNota', notaType === 'sublim' ? 'Nota Pembayaran Sublim' : notaType === 'jahit' ? 'Nota Pembayaran Jahit' : notaType === 'komisi' ? 'Nota Pembayaran Komisi' : 'Nota Bukti Pesanan')}
                         onChange={(val) => setVal(item.id, 'labelNota', val)}
                         className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left sm:text-right"
                       />
@@ -678,7 +712,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 text-left">
                       <EditableText
                         isEditing={isEditingTexts}
-                        value={getVal(item.id, 'labelKlien', notaType === 'sublim' ? 'Detail Vendor Sublim' : notaType === 'jahit' ? 'Detail Vendor Jahit' : 'Informasi Klien')}
+                        value={getVal(item.id, 'labelKlien', notaType === 'sublim' ? 'Detail Vendor Sublim' : notaType === 'jahit' ? 'Detail Vendor Jahit' : notaType === 'komisi' ? 'Penerima Komisi' : 'Informasi Klien')}
                         onChange={(val) => setVal(item.id, 'labelKlien', val)}
                         className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left"
                       />
@@ -686,13 +720,13 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                     <h4 className="font-extrabold text-slate-900 text-sm leading-snug text-left">
                       <EditableText
                         isEditing={isEditingTexts}
-                        value={getVal(item.id, 'namaPemesan', item.namaPemesan)}
+                        value={getVal(item.id, 'namaPemesan', notaType === 'komisi' ? (item.penerimaKomisi || 'N/A (Belum Diisi)') : item.namaPemesan)}
                         onChange={(val) => setVal(item.id, 'namaPemesan', val)}
                         className="font-extrabold text-slate-900 text-sm leading-snug text-left"
                       />
                     </h4>
                     <p className="text-xs text-slate-500 mt-0.5 text-left">
-                      Tim: <strong className="font-bold text-indigo-700 text-left">
+                      {notaType === 'komisi' ? 'Proyek PO: ' : 'Tim: '}<strong className="font-bold text-indigo-700 text-left">
                         <EditableText
                           isEditing={isEditingTexts}
                           value={getVal(item.id, 'namaPo', item.namaPo)}
@@ -758,7 +792,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                   <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left">
                     <EditableText
                       isEditing={isEditingTexts}
-                      value={getVal(item.id, 'labelDetailRincian', notaType === 'sublim' ? 'Detail Rincian Cetak Sublim' : notaType === 'jahit' ? 'Detail Rincian Ongkos Jahit' : 'Detail Rincian Pembelian')}
+                      value={getVal(item.id, 'labelDetailRincian', notaType === 'sublim' ? 'Detail Rincian Cetak Sublim' : notaType === 'jahit' ? 'Detail Rincian Ongkos Jahit' : notaType === 'komisi' ? 'Detail Rincian Pembayaran Komisi' : 'Detail Rincian Pembelian')}
                       onChange={(val) => setVal(item.id, 'labelDetailRincian', val)}
                       className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-left"
                     />
@@ -771,7 +805,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                         <th className="pb-3 text-center w-24">Bahan</th>
                         <th className="pb-3 text-center w-12">Qty</th>
                         <th className="pb-3 text-right w-28">
-                          {notaType === 'sublim' ? 'Biaya Sublim' : notaType === 'jahit' ? 'Ongkos Jahit' : 'Harga / pcs'}
+                          {notaType === 'sublim' ? 'Biaya Sublim' : notaType === 'jahit' ? 'Ongkos Jahit' : notaType === 'komisi' ? 'Komisi / pcs' : 'Harga / pcs'}
                         </th>
                         <th className="pb-3 text-right w-28">Jumlah</th>
                       </tr>
@@ -794,7 +828,9 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                             ? (subItem.printPerPcs ?? item.printPerPcs ?? 0)
                             : notaType === 'jahit'
                               ? (subItem.jahitPerPcs ?? item.jahitPerPcs ?? 0)
-                              : subItem.hargaPerPcs;
+                              : notaType === 'komisi'
+                                ? (subItem.komisiPerPcs !== undefined ? subItem.komisiPerPcs : (item.komisiPerPcs ?? 0))
+                                : subItem.hargaPerPcs;
 
                         return (
                           <tr key={sId} className="border-b border-slate-100 font-medium table-row text-left">
@@ -936,7 +972,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       <span>
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal(item.id, 'labelSubtotal', notaType === 'sublim' ? 'Total Cetak Sublim' : notaType === 'jahit' ? 'Total Ongkos Jahit' : 'Subtotal Harga')}
+                          value={getVal(item.id, 'labelSubtotal', notaType === 'sublim' ? 'Total Cetak Sublim' : notaType === 'jahit' ? 'Total Ongkos Jahit' : notaType === 'komisi' ? 'Total Uang Komisi' : 'Subtotal Harga')}
                           onChange={(val) => setVal(item.id, 'labelSubtotal', val)}
                           className="text-slate-505"
                         />
@@ -951,11 +987,11 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       </span>
                     </div>
                     
-                    <div className="flex justify-between items-center text-slate-505 text-left">
+                    <div className="flex justify-between items-center text-slate-550 text-left">
                       <span>
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal(item.id, 'labelUangMasuk', notaType === 'sublim' || notaType === 'jahit' ? 'Jumlah Terbayar ✓' : 'Uang Masuk / Pembayaran DP')}
+                          value={getVal(item.id, 'labelUangMasuk', notaType === 'sublim' || notaType === 'jahit' || notaType === 'komisi' ? 'Jumlah Terbayar ✓' : 'Uang Masuk / Pembayaran DP')}
                           onChange={(val) => setVal(item.id, 'labelUangMasuk', val)}
                           className="text-slate-505"
                         />
@@ -981,7 +1017,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       <span className="text-[10px] uppercase font-bold tracking-wider">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal(item.id, 'labelSisa', notaType === 'sublim' ? 'Sisa Bayar Sublim' : notaType === 'jahit' ? 'Sisa Bayar Jahit' : (isFullyPaid ? 'Status Bayar' : 'Sisa Tagihan'))}
+                          value={getVal(item.id, 'labelSisa', notaType === 'sublim' ? 'Sisa Bayar Sublim' : notaType === 'jahit' ? 'Sisa Bayar Jahit' : notaType === 'komisi' ? 'Sisa Komisi' : (isFullyPaid ? 'Status Bayar' : 'Sisa Tagihan'))}
                           onChange={(val) => setVal(item.id, 'labelSisa', val)}
                           className="text-[10px] uppercase font-bold tracking-wider"
                         />

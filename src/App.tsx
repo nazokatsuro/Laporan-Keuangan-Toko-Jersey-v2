@@ -185,7 +185,7 @@ export default function App() {
 
   // Active invoice being active previewed or batch invoices
   const [pesananForNota, setPesananForNota] = useState<Pesanan | Pesanan[] | null>(null);
-  const [notaType, setNotaType] = useState<'pelanggan' | 'sublim' | 'jahit'>('pelanggan');
+  const [notaType, setNotaType] = useState<'pelanggan' | 'sublim' | 'jahit' | 'komisi'>('pelanggan');
 
   // Active state for Warning center modal
   const [showAlertsModal, setShowAlertsModal] = useState<boolean>(false);
@@ -572,7 +572,7 @@ export default function App() {
   };
 
   // Launch Invoice Generator View
-  const handleLaunchNota = (item: Pesanan | Pesanan[], type: 'pelanggan' | 'sublim' | 'jahit' = 'pelanggan') => {
+  const handleLaunchNota = (item: Pesanan | Pesanan[], type: 'pelanggan' | 'sublim' | 'jahit' | 'komisi' = 'pelanggan') => {
     setNotaType(type);
     setPesananForNota(item);
   };

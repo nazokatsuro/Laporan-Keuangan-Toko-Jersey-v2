@@ -40,7 +40,7 @@ interface ActiveOrdersProps {
   onAddNew: () => void;
   onEdit: (pesanan: Pesanan) => void;
   onDelete: (id: string) => void;
-  onGenerateNota: (pesanan: Pesanan | Pesanan[], type?: 'pelanggan' | 'sublim' | 'jahit') => void;
+  onGenerateNota: (pesanan: Pesanan | Pesanan[], type?: 'pelanggan' | 'sublim' | 'jahit' | 'komisi') => void;
   onUpdateStatus: (id: string, newStatus: StatusProduksi) => void;
   selectedMonth: string;
   setSelectedMonth: (month: string) => void;
@@ -132,7 +132,7 @@ export default function ActiveOrders({
     }
   };
 
-  const handleGenerateBatchNota = (type: 'pelanggan' | 'sublim' | 'jahit' = 'pelanggan') => {
+  const handleGenerateBatchNota = (type: 'pelanggan' | 'sublim' | 'jahit' | 'komisi' = 'pelanggan') => {
     const filteredOrderIds = filteredAndSortedList.map(o => o.id);
     const selectedOrders = pesananList.filter(o => selectedIds.includes(o.id) && filteredOrderIds.includes(o.id));
     if (selectedOrders.length > 0) {
@@ -365,6 +365,13 @@ export default function ActiveOrders({
                 >
                   <Scissors className="h-3.5 w-3.5" />
                   <span>Batch Jahit ({selectedIds.length})</span>
+                </button>
+                <button
+                  onClick={() => handleGenerateBatchNota('komisi')}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer border-none"
+                >
+                  <DollarSign className="h-3.5 w-3.5" />
+                  <span>Batch Komisi ({selectedIds.length})</span>
                 </button>
               </div>
             )}
@@ -670,6 +677,20 @@ export default function ActiveOrders({
                           <span>Nota Jahit</span>
                         </div>
                         <span className="text-[10px] text-amber-400 font-normal">Vendor</span>
+                      </button>
+
+                      {/* 5. Cetak Nota Komisi */}
+                      <button
+                        type="button"
+                        onClick={() => onGenerateNota(item, 'komisi')}
+                        title="Cetak Nota Pembayaran Komisi Sales"
+                        className="w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50/70 dark:bg-emerald-950/45 hover:bg-emerald-100 dark:hover:bg-emerald-950/75 border border-emerald-150 dark:border-emerald-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <DollarSign className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                          <span>Nota Komisi</span>
+                        </div>
+                        <span className="text-[10px] text-emerald-400 font-normal">Komisi</span>
                       </button>
                     </div>
                   </div>

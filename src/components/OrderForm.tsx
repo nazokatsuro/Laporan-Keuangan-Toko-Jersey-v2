@@ -106,6 +106,10 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
   const [noTelepon, setNoTelepon] = useState('');
   const [namaPo, setNamaPo] = useState('');
   
+  // Commission fields
+  const [penerimaKomisi, setPenerimaKomisi] = useState('');
+  const [komisiPerPcs, setKomisiPerPcs] = useState(0);
+  
   // Date selection states
   const [dateMode, setDateMode] = useState<'today' | 'manual'>('today');
   const [customDate, setCustomDate] = useState(() => getLocalDateString());
@@ -141,6 +145,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setStatusProduksi(pesananToEdit.statusProduksi);
       setBiayaLainnya(pesananToEdit.biayaLainnya ?? 0);
       setMockupUrl(pesananToEdit.mockupUrl || '');
+      setPenerimaKomisi(pesananToEdit.penerimaKomisi || '');
+      setKomisiPerPcs(pesananToEdit.komisiPerPcs || 0);
 
       // Load creation date
       if (pesananToEdit.createdAt) {
@@ -189,8 +195,10 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setNoTelepon('');
       setNamaPo('');
       setUangMasuk(0);
-      setStatusProduksi('Setting');
       setBiayaLainnya(0);
+      setPenerimaKomisi('');
+      setKomisiPerPcs(0);
+      setStatusProduksi('Setting');
       setMockupUrl('');
       setDateMode('today');
       setCustomDate(getLocalDateString());
@@ -381,6 +389,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       biayaLainnya,
       totalModal,
       profit,
+      penerimaKomisi: penerimaKomisi.trim(),
+      komisiPerPcs: Number(komisiPerPcs) || 0,
       items,
       mockupUrl
     };
@@ -843,6 +853,49 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                     {sisaTagihan > 0 ? formatRupiah(sisaTagihan) : 'Lunas ✓'}
                   </span>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sub-section: Komisi Broker / Sales / Reseller (Opsional) */}
+          <div className="border-t border-slate-100 dark:border-slate-705/60 pt-4 mt-2">
+            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5 uppercase tracking-wider">
+              <span className="w-1.5 h-3 bg-indigo-500 rounded-xs block"></span>
+              Pengaturan Komisi Penjualan / Broker (Opsional)
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                  Komisi Untuk Siapa (Nama Penerima)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Budi Sales, Haji Ahmad, Broker Adi..."
+                  value={penerimaKomisi}
+                  onChange={(e) => setPenerimaKomisi(e.target.value)}
+                  className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500 transition-all cursor-text"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                  Komisi per Pcs (Rp)
+                </label>
+                <RupiahInput
+                  value={komisiPerPcs}
+                  onChange={(val) => setKomisiPerPcs(val)}
+                  className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500 transition-all font-bold text-indigo-600 dark:text-indigo-400"
+                />
+              </div>
+
+              <div className="bg-indigo-50/40 dark:bg-indigo-950/25 border border-indigo-100/50 dark:border-indigo-900/35 p-3 rounded-xl flex flex-col justify-center">
+                <span className="block text-[8px] font-black text-indigo-400 dark:text-indigo-500 uppercase tracking-widest">Estimasi Total Komisi</span>
+                <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">
+                  {formatRupiah(totalQty * komisiPerPcs)}
+                </span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500">
+                  ({totalQty} pcs x {formatRupiah(komisiPerPcs)})
+                </span>
               </div>
             </div>
           </div>

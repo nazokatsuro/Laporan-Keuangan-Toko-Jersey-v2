@@ -15,6 +15,8 @@ export interface PesananItem {
   printPerPcs: number;
   jahitPerPcs: number;
   modelKerah?: string;
+  penerimaKomisi?: string;
+  komisiPerPcs?: number;
 }
 
 export interface Pesanan {
@@ -41,6 +43,9 @@ export interface Pesanan {
   biayaLainnya: number;
   totalModal: number; // (qty * printPerPcs) + (qty * jahitPerPcs) + biayaLainnya (or sum of items' modal)
   profit: number; // totalHarga - totalModal
+
+  penerimaKomisi?: string; // main/overall commission receiver if any
+  komisiPerPcs?: number; // main/overall commission quantity per pcs if any
 
   // List of multiple products inside 1 PO
   items?: PesananItem[];
