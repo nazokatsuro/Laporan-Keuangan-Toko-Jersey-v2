@@ -143,6 +143,7 @@ export default function Dashboard({
     let rawOmsetThisMonth = 0;
     let rawModalThisMonth = 0;
     let rawProfitThisMonth = 0;
+    let totalKomisiThisMonth = 0;
 
     let totalProduksi = 0;
     let totalUangMasuk = 0;
@@ -158,10 +159,19 @@ export default function Dashboard({
       const yearMatches = selectedYear === 'Semua' || itemYear === selectedYear;
       const monthMatches = selectedMonth === 'Semua' || itemMonth === selectedMonth;
 
+      const baseKomisi = item.komisiPerPcs || 0;
+      const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
+      const komisiCost = hasPenerimaKomisi
+        ? (item.items && item.items.length > 0
+            ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
+            : item.qty * baseKomisi)
+        : 0;
+
       if (yearMatches && monthMatches) {
         rawOmsetThisMonth += item.totalHarga;
         rawModalThisMonth += item.totalModal;
         rawProfitThisMonth += item.profit;
+        totalKomisiThisMonth += komisiCost;
         
         totalProduksi += item.qty;
         totalUangMasuk += item.uangMasuk;
@@ -177,6 +187,7 @@ export default function Dashboard({
       omsetBulanIni: rawOmsetThisMonth,
       modalBulanIni: rawModalThisMonth,
       profitBulanIni: rawProfitThisMonth,
+      totalKomisiBulanIni: totalKomisiThisMonth,
       totalProduksi,
       totalPesanan: filteredOrdersCount,
       totalUangMasuk,
@@ -248,6 +259,55 @@ export default function Dashboard({
           Omset: value.omset,
           Modal: value.modal,
           Profit: value.profit
+        };
+      });
+  }, [pesananList]);
+
+  // Group broker commission by month
+  const commissionByMonth = useMemo(() => {
+    const groups: Record<string, { total: number; brokers: Record<string, number>; orderCount: number }> = {};
+
+    pesananList.forEach(item => {
+      const dtStr = item.createdAt || new Date().toISOString();
+      const mKey = dtStr.substring(0, 7); // "YYYY-MM"
+
+      const baseKomisi = item.komisiPerPcs || 0;
+      const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
+      const brokerName = hasPenerimaKomisi ? item.penerimaKomisi!.trim() : '';
+
+      const komisiCost = hasPenerimaKomisi
+        ? (item.items && item.items.length > 0
+            ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
+            : item.qty * baseKomisi)
+        : 0;
+
+      if (komisiCost > 0) {
+        if (!groups[mKey]) {
+          groups[mKey] = { total: 0, brokers: {}, orderCount: 0 };
+        }
+        groups[mKey].total += komisiCost;
+        groups[mKey].orderCount += 1;
+        
+        if (brokerName) {
+          groups[mKey].brokers[brokerName] = (groups[mKey].brokers[brokerName] || 0) + komisiCost;
+        }
+      }
+    });
+
+    return Object.entries(groups)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([key, value]) => {
+        const [yr, mn] = key.split('-');
+        const dateObj = new Date(parseInt(yr), parseInt(mn) - 1, 1);
+        const label = dateObj.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+        return {
+          key,
+          label,
+          total: value.total,
+          orderCount: value.orderCount,
+          brokersList: Object.entries(value.brokers)
+            .map(([name, amt]) => ({ name, amt }))
+            .sort((a, b) => b.amt - a.amt)
         };
       });
   }, [pesananList]);
@@ -377,72 +437,89 @@ export default function Dashboard({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {/* Card 1: Omset Bulan Terpilih */}
-        <div className="bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
+        <div className="bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
           <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300">
             <TrendingUp className="h-28 w-28" />
           </div>
           <div className="flex justify-between items-start">
-            <span className="text-indigo-100 text-sm font-medium tracking-wide">Omset {selectedMonthName}</span>
-            <span className="p-2 bg-indigo-400/30 rounded-xl">
-              <TrendingUp className="h-5 w-5 text-white" />
+            <span className="text-indigo-100 text-[10px] sm:text-xs font-bold uppercase tracking-wider">Omset {selectedMonthName}</span>
+            <span className="p-1.5 bg-indigo-400/30 rounded-lg">
+              <TrendingUp className="h-4 w-4 text-white" />
             </span>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold leading-none">{formatRupiah(stats.omsetBulanIni)}</h3>
-            <p className="text-indigo-100 text-xs mt-1">Bruto periode {selectedMonthName} '{selectedYear.substring(2)}</p>
+            <h3 className="text-lg sm:text-xl lg:text-lg xl:text-lg 2xl:text-xl font-black tracking-tight leading-none break-all">{formatRupiah(stats.omsetBulanIni)}</h3>
+            <p className="text-indigo-50 text-[10px] sm:text-[11px] opacity-75 mt-1">Bruto periode {selectedMonthName} '{selectedYear.substring(2)}</p>
           </div>
         </div>
 
         {/* Card 2: Modal Bulan Terpilih */}
-        <div className="bg-gradient-to-br from-rose-500 to-pink-600 rounded-2xl p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
+        <div className="bg-gradient-to-br from-rose-500 to-pink-600 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
           <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300">
             <Wallet className="h-28 w-28" />
           </div>
           <div className="flex justify-between items-start">
-            <span className="text-rose-100 text-sm font-medium tracking-wide">Modal {selectedMonthName}</span>
-            <span className="p-2 bg-rose-400/30 rounded-xl">
-              <Wallet className="h-5 w-5 text-white" />
+            <span className="text-rose-100 text-[10px] sm:text-xs font-bold uppercase tracking-wider">Modal {selectedMonthName}</span>
+            <span className="p-1.5 bg-rose-400/30 rounded-lg">
+              <Wallet className="h-4 w-4 text-white" />
             </span>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold leading-none">{formatRupiah(stats.modalBulanIni)}</h3>
-            <p className="text-rose-100 text-xs mt-1">Estimasi modal {selectedMonthName} '{selectedYear.substring(2)}</p>
+            <h3 className="text-lg sm:text-xl lg:text-lg xl:text-lg 2xl:text-xl font-black tracking-tight leading-none break-all">{formatRupiah(stats.modalBulanIni)}</h3>
+            <p className="text-rose-50 text-[10px] sm:text-[11px] opacity-75 mt-1">Estimasi modal {selectedMonthName} '{selectedYear.substring(2)}</p>
           </div>
         </div>
 
         {/* Card 3: Keuntungan Bulan Terpilih */}
-        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
+        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
           <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300">
             <DollarSign className="h-28 w-28" />
           </div>
           <div className="flex justify-between items-start">
-            <span className="text-emerald-100 text-sm font-medium tracking-wide">Profit {selectedMonthName}</span>
-            <span className="p-2 bg-emerald-400/30 rounded-xl">
-              <DollarSign className="h-5 w-5 text-white" />
+            <span className="text-emerald-100 text-[10px] sm:text-xs font-bold uppercase tracking-wider">Profit {selectedMonthName}</span>
+            <span className="p-1.5 bg-emerald-400/30 rounded-lg">
+              <DollarSign className="h-4 w-4 text-white" />
             </span>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold leading-none">{formatRupiah(stats.profitBulanIni)}</h3>
-            <p className="text-emerald-100 text-xs mt-1">Nett profit {selectedMonthName} '{selectedYear.substring(2)}</p>
+            <h3 className="text-lg sm:text-xl lg:text-lg xl:text-lg 2xl:text-xl font-black tracking-tight leading-none break-all">{formatRupiah(stats.profitBulanIni)}</h3>
+            <p className="text-emerald-50 text-[10px] sm:text-[11px] opacity-75 mt-1">Nett profit {selectedMonthName} '{selectedYear.substring(2)}</p>
           </div>
         </div>
 
-        {/* Card 4: Produksi */}
-        <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
+        {/* Card 4: Komisi Broker Terbayar */}
+        <div className="bg-gradient-to-br from-fuchsia-600 to-purple-700 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
+          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300">
+            <DollarSign className="h-28 w-28" />
+          </div>
+          <div className="flex justify-between items-start">
+            <span className="text-fuchsia-100 text-[10px] sm:text-xs font-bold uppercase tracking-wider">Komisi Broker</span>
+            <span className="p-1.5 bg-fuchsia-500/30 rounded-lg">
+              <DollarSign className="h-4 w-4 text-white" />
+            </span>
+          </div>
+          <div className="mt-4">
+            <h3 className="text-lg sm:text-xl lg:text-lg xl:text-lg 2xl:text-xl font-black tracking-tight leading-none break-all">{formatRupiah(stats.totalKomisiBulanIni)}</h3>
+            <p className="text-fuchsia-50 text-[10px] sm:text-[11px] opacity-75 mt-1">Total komisi {selectedMonthName} '{selectedYear.substring(2)}</p>
+          </div>
+        </div>
+
+        {/* Card 5: Total Produksi */}
+        <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
           <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300">
             <ShoppingBag className="h-28 w-28" />
           </div>
           <div className="flex justify-between items-start">
-            <span className="text-amber-100 text-sm font-medium tracking-wide">Total Produksi</span>
-            <span className="p-2 bg-amber-400/30 rounded-xl">
-              <ShoppingBag className="h-5 w-5 text-white" />
+            <span className="text-amber-100 text-[10px] sm:text-xs font-bold uppercase tracking-wider">Total Produksi</span>
+            <span className="p-1.5 bg-amber-400/30 rounded-lg">
+              <ShoppingBag className="h-4 w-4 text-white" />
             </span>
           </div>
           <div className="mt-4">
-            <h3 className="text-2xl font-bold leading-none">{stats.totalProduksi} Pcs</h3>
-            <p className="text-amber-100 text-xs mt-1">Akumulasi {stats.totalPesanan} Pesanan</p>
+            <h3 className="text-lg sm:text-xl lg:text-lg xl:text-lg 2xl:text-xl font-black tracking-tight leading-none break-all">{stats.totalProduksi} Pcs</h3>
+            <p className="text-amber-50 text-[10px] sm:text-[11px] opacity-75 mt-1">Akumulasi {stats.totalPesanan} Pesanan</p>
           </div>
         </div>
       </div>
@@ -772,6 +849,87 @@ export default function Dashboard({
           </div>
         </div>
 
+      </div>
+
+      {/* LAPORAN KOMISI BROKER BULANAN */}
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700/80 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700/60 pb-4 mb-5">
+          <div className="space-y-1">
+            <h3 className="font-extrabold text-base text-slate-800 dark:text-white flex items-center gap-2">
+              <span className="p-1.5 bg-fuchsia-100 dark:bg-fuchsia-950/55 rounded-lg text-fuchsia-600 dark:text-fuchsia-400">
+                <DollarSign className="h-4 w-4" />
+              </span>
+              Laporan Pengeluaran Komisi Broker Per Bulan
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Total rincian pengeluaran uang komisi untuk semua broker yang dibagikan setiap bulannya
+            </p>
+          </div>
+          <div className="text-right shrink-0">
+            <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-extrabold px-3 py-1.5 rounded-xl border border-indigo-100/30 dark:border-indigo-900/40">
+              Total Bulan Terdaftar: {commissionByMonth.length} Bulan
+            </span>
+          </div>
+        </div>
+
+        {commissionByMonth.length === 0 ? (
+          <div className="py-12 text-center text-slate-400 dark:text-slate-500">
+            <p className="font-semibold text-slate-700 dark:text-slate-300">Belum Ada Catatan Komisi Broker</p>
+            <p className="text-xs mt-1">Gunakan formulir pemesanan dengan menentukan nama broker dan nilai komisi per pcs untuk memicu rekap komisi di sini.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {commissionByMonth.map((monthData) => (
+              <div 
+                key={monthData.key} 
+                className="bg-slate-50/50 dark:bg-slate-900/35 border border-slate-100 dark:border-slate-800/80 p-4.5 rounded-xl space-y-3 hover:scale-[1.01] transition-transform duration-200"
+              >
+                {/* Month header */}
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <div>
+                    <h4 className="font-extrabold text-sm text-slate-800 dark:text-white">
+                      {monthData.label}
+                    </h4>
+                    <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-extrabold uppercase mt-0.5 tracking-wider">
+                      {monthData.orderCount} PO Berkomisi
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-black text-fuchsia-600 dark:text-fuchsia-400 block">
+                      {formatRupiah(monthData.total)}
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-semibold block">
+                      Total Komisi
+                    </span>
+                  </div>
+                </div>
+
+                {/* Broker ledger detail list */}
+                <div className="space-y-2">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+                    Penerima Komisi:
+                  </span>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {monthData.brokersList.map((broker) => (
+                      <div 
+                        key={broker.name} 
+                        className="flex justify-between items-center text-xs bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/60 py-1.5 px-2.5 rounded-lg shadow-3xs"
+                      >
+                        <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 truncate max-w-[150px]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-fuchsia-500 shrink-0" />
+                          {broker.name}
+                        </span>
+                        <span className="font-bold text-slate-800 dark:text-white shrink-0">
+                          {formatRupiah(broker.amt)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Bottom Alert Tray & Near Deadlines */}

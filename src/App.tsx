@@ -114,6 +114,8 @@ function normalizePesananList(list: any[]): Pesanan[] {
       hargaPerPcs: typeof sub.hargaPerPcs === 'number' ? sub.hargaPerPcs : 0,
       printPerPcs: typeof sub.printPerPcs === 'number' ? sub.printPerPcs : 0,
       jahitPerPcs: typeof sub.jahitPerPcs === 'number' ? sub.jahitPerPcs : 0,
+      penerimaKomisi: sub.penerimaKomisi || '',
+      komisiPerPcs: typeof sub.komisiPerPcs === 'number' ? sub.komisiPerPcs : undefined,
     }));
 
     return {
@@ -138,6 +140,8 @@ function normalizePesananList(list: any[]): Pesanan[] {
       totalModal,
       profit,
       items,
+      penerimaKomisi: item.penerimaKomisi || '',
+      komisiPerPcs: typeof item.komisiPerPcs === 'number' ? item.komisiPerPcs : undefined,
       mockupUrl: item.mockupUrl || ''
     };
   });

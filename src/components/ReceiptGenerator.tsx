@@ -1162,7 +1162,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                   <span className="text-[10px] font-bold text-indigo-600 tracking-widest block w-full uppercase">
                     <EditableText
                       isEditing={isEditingTexts}
-                      value={getVal('rekap', 'labelInvoicingComp', 'Invoicing Compilation')}
+                      value={getVal('rekap', 'labelInvoicingComp', notaType === 'komisi' ? 'Commission Compilation' : 'Invoicing Compilation')}
                       onChange={(val) => setVal('rekap', 'labelInvoicingComp', val)}
                       className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest text-left sm:text-right"
                     />
@@ -1170,7 +1170,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                   <h2 className="text-lg font-black text-slate-900 leading-none">
                     <EditableText
                       isEditing={isEditingTexts}
-                      value={getVal('rekap', 'titleRekap', 'REKAP BATCH')}
+                      value={getVal('rekap', 'titleRekap', notaType === 'komisi' ? 'REKAP KOMISI' : 'REKAP BATCH')}
                       onChange={(val) => setVal('rekap', 'titleRekap', val)}
                       className="text-lg font-black text-slate-900 leading-none text-left sm:text-right"
                     />
@@ -1215,7 +1215,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                 <div className="text-xs text-slate-650 leading-relaxed text-left">
                   <EditableText
                     isEditing={isEditingTexts}
-                    value={getVal('rekap', 'descStatusIkhtisar', `Berikut adalah rincian konsolidasi tagihan seluruh pesanan (${pesananArray.length} PO) yang dipilih untuk cetak batch nota.`)}
+                    value={getVal('rekap', 'descStatusIkhtisar', notaType === 'komisi' ? `Berikut adalah rincian konsolidasi komisi broker/sales seluruh pesanan (${pesananArray.length} PO) yang dipilih untuk cetak batch nota.` : `Berikut adalah rincian konsolidasi tagihan seluruh pesanan (${pesananArray.length} PO) yang dipilih untuk cetak batch nota.`)}
                     onChange={(val) => setVal('rekap', 'descStatusIkhtisar', val)}
                     isTextArea={true}
                     rows={2}
@@ -1234,15 +1234,24 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                         <th className="pb-3 w-20 text-left">ID</th>
                         <th className="pb-3 text-left">PO / Tim & Pemesan</th>
                         <th className="pb-3 text-center w-12">Qty</th>
-                        <th className="pb-3 text-right w-24">
-                          {notaType === 'sublim' ? 'Sublim' : notaType === 'jahit' ? 'Jahit' : 'Subtotal'}
-                        </th>
-                        <th className="pb-3 text-right w-24">
-                          {notaType !== 'pelanggan' ? 'Terbayar' : 'DP Masuk'}
-                        </th>
-                        <th className="pb-3 text-right w-24 font-extrabold text-indigo-600">
-                          {notaType === 'sublim' ? 'Sisa Sublim' : notaType === 'jahit' ? 'Sisa Jahit' : 'Sisa Tagihan'}
-                        </th>
+                        {notaType === 'komisi' ? (
+                          <>
+                            <th className="pb-3 text-right w-28">Komisi / pcs</th>
+                            <th className="pb-3 text-right w-28 font-extrabold text-indigo-600">Total Komisi</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="pb-3 text-right w-24">
+                              {notaType === 'sublim' ? 'Sublim' : notaType === 'jahit' ? 'Jahit' : 'Subtotal'}
+                            </th>
+                            <th className="pb-3 text-right w-24">
+                              {notaType !== 'pelanggan' ? 'Terbayar' : 'DP Masuk'}
+                            </th>
+                            <th className="pb-3 text-right w-24 font-extrabold text-indigo-600">
+                              {notaType === 'sublim' ? 'Sisa Sublim' : notaType === 'jahit' ? 'Sisa Jahit' : 'Sisa Tagihan'}
+                            </th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -1291,7 +1300,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                               <p className="text-[10px] text-slate-500 text-left mb-1">
                                 <EditableText
                                   isEditing={isEditingTexts}
-                                  value={getVal(`rekap_${recId}`, 'namaPemesan', item.namaPemesan)}
+                                  value={getVal(`rekap_${recId}`, 'namaPemesan', notaType === 'komisi' ? `Broker: ${item.penerimaKomisi || 'N/A'}` : item.namaPemesan)}
                                   onChange={(val) => setVal(`rekap_${recId}`, 'namaPemesan', val)}
                                   className="text-[10px] text-slate-500 text-left"
                                 />
@@ -1308,6 +1317,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                                   hargaPerPcs: item.hargaPerPcs,
                                   printPerPcs: item.printPerPcs,
                                   jahitPerPcs: item.jahitPerPcs,
+                                  komisiPerPcs: item.komisiPerPcs,
                                   modelKerah: item.modelKerah,
                                 }]).map((sub, sIdx) => {
                                   const s_Id = sub.id || `rekap_sub_${sIdx}`;
@@ -1316,7 +1326,9 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                                       ? (sub.printPerPcs ?? item.printPerPcs ?? 0)
                                       : notaType === 'jahit'
                                         ? (sub.jahitPerPcs ?? item.jahitPerPcs ?? 0)
-                                        : (sub.hargaPerPcs ?? item.hargaPerPcs ?? 0);
+                                        : notaType === 'komisi'
+                                          ? (sub.komisiPerPcs !== undefined ? sub.komisiPerPcs : (item.komisiPerPcs ?? 0))
+                                          : (sub.hargaPerPcs ?? item.hargaPerPcs ?? 0);
 
                                   return (
                                     <div key={s_Id} className="pl-1.5 border-l border-indigo-100 text-[10px] text-slate-600 space-y-0.5">
@@ -1405,30 +1417,53 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                                 className="text-center font-bold text-slate-800 text-xs"
                               />
                             </td>
-                            <td className="py-3 text-right text-slate-700 font-medium">
-                              <EditableText
-                                isEditing={isEditingTexts}
-                                value={getVal(`rekap_${recId}`, 'totalHarga', formatRupiah(rowSubtotal))}
-                                onChange={(val) => setVal(`rekap_${recId}`, 'totalHarga', val)}
-                                className="text-right text-slate-705 text-xs"
-                              />
-                            </td>
-                            <td className="py-3 text-right font-semibold text-emerald-600">
-                              <EditableText
-                                isEditing={isEditingTexts}
-                                value={getVal(`rekap_${recId}`, 'uangMasuk', formatRupiah(rowPaidValue))}
-                                onChange={(val) => setVal(`rekap_${recId}`, 'uangMasuk', val)}
-                                className="text-right font-semibold text-emerald-600 text-xs"
-                              />
-                            </td>
-                            <td className="py-3 text-right font-bold text-rose-600">
-                              <EditableText
-                                isEditing={isEditingTexts}
-                                value={getVal(`rekap_${recId}`, 'sisaTagihan', formatRupiah(rowUnpaidValue))}
-                                onChange={(val) => setVal(`rekap_${recId}`, 'sisaTagihan', val)}
-                                className="text-right font-bold text-rose-600 text-xs"
-                              />
-                            </td>
+                            {notaType === 'komisi' ? (
+                              <>
+                                <td className="py-3 text-right text-slate-700 font-medium">
+                                  <EditableText
+                                    isEditing={isEditingTexts}
+                                    value={getVal(`rekap_${recId}`, 'komisiPerPcs', formatRupiah(item.komisiPerPcs ?? 0))}
+                                    onChange={(val) => setVal(`rekap_${recId}`, 'komisiPerPcs', val)}
+                                    className="text-right text-slate-705 text-xs font-semibold"
+                                  />
+                                </td>
+                                <td className="py-3 text-right font-bold text-indigo-600">
+                                  <EditableText
+                                    isEditing={isEditingTexts}
+                                    value={getVal(`rekap_${recId}`, 'totalKomisi', formatRupiah(getKomisiCost(item)))}
+                                    onChange={(val) => setVal(`rekap_${recId}`, 'totalKomisi', val)}
+                                    className="text-right font-bold text-indigo-600 text-xs"
+                                  />
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="py-3 text-right text-slate-700 font-medium">
+                                  <EditableText
+                                    isEditing={isEditingTexts}
+                                    value={getVal(`rekap_${recId}`, 'totalHarga', formatRupiah(rowSubtotal))}
+                                    onChange={(val) => setVal(`rekap_${recId}`, 'totalHarga', val)}
+                                    className="text-right text-slate-705 text-xs"
+                                  />
+                                </td>
+                                <td className="py-3 text-right font-semibold text-emerald-600">
+                                  <EditableText
+                                    isEditing={isEditingTexts}
+                                    value={getVal(`rekap_${recId}`, 'uangMasuk', formatRupiah(rowPaidValue))}
+                                    onChange={(val) => setVal(`rekap_${recId}`, 'uangMasuk', val)}
+                                    className="text-right font-semibold text-emerald-600 text-xs"
+                                  />
+                                </td>
+                                <td className="py-3 text-right font-bold text-rose-600">
+                                  <EditableText
+                                    isEditing={isEditingTexts}
+                                    value={getVal(`rekap_${recId}`, 'sisaTagihan', formatRupiah(rowUnpaidValue))}
+                                    onChange={(val) => setVal(`rekap_${recId}`, 'sisaTagihan', val)}
+                                    className="text-right font-bold text-rose-600 text-xs"
+                                  />
+                                </td>
+                              </>
+                            )}
                           </tr>
                         );
                       })}
@@ -1450,30 +1485,46 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                             className="font-black text-center text-slate-900 text-xs"
                           />
                         </td>
-                        <td className="py-3 text-right text-indigo-650 font-black">
-                          <EditableText
-                            isEditing={isEditingTexts}
-                            value={getVal('rekap', 'valGrandSubtotal', formatRupiah(totalHargaSum))}
-                            onChange={(val) => setVal('rekap', 'valGrandSubtotal', val)}
-                            className="font-black text-right text-indigo-650 text-xs"
-                          />
-                        </td>
-                        <td className="py-3 text-right text-emerald-700 font-black">
-                          <EditableText
-                            isEditing={isEditingTexts}
-                            value={getVal('rekap', 'valGrandDP', formatRupiah(totalUangMasukSum))}
-                            onChange={(val) => setVal('rekap', 'valGrandDP', val)}
-                            className="font-black text-right text-emerald-700 text-xs"
-                          />
-                        </td>
-                        <td className="py-3 text-right text-rose-700 pr-2 font-black">
-                          <EditableText
-                            isEditing={isEditingTexts}
-                            value={getVal('rekap', 'valGrandSisa', formatRupiah(totalSisaTagihanSum))}
-                            onChange={(val) => setVal('rekap', 'valGrandSisa', val)}
-                            className="font-black text-right text-rose-700 text-xs"
-                          />
-                        </td>
+                        {notaType === 'komisi' ? (
+                          <>
+                            <td className="py-3 text-right text-slate-400"></td>
+                            <td className="py-3 text-right text-indigo-650 font-black">
+                              <EditableText
+                                isEditing={isEditingTexts}
+                                value={getVal('rekap', 'valGrandSubtotal', formatRupiah(totalHargaSum))}
+                                onChange={(val) => setVal('rekap', 'valGrandSubtotal', val)}
+                                className="font-black text-right text-indigo-650 text-xs"
+                              />
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="py-3 text-right text-indigo-650 font-black">
+                              <EditableText
+                                isEditing={isEditingTexts}
+                                value={getVal('rekap', 'valGrandSubtotal', formatRupiah(totalHargaSum))}
+                                onChange={(val) => setVal('rekap', 'valGrandSubtotal', val)}
+                                className="font-black text-right text-indigo-650 text-xs"
+                              />
+                            </td>
+                            <td className="py-3 text-right text-emerald-700 font-black">
+                              <EditableText
+                                isEditing={isEditingTexts}
+                                value={getVal('rekap', 'valGrandDP', formatRupiah(totalUangMasukSum))}
+                                onChange={(val) => setVal('rekap', 'valGrandDP', val)}
+                                className="font-black text-right text-emerald-700 text-xs"
+                              />
+                            </td>
+                            <td className="py-3 text-right text-rose-700 pr-2 font-black">
+                              <EditableText
+                                isEditing={isEditingTexts}
+                                value={getVal('rekap', 'valGrandSisa', formatRupiah(totalSisaTagihanSum))}
+                                onChange={(val) => setVal('rekap', 'valGrandSisa', val)}
+                                className="font-black text-right text-rose-700 text-xs"
+                              />
+                            </td>
+                          </>
+                        )}
                       </tr>
                     </tbody>
                   </table>
@@ -1491,7 +1542,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       <h6 className="text-[10px] font-bold text-indigo-900 uppercase text-left">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal('rekap', 'perhatianTitle', 'Perhatian Pelunasan')}
+                          value={getVal('rekap', 'perhatianTitle', notaType === 'komisi' ? 'Catatan Komisi' : 'Perhatian Pelunasan')}
                           onChange={(val) => setVal('rekap', 'perhatianTitle', val)}
                           className="text-[10px] font-bold text-indigo-900 uppercase text-left"
                         />
@@ -1499,7 +1550,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       <div className="text-[10px] text-indigo-700 mt-0.5 leading-relaxed text-left">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal('rekap', 'perhatianText', 'Harap menginstruksikan pelunasan sisa tagihan untuk masing-masing PO di atas sesuai dengan rincian yang tercantum pada lembar nota masing-masing.')}
+                          value={getVal('rekap', 'perhatianText', notaType === 'komisi' ? 'Total komisi yang dihitung di atas wajib disalurkan kepada broker/penerima komisi yang bersangkutan sebagai imbalan jasa penjualan.' : 'Harap menginstruksikan pelunasan sisa tagihan untuk masing-masing PO di atas sesuai dengan rincian yang tercantum pada lembar nota masing-masing.')}
                           onChange={(val) => setVal('rekap', 'perhatianText', val)}
                           isTextArea={true}
                           rows={2}
@@ -1511,7 +1562,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                   <div className="text-[9px] text-slate-400 leading-relaxed italic text-left">
                     <EditableText
                       isEditing={isEditingTexts}
-                      value={getVal('rekap', 'ikhtisarDisclaimer', '* Ikhtisar ini disusun otomatis oleh sistem kasir untuk menyederhanakan perhitungan total invoice bagi pemesan rombongan / reseller.')}
+                      value={getVal('rekap', 'ikhtisarDisclaimer', notaType === 'komisi' ? '* Ikhtisar ini disusun otomatis oleh sistem untuk rincian komisi broker/sales dari kumpulan PO.' : '* Ikhtisar ini disusun otomatis oleh sistem kasir untuk menyederhanakan perhitungan total invoice bagi pemesan rombongan / reseller.')}
                       onChange={(val) => setVal('rekap', 'ikhtisarDisclaimer', val)}
                       isTextArea={true}
                       rows={2}
@@ -1526,7 +1577,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                     <span>
                       <EditableText
                         isEditing={isEditingTexts}
-                        value={getVal('rekap', 'labelTotalNilai', 'Total Nilai PO')}
+                        value={getVal('rekap', 'labelTotalNilai', notaType === 'komisi' ? 'Total Komisi' : 'Total Nilai PO')}
                         onChange={(val) => setVal('rekap', 'labelTotalNilai', val)}
                         className="text-slate-500 font-bold"
                       />
@@ -1540,43 +1591,47 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       />
                     </span>
                   </div>
-                  <div className="flex justify-between items-center text-slate-500 font-bold text-left">
-                    <span>
-                      <EditableText
-                        isEditing={isEditingTexts}
-                        value={getVal('rekap', 'labelTotalDP', 'Total DP Masuk')}
-                        onChange={(val) => setVal('rekap', 'labelTotalDP', val)}
-                        className="text-slate-500 font-bold"
-                      />
-                    </span>
-                    <span className="text-emerald-600 font-bold">
-                      <EditableText
-                        isEditing={isEditingTexts}
-                        value={getVal('rekap', 'valTotalDP', formatRupiah(totalUangMasukSum))}
-                        onChange={(val) => setVal('rekap', 'valTotalDP', val)}
-                        className="text-emerald-600 font-bold text-right"
-                      />
-                    </span>
-                  </div>
-                  <div className="border-t border-slate-200 my-1" />
-                  <div className="flex justify-between items-center text-rose-850 font-black text-left">
-                    <span className="text-[10px] uppercase tracking-wider">
-                      <EditableText
-                        isEditing={isEditingTexts}
-                        value={getVal('rekap', 'labelSisaBatch', 'SISA TAGIHAN BATCH')}
-                        onChange={(val) => setVal('rekap', 'labelSisaBatch', val)}
-                        className="text-[10px] uppercase tracking-wider font-black"
-                      />
-                    </span>
-                    <span className="text-sm font-black">
-                      <EditableText
-                        isEditing={isEditingTexts}
-                        value={getVal('rekap', 'valSisaBatch', formatRupiah(totalSisaTagihanSum))}
-                        onChange={(val) => setVal('rekap', 'valSisaBatch', val)}
-                        className="text-sm font-black text-right"
-                      />
-                    </span>
-                  </div>
+                  {notaType !== 'komisi' && (
+                    <>
+                      <div className="flex justify-between items-center text-slate-500 font-bold text-left">
+                        <span>
+                          <EditableText
+                            isEditing={isEditingTexts}
+                            value={getVal('rekap', 'labelTotalDP', 'Total DP Masuk')}
+                            onChange={(val) => setVal('rekap', 'labelTotalDP', val)}
+                            className="text-slate-500 font-bold"
+                          />
+                        </span>
+                        <span className="text-emerald-600 font-bold">
+                          <EditableText
+                            isEditing={isEditingTexts}
+                            value={getVal('rekap', 'valTotalDP', formatRupiah(totalUangMasukSum))}
+                            onChange={(val) => setVal('rekap', 'valTotalDP', val)}
+                            className="text-emerald-600 font-bold text-right"
+                          />
+                        </span>
+                      </div>
+                      <div className="border-t border-slate-200 my-1" />
+                      <div className="flex justify-between items-center text-rose-850 font-black text-left">
+                        <span className="text-[10px] uppercase tracking-wider">
+                          <EditableText
+                            isEditing={isEditingTexts}
+                            value={getVal('rekap', 'labelSisaBatch', 'SISA TAGIHAN BATCH')}
+                            onChange={(val) => setVal('rekap', 'labelSisaBatch', val)}
+                            className="text-[10px] uppercase tracking-wider font-black"
+                          />
+                        </span>
+                        <span className="text-sm font-black">
+                          <EditableText
+                            isEditing={isEditingTexts}
+                            value={getVal('rekap', 'valSisaBatch', formatRupiah(totalSisaTagihanSum))}
+                            onChange={(val) => setVal('rekap', 'valSisaBatch', val)}
+                            className="text-sm font-black text-right"
+                          />
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
