@@ -48,7 +48,7 @@ interface ActiveOrdersProps {
   setSelectedYear: (year: string) => void;
 }
 
-const ALL_STATUSES = ['Semua', 'Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres', 'Belum Bayar Sublim', 'Belum Bayar Jahit'];
+const ALL_STATUSES = ['Semua', 'Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres', 'Belum Bayar Sublim', 'Belum Bayar Jahit', 'Belum Bayar Komisi'];
 
 export default function ActiveOrders({ 
   pesananList, 
@@ -163,6 +163,18 @@ export default function ActiveOrders({
           const jahitCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
           const hasPaidJahit = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
           matchesStatus = jahitCost > 0 && !hasPaidJahit && ['Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi);
+        } else if (statusFilter === 'Belum Bayar Komisi') {
+          const baseKomisi = item.komisiPerPcs || 0;
+          const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
+          const komisiCost = hasPenerimaKomisi
+            ? (item.items && item.items.length > 0
+                ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
+                : item.qty * baseKomisi)
+            : 0;
+          const hasPaidKomisi = settings.cashFlowList?.some(cf => 
+            cf.keterangan.toLowerCase().includes('komisi') && cf.keterangan.includes(item.namaPo)
+          );
+          matchesStatus = komisiCost > 0 && !hasPaidKomisi;
         } else {
           matchesStatus = item.statusProduksi === statusFilter;
         }
@@ -397,6 +409,17 @@ export default function ActiveOrders({
             const jahitCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
             const hasPaidJahit = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
 
+            const baseKomisi = item.komisiPerPcs || 0;
+            const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
+            const komisiCost = hasPenerimaKomisi
+              ? (item.items && item.items.length > 0
+                  ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
+                  : item.qty * baseKomisi)
+              : 0;
+            const hasPaidKomisi = settings.cashFlowList?.some(cf => 
+              cf.keterangan.toLowerCase().includes('komisi') && cf.keterangan.includes(item.namaPo)
+            );
+
             return (
               <div 
                 key={item.id}
@@ -540,20 +563,20 @@ export default function ActiveOrders({
                       </div>
                     </div>
 
-                    {/* Notifikasi Pembayaran Produksi */}
-                    {((!hasPaidSublim && sublimCost > 0) || (!hasPaidJahit && jahitCost > 0)) && (
+                    {/* Notifikasi Pembayaran Produksi & Komisi */}
+                    {((!hasPaidSublim && sublimCost > 0) || (!hasPaidJahit && jahitCost > 0) || (!hasPaidKomisi && komisiCost > 0)) && (
                       <div 
                         className="text-[10px] sm:text-[11px] font-bold text-[#ff3b5c] animate-pulse truncate"
-                        style={{ animationDuration: '1s' }}
-                        title="Masih ada biaya produksi yang belum dibayar"
+                        style={{ animationDuration: '1.5s' }}
+                        title="Masih ada biaya produksi atau komisi yang belum dibayar"
                       >
-                        {(!hasPaidSublim && sublimCost > 0) && (!hasPaidJahit && jahitCost > 0) ? (
-                          '🔴 BELUM BAYAR SUBLIM • BELUM BAYAR JAHIT'
-                        ) : (!hasPaidSublim && sublimCost > 0) ? (
-                          '🔴 BELUM BAYAR SUBLIM'
-                        ) : (
-                          '🔴 BELUM BAYAR JAHIT'
-                        )}
+                        {(() => {
+                          const badges = [];
+                          if (!hasPaidSublim && sublimCost > 0) badges.push('BELUM BAYAR SUBLIM');
+                          if (!hasPaidJahit && jahitCost > 0) badges.push('BELUM BAYAR JAHIT');
+                          if (!hasPaidKomisi && komisiCost > 0) badges.push('BELUM BAYAR KOMISI');
+                          return '🔴 ' + badges.join(' • ');
+                        })()}
                       </div>
                     )}
                   </div>

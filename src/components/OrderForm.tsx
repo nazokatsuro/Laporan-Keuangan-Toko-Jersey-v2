@@ -1074,6 +1074,33 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                       </button>
                     );
                   })()}
+                  {(() => {
+                    const baseKomisi = pesananToEdit?.komisiPerPcs || 0;
+                    const hasPenerimaKomisi = !!penerimaKomisi.trim();
+                    const sumKomisi = hasPenerimaKomisi
+                      ? items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
+                      : 0;
+                    const isKomisiPaid = pesananToEdit && cashFlowList?.some(cf => 
+                      cf.keterangan.toLowerCase().includes('komisi') && cf.keterangan.includes(pesananToEdit.namaPo)
+                    );
+                    return (
+                      <button
+                        type="button"
+                        disabled={isKomisiPaid || sumKomisi <= 0}
+                        onClick={() => {
+                          if (!onLogToCashFlow) return;
+                          if (sumKomisi > 0) {
+                            onLogToCashFlow('Komisi', 'keluar', sumKomisi, `Bayar Komisi Broker (${penerimaKomisi}) PO ${namaPo}`);
+                          } else {
+                            alert('Biaya komisi 0 atau Broker belum ditentukan');
+                          }
+                        }}
+                        className={`w-full text-center px-4 py-2 ${isKomisiPaid ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 cursor-not-allowed' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 cursor-pointer'} rounded-xl font-bold text-xs transition border`}
+                      >
+                        {isKomisiPaid ? 'Pelunasan Komisi Lunas' : `Bayar Komisi (${penerimaKomisi || 'Broker'})`}
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
