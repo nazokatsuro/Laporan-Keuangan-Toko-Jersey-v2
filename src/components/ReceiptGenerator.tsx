@@ -600,7 +600,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                         <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider inline-block">
                           <EditableText
                             isEditing={isEditingTexts}
-                            value={getVal(item.id, 'tagline', 'Official Apparel Studio')}
+                            value={getVal(item.id, 'tagline', settings.taglineToko || 'Official Apparel Studio')}
                             onChange={(val) => setVal(item.id, 'tagline', val)}
                             className="font-bold text-indigo-700 uppercase"
                           />
@@ -615,7 +615,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                         <div className="flex-1">
                           <EditableText
                             isEditing={isEditingTexts}
-                            value={getVal(item.id, 'alamat', 'Komp.Taman Bunga Sukamukti,\nKec. Katapang, Kabupaten Bandung, Jawa Barat 40921')}
+                            value={getVal(item.id, 'alamat', settings.alamatToko || 'Komp.Taman Bunga Sukamukti,\nKec. Katapang, Kabupaten Bandung, Jawa Barat 40921')}
                             onChange={(val) => setVal(item.id, 'alamat', val)}
                             isTextArea={true}
                             rows={2}
@@ -628,7 +628,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                         <span className="flex-1">
                           <EditableText
                             isEditing={isEditingTexts}
-                            value={getVal(item.id, 'whatsapp', 'WhatsApp: +62 851-6666-4161')}
+                            value={getVal(item.id, 'whatsapp', settings.noWaToko ? 'WhatsApp: ' + settings.noWaToko : 'WhatsApp: +62 851-6666-4161')}
                             onChange={(val) => setVal(item.id, 'whatsapp', val)}
                             className="text-slate-500"
                           />
@@ -639,7 +639,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                         <span className="flex-1">
                           <EditableText
                             isEditing={isEditingTexts}
-                            value={getVal(item.id, 'instagram', 'Instagram: nomadenapparel')}
+                            value={getVal(item.id, 'instagram', settings.igToko ? 'Instagram: ' + settings.igToko : 'Instagram: nomadenapparel')}
                             onChange={(val) => setVal(item.id, 'instagram', val)}
                             className="text-slate-500"
                           />
@@ -1041,7 +1041,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                     <p className="text-slate-400 text-[10px] uppercase font-bold tracking-widest mb-10 text-center">
                       <EditableText
                         isEditing={isEditingTexts}
-                        value={getVal(item.id, 'hormatKamiSign', 'Hormat Kami,')}
+                        value={getVal(item.id, 'hormatKamiSign', settings.hormatKamiToko || 'Hormat Kami,')}
                         onChange={(val) => setVal(item.id, 'hormatKamiSign', val)}
                         className="text-slate-400 text-[10px] uppercase font-bold tracking-widest text-center"
                       />
@@ -1049,7 +1049,10 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                     
                     {/* Fake stamp decoration for premium official aesthetic */}
                     <div className="absolute top-[30px] right-[25px] h-12 w-12 border-2 border-emerald-555 border-dotted rounded-full flex items-center justify-center opacity-40 transform rotate-12 select-none pointer-events-none">
-                      <p className="text-[8px] font-mono leading-none font-bold text-emerald-555">Nomaden<br />Apparel</p>
+                      <p className="text-[8px] font-mono leading-none font-bold text-emerald-555 text-center">
+                        {settings.stempelTokoText || 'Nomaden'}<br />
+                        {settings.stempelTokoSubtext || 'Apparel'}
+                      </p>
                     </div>
 
                     <div className="border-b border-slate-300 w-full mx-auto" />
@@ -1064,7 +1067,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                     <p className="text-[10px] text-slate-400 mt-0.5 text-center">
                       <EditableText
                         isEditing={isEditingTexts}
-                        value={getVal(item.id, 'roleSign', 'Finance Administration')}
+                        value={getVal(item.id, 'roleSign', settings.roleSignToko || 'Finance Administration')}
                         onChange={(val) => setVal(item.id, 'roleSign', val)}
                         className="text-[10px] text-slate-400 text-center"
                       />
@@ -1112,7 +1115,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider inline-block">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal('rekap', 'tagline', 'Official Apparel Studio')}
+                          value={getVal('rekap', 'tagline', settings.taglineToko || 'Official Apparel Studio')}
                           onChange={(val) => setVal('rekap', 'tagline', val)}
                           className="font-bold text-indigo-700 uppercase"
                         />
@@ -1125,7 +1128,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       <div className="flex-1">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal('rekap', 'alamat', 'Komp.Taman Bunga Sukamukti,\nKec. Katapang, Kabupaten Bandung, Jawa Barat 40921')}
+                          value={getVal('rekap', 'alamat', settings.alamatToko || 'Komp.Taman Bunga Sukamukti,\nKec. Katapang, Kabupaten Bandung, Jawa Barat 40921')}
                           onChange={(val) => setVal('rekap', 'alamat', val)}
                           isTextArea={true}
                           rows={2}
@@ -1138,7 +1141,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       <span className="flex-1">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal('rekap', 'whatsapp', 'WhatsApp: +62 851-6666-4161')}
+                          value={getVal('rekap', 'whatsapp', settings.noWaToko ? 'WhatsApp: ' + settings.noWaToko : 'WhatsApp: +62 851-6666-4161')}
                           onChange={(val) => setVal('rekap', 'whatsapp', val)}
                           className="text-slate-500"
                         />
@@ -1149,7 +1152,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       <span className="flex-1">
                         <EditableText
                           isEditing={isEditingTexts}
-                          value={getVal('rekap', 'instagram', 'Instagram: nomadenapparel')}
+                          value={getVal('rekap', 'instagram', settings.igToko ? 'Instagram: ' + settings.igToko : 'Instagram: nomadenapparel')}
                           onChange={(val) => setVal('rekap', 'instagram', val)}
                           className="text-slate-500"
                         />
@@ -1641,14 +1644,17 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                   <p className="text-slate-400 text-[10px] uppercase font-bold tracking-widest mb-10 text-center">
                     <EditableText
                       isEditing={isEditingTexts}
-                      value={getVal('rekap', 'hormatKamiSign', 'Hormat Kami,')}
+                      value={getVal('rekap', 'hormatKamiSign', settings.hormatKamiToko || 'Hormat Kami,')}
                       onChange={(val) => setVal('rekap', 'hormatKamiSign', val)}
                       className="text-slate-400 text-[10px] uppercase font-bold tracking-widest text-center"
                     />
                   </p>
                   
                   <div className="absolute top-[30px] right-[25px] h-12 w-12 border-2 border-emerald-555 border-dotted rounded-full flex items-center justify-center opacity-40 transform rotate-12 select-none pointer-events-none">
-                    <p className="text-[8px] font-mono leading-none font-bold text-emerald-555">Nomaden<br />Apparel</p>
+                    <p className="text-[8px] font-mono leading-none font-bold text-emerald-555 text-center">
+                      {settings.stempelTokoText || 'Nomaden'}<br />
+                      {settings.stempelTokoSubtext || 'Apparel'}
+                    </p>
                   </div>
 
                   <div className="border-b border-slate-300 w-full mx-auto" />
@@ -1663,7 +1669,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                   <p className="text-[10px] text-slate-400 mt-0.5 text-center">
                     <EditableText
                       isEditing={isEditingTexts}
-                      value={getVal('rekap', 'roleSign', 'Finance Administration')}
+                      value={getVal('rekap', 'roleSign', settings.roleSignToko || 'Finance Administration')}
                       onChange={(val) => setVal('rekap', 'roleSign', val)}
                       className="text-[10px] text-slate-400 text-center"
                     />

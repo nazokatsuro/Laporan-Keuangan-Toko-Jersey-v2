@@ -50,6 +50,14 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   danaDaruratTerkumpul: 12500000,
   danaDaruratTargetMonths: 3,
   customCollars: [],
+  alamatToko: 'Komp.Taman Bunga Sukamukti,\nKec. Katapang, Kabupaten Bandung, Jawa Barat 40921',
+  noWaToko: '+62 851-6666-4161',
+  igToko: 'nomadenapparel',
+  taglineToko: 'Official Apparel Studio',
+  stempelTokoText: 'Nomaden',
+  stempelTokoSubtext: 'Apparel',
+  roleSignToko: 'Finance Administration',
+  hormatKamiToko: 'Hormat Kami,',
   cashFlowList: [
     {
       id: 'CF-001',

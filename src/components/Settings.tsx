@@ -328,6 +328,122 @@ export default function Settings({
                 />
               </div>
 
+              {/* Advanced Invoice custom fields layout */}
+              <div className="border-t border-slate-100 dark:border-slate-700/60 my-4 pt-4 space-y-4">
+                <h4 className="text-xs font-black text-indigo-550 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1.5 mb-1">
+                  Kustomisasi Template Nota Otomatis
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+                  Rincian di bawah ini akan otomatis ditempel di header/footer kop nota transaksi atau rekap tanda terima saat dicetak. Settings tersimpan aman secara terpisah per akun Google yang aktif.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Tulisan Tagline / Subtitle Apparel
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Official Apparel Studio..."
+                      value={settings.taglineToko || ''}
+                      onChange={(e) => onUpdateSettings({ taglineToko: e.target.value })}
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Nomor WhatsApp Toko
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: +62 851-6666-4161"
+                      value={settings.noWaToko || ''}
+                      onChange={(e) => onUpdateSettings({ noWaToko: e.target.value })}
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-mono font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Akun Instagram Toko
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: nomadenapparel"
+                      value={settings.igToko || ''}
+                      onChange={(e) => onUpdateSettings({ igToko: e.target.value })}
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Alamat Resmi Toko / Workshop
+                    </label>
+                    <textarea
+                      placeholder="Contoh: Komp.Taman Bunga Sukamukti, Katapang..."
+                      value={settings.alamatToko || ''}
+                      onChange={(e) => onUpdateSettings({ alamatToko: e.target.value })}
+                      rows={2}
+                      className="w-full px-4 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-semibold resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Label Tanda Tangan
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Hormat Kami,..."
+                      value={settings.hormatKamiToko || ''}
+                      onChange={(e) => onUpdateSettings({ hormatKamiToko: e.target.value })}
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Jabatan Penandatangan
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Finance Administration..."
+                      value={settings.roleSignToko || ''}
+                      onChange={(e) => onUpdateSettings({ roleSignToko: e.target.value })}
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Teks Stempel (Baris Atas)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Nomaden..."
+                      value={settings.stempelTokoText || ''}
+                      onChange={(e) => onUpdateSettings({ stempelTokoText: e.target.value })}
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Teks Stempel (Baris Bawah)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Apparel..."
+                      value={settings.stempelTokoSubtext || ''}
+                      onChange={(e) => onUpdateSettings({ stempelTokoSubtext: e.target.value })}
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-semibold"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Logo upload sector */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">

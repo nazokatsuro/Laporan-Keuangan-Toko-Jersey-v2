@@ -82,6 +82,14 @@ export interface ShopSettings {
   cashFlowList?: CashFlowTransaction[];
   dismissedAuditorAlerts?: AuditorDismissedAlert[];
   customCollars?: string[];
+  alamatToko?: string;
+  noWaToko?: string;
+  igToko?: string;
+  taglineToko?: string;
+  stempelTokoText?: string;
+  stempelTokoSubtext?: string;
+  roleSignToko?: string;
+  hormatKamiToko?: string;
 }
 
 export interface FinancialStats {
