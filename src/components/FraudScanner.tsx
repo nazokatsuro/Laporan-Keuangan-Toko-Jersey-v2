@@ -79,7 +79,9 @@ export default function FraudScanner({
     // 2. Detect Unreasonable Vendor Costs (Lonjakan Biaya Vendor per Qty)
     const getPureVendorCostPerPcs = (item: Pesanan) => {
       const itemQty = item.qty || 1;
-      const totalVendor = item.items && Array.isArray(item.items) ? item.items.reduce((sum, it) => sum + (it.qty * ((it.printPerPcs || 0) + (it.jahitPerPcs || 0))), 0) : 0;
+      const totalVendor = item.items && Array.isArray(item.items) && item.items.length > 0 
+        ? item.items.reduce((sum, it) => sum + (it.qty * ((it.printPerPcs || 0) + (it.jahitPerPcs || 0))), 0) 
+        : item.qty * ((item.printPerPcs || 0) + (item.jahitPerPcs || 0));
       return totalVendor / itemQty;
     };
 

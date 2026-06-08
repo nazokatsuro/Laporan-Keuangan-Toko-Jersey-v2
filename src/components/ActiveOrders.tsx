@@ -153,16 +153,27 @@ export default function ActiveOrders({
           (item.noTelepon || '').includes(searchTerm);
 
         let matchesStatus = false;
+        const cleanPoName = (item.namaPo || '').toLowerCase().trim();
         if (statusFilter === 'Semua') {
           matchesStatus = true;
         } else if (statusFilter === 'Belum Bayar Sublim') {
-          const sublimCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
-          const hasPaidSublim = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`));
-          matchesStatus = sublimCost > 0 && !hasPaidSublim && ['Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi);
+          const sublimCost = item.items && item.items.length > 0
+            ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
+            : (item.qty * (item.printPerPcs || 0));
+          const hasPaidSublim = settings.cashFlowList?.some(cf => {
+            const desc = (cf.keterangan || '').toLowerCase();
+            return desc.includes('sublim') && desc.includes(cleanPoName);
+          });
+          matchesStatus = sublimCost > 0 && !hasPaidSublim;
         } else if (statusFilter === 'Belum Bayar Jahit') {
-          const jahitCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
-          const hasPaidJahit = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
-          matchesStatus = jahitCost > 0 && !hasPaidJahit && ['Jahit', 'Tinggal Kirim', 'Beres'].includes(item.statusProduksi);
+          const jahitCost = item.items && item.items.length > 0
+            ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
+            : (item.qty * (item.jahitPerPcs || 0));
+          const hasPaidJahit = settings.cashFlowList?.some(cf => {
+            const desc = (cf.keterangan || '').toLowerCase();
+            return desc.includes('jahit') && desc.includes(cleanPoName);
+          });
+          matchesStatus = jahitCost > 0 && !hasPaidJahit;
         } else if (statusFilter === 'Belum Bayar Komisi') {
           const baseKomisi = item.komisiPerPcs || 0;
           const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
@@ -171,9 +182,10 @@ export default function ActiveOrders({
                 ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
                 : item.qty * baseKomisi)
             : 0;
-          const hasPaidKomisi = settings.cashFlowList?.some(cf => 
-            cf.keterangan.toLowerCase().includes('komisi') && cf.keterangan.includes(item.namaPo)
-          );
+          const hasPaidKomisi = settings.cashFlowList?.some(cf => {
+            const desc = (cf.keterangan || '').toLowerCase();
+            return desc.includes('komisi') && desc.includes(cleanPoName);
+          });
           matchesStatus = komisiCost > 0 && !hasPaidKomisi;
         } else {
           matchesStatus = item.statusProduksi === statusFilter;
@@ -404,10 +416,21 @@ export default function ActiveOrders({
             const nearDeadline = isNearDeadline(item.deadline, item.statusProduksi === 'Beres');
             const isFullyPaid = item.sisaTagihan === 0;
             
-            const sublimCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0);
-            const hasPaidSublim = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`));
-            const jahitCost = (item.items || []).reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0);
-            const hasPaidJahit = settings.cashFlowList?.some(cf => cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`));
+            const cellPoName = (item.namaPo || '').toLowerCase().trim();
+            const sublimCost = item.items && item.items.length > 0
+              ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
+              : (item.qty * (item.printPerPcs || 0));
+            const hasPaidSublim = settings.cashFlowList?.some(cf => {
+              const desc = (cf.keterangan || '').toLowerCase();
+              return desc.includes('sublim') && desc.includes(cellPoName);
+            });
+            const jahitCost = item.items && item.items.length > 0
+              ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
+              : (item.qty * (item.jahitPerPcs || 0));
+            const hasPaidJahit = settings.cashFlowList?.some(cf => {
+              const desc = (cf.keterangan || '').toLowerCase();
+              return desc.includes('jahit') && desc.includes(cellPoName);
+            });
 
             const baseKomisi = item.komisiPerPcs || 0;
             const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
@@ -416,9 +439,10 @@ export default function ActiveOrders({
                   ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
                   : item.qty * baseKomisi)
               : 0;
-            const hasPaidKomisi = settings.cashFlowList?.some(cf => 
-              cf.keterangan.toLowerCase().includes('komisi') && cf.keterangan.includes(item.namaPo)
-            );
+            const hasPaidKomisi = settings.cashFlowList?.some(cf => {
+              const desc = (cf.keterangan || '').toLowerCase();
+              return desc.includes('komisi') && desc.includes(cellPoName);
+            });
 
             return (
               <div 
