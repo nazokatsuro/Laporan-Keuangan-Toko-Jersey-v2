@@ -48,7 +48,7 @@ interface ActiveOrdersProps {
   setSelectedYear: (year: string) => void;
 }
 
-const ALL_STATUSES = ['Semua', 'Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres', 'Belum Bayar Sublim', 'Belum Bayar Jahit', 'Belum Bayar Komisi'];
+const ALL_STATUSES = ['Semua', 'Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres', 'Belum Bayar Sublim', 'Belum Bayar Jahit', 'Belum Bayar Komisi', 'Belum Ambil Keuntungan', 'Sudah Ambil Keuntungan'];
 
 export default function ActiveOrders({ 
   pesananList, 
@@ -77,6 +77,9 @@ export default function ActiveOrders({
   
   // Modal state for deletion confirmation
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // State to confirm profit extraction safely without breaking sandboxed iframes
+  const [confirmProfitId, setConfirmProfitId] = useState<string | null>(null);
 
   // Derive unique years from actual transaction history
   const availableYears = useMemo(() => {
@@ -187,6 +190,18 @@ export default function ActiveOrders({
             return desc.includes('komisi') && desc.includes(cleanPoName);
           });
           matchesStatus = komisiCost > 0 && !hasPaidKomisi;
+        } else if (statusFilter === 'Belum Ambil Keuntungan') {
+          const hasTakenProfit = settings.cashFlowList?.some(cf => {
+            const desc = (cf.keterangan || '').toLowerCase();
+            return desc.includes('ambil keuntungan') && desc.includes(cleanPoName);
+          });
+          matchesStatus = item.profit > 0 && !hasTakenProfit;
+        } else if (statusFilter === 'Sudah Ambil Keuntungan') {
+          const hasTakenProfit = settings.cashFlowList?.some(cf => {
+            const desc = (cf.keterangan || '').toLowerCase();
+            return desc.includes('ambil keuntungan') && desc.includes(cleanPoName);
+          });
+          matchesStatus = item.profit > 0 && hasTakenProfit;
         } else {
           matchesStatus = item.statusProduksi === statusFilter;
         }
@@ -444,6 +459,11 @@ export default function ActiveOrders({
               return desc.includes('komisi') && desc.includes(cellPoName);
             });
 
+            const hasTakenProfit = settings.cashFlowList?.some(cf => {
+              const desc = (cf.keterangan || '').toLowerCase();
+              return desc.includes('ambil keuntungan') && desc.includes(cellPoName);
+            });
+
             return (
               <div 
                 key={item.id}
@@ -579,10 +599,20 @@ export default function ActiveOrders({
                       </div>
 
                       {/* Sisa Bayar Section */}
-                      <div className="border-l border-slate-205 dark:border-slate-700/80 pl-3 flex-1 min-w-0 flex flex-col items-center justify-center">
+                      <div className="border-l border-slate-205 dark:border-slate-700/80 px-3 flex-1 min-w-0 flex flex-col items-center justify-center">
                         <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Sisa Bayar</span>
                         <span className={`text-[11px] sm:text-xs xl:text-sm font-black block mt-1.5 truncate max-w-full ${isFullyPaid ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500'}`} title={isFullyPaid ? 'Lunas' : formatRupiah(item.sisaTagihan)}>
                           {isFullyPaid ? 'Lunas ✓' : formatRupiah(item.sisaTagihan)}
+                        </span>
+                      </div>
+
+                      {/* Profit Section */}
+                      <div className="border-l border-slate-205 dark:border-slate-700/80 pl-3 flex-1 min-w-0 flex flex-col items-center justify-center">
+                        <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">
+                          Profit {hasTakenProfit ? '(Ambil ✓)' : '(Belum)'}
+                        </span>
+                        <span className={`text-[11px] sm:text-xs xl:text-sm font-black block mt-1.5 truncate max-w-full ${hasTakenProfit ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-[#10b981]'}`} title={formatRupiah(item.profit)}>
+                          {formatRupiah(item.profit)}
                         </span>
                       </div>
                     </div>
@@ -739,6 +769,53 @@ export default function ActiveOrders({
                         </div>
                         <span className="text-[10px] text-emerald-400 font-normal">Komisi</span>
                       </button>
+
+                      {/* 6. Ambil Keuntungan */}
+                      {item.profit > 0 && (
+                        <div className="w-full flex flex-col gap-1 shrink-0">
+                          {confirmProfitId === item.id ? (
+                            <div className="flex gap-1.5 w-full">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onLogToCashFlow('Ambil Keuntungan', 'keluar', item.profit, `Ambil Keuntungan PO ${item.namaPo}`);
+                                  setConfirmProfitId(null);
+                                }}
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold py-1 px-2 rounded-lg transition-all border border-emerald-600 shadow-3xs cursor-pointer text-center"
+                              >
+                                Ya, Ambil
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmProfitId(null)}
+                                className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-bold py-1 px-2 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-3xs cursor-pointer text-center"
+                              >
+                                Batal
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={hasTakenProfit}
+                              onClick={() => setConfirmProfitId(item.id)}
+                              title={hasTakenProfit ? "Keuntungan PO sudah diambil" : "Mencatat pengambilan keuntungan PO"}
+                              className={`w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all shadow-3xs border ${
+                                hasTakenProfit
+                                  ? "text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-750 cursor-not-allowed"
+                                  : "text-emerald-600 dark:text-emerald-400 bg-emerald-50/75 dark:bg-emerald-950/45 hover:bg-emerald-100/90 dark:hover:bg-emerald-950/75 border-emerald-200 dark:border-emerald-800 cursor-pointer"
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                {hasTakenProfit ? <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> : <DollarSign className="h-3.5 w-3.5 text-emerald-500 shrink-0" />}
+                                <span>Ambil Untung</span>
+                              </div>
+                              <span className={`text-[10px] ${hasTakenProfit ? 'text-slate-400 font-normal line-through' : 'text-emerald-500 font-extrabold'}`}>
+                                {hasTakenProfit ? 'Selesai' : formatRupiah(item.profit)}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

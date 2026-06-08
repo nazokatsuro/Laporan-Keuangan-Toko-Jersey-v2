@@ -472,6 +472,7 @@ export default function CashFlow({
                     <option value="Ongkir">Ongkir</option>
                     <option value="Pembelian bahan">Pembelian bahan</option>
                     <option value="Operasional">Operasional</option>
+                    <option value="Ambil Keuntungan">Ambil Keuntungan</option>
                     <option value="Pengeluaran lain">Pengeluaran lain</option>
                   </>
                 )}

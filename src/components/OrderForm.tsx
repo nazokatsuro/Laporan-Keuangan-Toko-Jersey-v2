@@ -1029,8 +1029,33 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                   <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Uang Masuk / DP: <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatRupiah(uangMasuk)}</span></p>
                   <p className="text-xs font-semibold text-rose-500 dark:text-rose-400 mb-3">Sisa Tagihan: {formatRupiah(sisaTagihan)}</p>
                 </div>
-                <div className="w-full text-center px-4 py-2 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 rounded-xl font-bold text-[10px] uppercase tracking-wider border border-emerald-200 dark:border-emerald-800/50">
-                  DP otomatis tercatat di Arus Kas
+                <div className="flex flex-col gap-2">
+                  <div className="w-full text-center px-4 py-2 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 rounded-xl font-bold text-[10px] uppercase tracking-wider border border-emerald-200 dark:border-emerald-800/50">
+                    DP otomatis tercatat di Arus Kas
+                  </div>
+                  {pesananToEdit && profit > 0 && (
+                    <>
+                      {(() => {
+                        const isProfitTaken = cashFlowList?.some(cf => {
+                          const desc = (cf.keterangan || '').toLowerCase();
+                          return desc.includes('ambil keuntungan') && desc.includes(pesananToEdit.namaPo.toLowerCase());
+                        });
+                        return (
+                          <button
+                            type="button"
+                            disabled={isProfitTaken}
+                            onClick={() => {
+                              if (!onLogToCashFlow) return;
+                              onLogToCashFlow('Ambil Keuntungan', 'keluar', profit, `Ambil Keuntungan PO ${namaPo}`);
+                            }}
+                            className={`w-full text-center px-4 py-1.5 ${isProfitTaken ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 cursor-not-allowed' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 cursor-pointer'} rounded-xl font-bold text-xs transition border`}
+                          >
+                            {isProfitTaken ? `Untung Lunas (${formatRupiah(profit)})` : `Ambil Untung (${formatRupiah(profit)})`}
+                          </button>
+                        );
+                      })()}
+                    </>
+                  )}
                 </div>
               </div>
 
