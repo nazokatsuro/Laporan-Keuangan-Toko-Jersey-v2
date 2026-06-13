@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Pesanan, PesananItem, StatusProduksi, ShopSettings } from '../types';
-import { generateId, formatRupiah } from '../utils';
+import { generateId, formatRupiah, compressImage } from '../utils';
 import { 
   Save, 
   Trash2, 
@@ -21,7 +21,8 @@ import {
   ClipboardList,
   Image as ImageIcon,
   Upload,
-  X
+  X,
+  Loader2
 } from 'lucide-react';
 
 interface OrderFormProps {
@@ -123,6 +124,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
 
   // Mockup image URL (base64 string)
   const [mockupUrl, setMockupUrl] = useState('');
+  const [isCompressing, setIsCompressing] = useState(false);
 
   // Multiple product items inside this 1 PO
   const [items, setItems] = useState<PesananItem[]>([]);
@@ -291,9 +293,14 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
     return itemsModal + biayaLainnya;
   }, [items, biayaLainnya]);
 
+  const totalKomisi = useMemo(() => {
+    const baseKomisi = Number(komisiPerPcs) || 0;
+    return items.reduce((sum, item) => sum + (item.qty * (item.komisiPerPcs !== undefined ? item.komisiPerPcs : baseKomisi)), 0);
+  }, [items, komisiPerPcs]);
+
   const profit = useMemo(() => {
-    return totalHarga - totalModal;
-  }, [totalHarga, totalModal]);
+    return totalHarga - totalModal - totalKomisi;
+  }, [totalHarga, totalModal, totalKomisi]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -916,32 +923,58 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
             <div className="w-full md:flex-1">
               <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 rounded-2xl cursor-pointer transition group">
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Upload className="h-8 w-8 text-slate-400 group-hover:text-indigo-500 transition mb-2" />
-                  <p className="text-xs font-bold text-slate-700 dark:text-slate-350">
-                    Klik atau seret gambar ke sini
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Format PNG, JPG, JPEG (Max. 5MB)
-                  </p>
+                  {isCompressing ? (
+                    <>
+                      <Loader2 className="h-8 w-8 text-indigo-500 animate-spin mb-2" />
+                      <p className="text-xs font-bold text-indigo-500">
+                        Sedang mengoptimalkan gambar...
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Memperkecil ukuran berkas agar hemat penyimpanan
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-8 w-8 text-slate-400 group-hover:text-indigo-500 transition mb-2" />
+                      <p className="text-xs font-bold text-slate-700 dark:text-slate-350">
+                        Klik atau seret gambar ke sini
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Format PNG, JPG, JPEG (Max. 5MB)
+                      </p>
+                    </>
+                  )}
                 </div>
                 <input 
                   type="file" 
                   accept="image/*" 
                   className="hidden" 
-                  onChange={(e) => {
+                  disabled={isCompressing}
+                  onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (file) {
                       if (file.size > 5 * 1024 * 1024) {
                         alert("Ukuran gambar maksimal adalah 5MB");
                         return;
                       }
-                      const reader = new FileReader();
-                      reader.onload = (event) => {
-                        if (event.target?.result) {
-                          setMockupUrl(event.target.result as string);
-                        }
-                      };
-                      reader.readAsDataURL(file);
+                      setIsCompressing(true);
+                      try {
+                        // Compress the image down to 800px max dimensions and 0.7 JPEG quality
+                        const compressedBase64 = await compressImage(file, 800, 800, 0.7);
+                        setMockupUrl(compressedBase64);
+                      } catch (err: any) {
+                        console.error("Gagal mengompresi gambar mockup:", err);
+                        // Fallback to uncompressed file
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          if (event.target?.result) {
+                            setMockupUrl(event.target.result as string);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      } finally {
+                        setIsCompressing(false);
+                      }
                     }
                   }}
                 />
@@ -949,7 +982,12 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
             </div>
 
             {/* Preview Section */}
-            {mockupUrl ? (
+            {isCompressing ? (
+              <div className="w-full max-w-[200px] h-36 border border-dashed border-indigo-300 dark:border-indigo-700/60 rounded-2xl flex flex-col items-center justify-center text-indigo-400 bg-indigo-50/10 text-xs">
+                <Loader2 className="h-6 w-6 mb-1 animate-spin text-indigo-500" />
+                <span>Memproses...</span>
+              </div>
+            ) : mockupUrl ? (
               <div className="relative w-full max-w-[200px] h-36 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-center p-2 group overflow-hidden">
                 <img 
                   src={mockupUrl} 

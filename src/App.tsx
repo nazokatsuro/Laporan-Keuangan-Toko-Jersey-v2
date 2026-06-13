@@ -90,7 +90,6 @@ function normalizePesananList(list: any[]): Pesanan[] {
     const jahitPerPcs = typeof item.jahitPerPcs === 'number' ? item.jahitPerPcs : 0;
     const biayaLainnya = typeof item.biayaLainnya === 'number' ? item.biayaLainnya : 0;
     const totalModal = typeof item.totalModal === 'number' ? item.totalModal : ((qty * printPerPcs) + (qty * jahitPerPcs) + biayaLainnya);
-    const profit = typeof item.profit === 'number' ? item.profit : (totalHarga - totalModal);
     
     // Normalize nested items if present
     const rawItems = Array.isArray(item.items) ? item.items : [
@@ -117,6 +116,14 @@ function normalizePesananList(list: any[]): Pesanan[] {
       penerimaKomisi: sub.penerimaKomisi || '',
       komisiPerPcs: typeof sub.komisiPerPcs === 'number' ? sub.komisiPerPcs : undefined,
     }));
+
+    // Calculate dynamic profit: total harga - total modal - total broker commission
+    const baseKomisi = typeof item.komisiPerPcs === 'number' ? item.komisiPerPcs : 0;
+    const totalKomisi = items.reduce((sum: number, it: any) => {
+      const itemKomisi = typeof it.komisiPerPcs === 'number' ? it.komisiPerPcs : baseKomisi;
+      return sum + ((it.qty || 0) * itemKomisi);
+    }, 0);
+    const profit = totalHarga - totalModal - totalKomisi;
 
     return {
       id,
@@ -214,12 +221,20 @@ export default function App() {
 
   // Sync orders to LocalStorage on updates
   useEffect(() => {
-    localStorage.setItem('laporan_jersey_data', JSON.stringify(pesananList));
+    try {
+      localStorage.setItem('laporan_jersey_data', JSON.stringify(pesananList));
+    } catch (e) {
+      console.warn("Gagal menyimpan data pesanan ke localStorage (Penyimpanan penuh):", e);
+    }
   }, [pesananList]);
 
   // Sync settings to LocalStorage on updates
   useEffect(() => {
-    localStorage.setItem('laporan_jersey_settings', JSON.stringify({ ...settings, darkMode: true }));
+    try {
+      localStorage.setItem('laporan_jersey_settings', JSON.stringify({ ...settings, darkMode: true }));
+    } catch (e) {
+      console.warn("Gagal menyimpan pengaturan ke localStorage (Penyimpanan penuh):", e);
+    }
     // Always apply dark mode class
     document.documentElement.classList.add('dark');
   }, [settings]);
