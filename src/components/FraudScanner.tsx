@@ -388,7 +388,7 @@ export default function FraudScanner({
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <div className="bg-rose-500/15 border border-rose-500/30 p-2.5 rounded-xl text-rose-450 shrink-0">
+          <div className="bg-rose-500/15 border border-rose-500/30 p-2.5 rounded-xl text-rose-400 shrink-0">
             <ShieldAlert className="h-6 w-6 text-rose-400" />
           </div>
           <div>

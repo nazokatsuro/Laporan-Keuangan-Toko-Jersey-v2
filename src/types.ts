@@ -5,6 +5,13 @@
 
 export type StatusProduksi = 'Setting' | 'Print Press' | 'Jahit' | 'Tinggal Kirim' | 'Beres';
 
+export interface PembayaranMasuk {
+  id: string;
+  tanggal: string; // YYYY-MM-DD
+  nominal: number;
+  keterangan: string;
+}
+
 export interface PesananItem {
   id: string;
   namaProduk: string;
@@ -51,6 +58,7 @@ export interface Pesanan {
   items?: PesananItem[];
 
   mockupUrl?: string; // Base64 string of the jersey mockup
+  pembayaranList?: PembayaranMasuk[];
 }
 
 export interface CashFlowTransaction {

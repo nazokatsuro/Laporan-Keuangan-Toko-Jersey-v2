@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Pesanan, PesananItem, StatusProduksi, ShopSettings } from '../types';
+import { Pesanan, PesananItem, StatusProduksi, ShopSettings, PembayaranMasuk } from '../types';
 import { generateId, formatRupiah, compressImage } from '../utils';
 import { 
   Save, 
@@ -49,6 +49,18 @@ const BASELINE_COLLARS = [
   "Kerah Sleting",
   "Kerah Shanghai"
 ];
+
+const getCanonicalCollar = (c?: string): string => {
+  if (!c) return 'O-Neck (Standar)';
+  const val = c.trim().toLowerCase();
+  if (val === 'o-neck' || val === 'o neck' || val === 'o-neck (standar)' || val === 'o neck standar' || val === 'kerah o') {
+    return 'O-Neck (Standar)';
+  }
+  if (val === 'v-neck' || val === 'v neck' || val === 'kerah v') {
+    return 'V-Neck';
+  }
+  return c.trim();
+};
 
 interface RupiahInputProps {
   value: number;
@@ -115,8 +127,12 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
   const [dateMode, setDateMode] = useState<'today' | 'manual'>('today');
   const [customDate, setCustomDate] = useState(() => getLocalDateString());
   
-  // Numerical fields
-  const [uangMasuk, setUangMasuk] = useState(0);
+  // Numerical fields & Payments List
+  const [pembayaranList, setPembayaranList] = useState<PembayaranMasuk[]>([]);
+  
+  const uangMasuk = useMemo(() => {
+    return pembayaranList.reduce((sum, p) => sum + p.nominal, 0);
+  }, [pembayaranList]);
   
   // Production stats & modal calculation fields
   const [statusProduksi, setStatusProduksi] = useState<StatusProduksi>('Setting');
@@ -143,7 +159,20 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setNamaPemesan(pesananToEdit.namaPemesan);
       setNoTelepon(pesananToEdit.noTelepon);
       setNamaPo(pesananToEdit.namaPo);
-      setUangMasuk(pesananToEdit.uangMasuk || 0);
+      
+      if (pesananToEdit.pembayaranList && pesananToEdit.pembayaranList.length > 0) {
+        setPembayaranList(pesananToEdit.pembayaranList);
+      } else {
+        setPembayaranList([
+          {
+            id: `pm-init-${pesananToEdit.id}`,
+            tanggal: (pesananToEdit.createdAt || new Date().toISOString()).substring(0, 10),
+            nominal: pesananToEdit.uangMasuk || 0,
+            keterangan: 'DP Masuk Ke-1'
+          }
+        ]);
+      }
+
       setStatusProduksi(pesananToEdit.statusProduksi);
       setBiayaLainnya(pesananToEdit.biayaLainnya ?? 0);
       setMockupUrl(pesananToEdit.mockupUrl || '');
@@ -168,7 +197,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       if (pesananToEdit.items && pesananToEdit.items.length > 0) {
         setItems(pesananToEdit.items.map(it => ({
           ...it,
-          modelKerah: it.modelKerah || pesananToEdit.modelKerah || 'O-Neck (Standar)'
+          modelKerah: getCanonicalCollar(it.modelKerah || pesananToEdit.modelKerah)
         })));
       } else {
         // Fallback for older historic single-item POs
@@ -182,7 +211,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
             hargaPerPcs: pesananToEdit.hargaPerPcs || 110000,
             printPerPcs: pesananToEdit.printPerPcs ?? 35000,
             jahitPerPcs: pesananToEdit.jahitPerPcs ?? 20000,
-            modelKerah: pesananToEdit.modelKerah || 'O-Neck (Standar)',
+            modelKerah: getCanonicalCollar(pesananToEdit.modelKerah),
           }
         ]);
       }
@@ -196,7 +225,14 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setNamaPemesan('');
       setNoTelepon('');
       setNamaPo('');
-      setUangMasuk(0);
+      setPembayaranList([
+        {
+          id: `pm-new-${Date.now()}`,
+          tanggal: getLocalDateString(),
+          nominal: 0,
+          keterangan: 'DP Masuk Ke-1'
+        }
+      ]);
       setBiayaLainnya(0);
       setPenerimaKomisi('');
       setKomisiPerPcs(0);
@@ -399,7 +435,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       penerimaKomisi: penerimaKomisi.trim(),
       komisiPerPcs: Number(komisiPerPcs) || 0,
       items,
-      mockupUrl
+      mockupUrl,
+      pembayaranList
     };
 
     // Automatically register any newly entered custom collar models in the shop settings for next transactions
@@ -811,52 +848,138 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
           </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                DP / Pembayaran Masuk (Rp)
-              </label>
-              <RupiahInput
-                value={uangMasuk}
-                onChange={(val) => setUangMasuk(val)}
-                className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-bold text-emerald-600 dark:text-emerald-400"
-              />
+            {/* COLUMN 1 & 2: MULTIPLE PEMBAYARAN / DP LIST */}
+            <div className="col-span-1 md:col-span-2 space-y-3 bg-slate-50/50 dark:bg-slate-900/20 p-3 rounded-2xl border border-slate-100 dark:border-slate-805/40">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  Rincian DP / Cicilan Masuk (Rp)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPembayaranList(prev => [
+                      ...prev,
+                      {
+                        id: `pm-new-${Date.now()}-${Math.random().toString(36).substring(2,6)}`,
+                        tanggal: getLocalDateString(),
+                        nominal: 0,
+                        keterangan: `Pembayaran Ke-${prev.length + 1}`
+                      }
+                    ]);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-[10px] font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-650 dark:bg-indigo-950/50 dark:hover:bg-indigo-950/80 dark:text-indigo-400 px-2.5 py-1.5 rounded-lg transition-colors border border-indigo-100/50 dark:border-indigo-900/50"
+                  id="btn-tambah-pembayaran"
+                >
+                  <Plus className="w-3 h-3" /> Tambah Pembayaran
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-[178px] overflow-y-auto pr-1">
+                {pembayaranList.map((pembayaran, pIdx) => (
+                  <div key={pembayaran.id} className="flex gap-1.5 items-center bg-white dark:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-3xs">
+                    <div className="w-[110px] shrink-0">
+                      <input
+                        type="date"
+                        value={pembayaran.tanggal}
+                        onChange={(e) => {
+                          const updated = [...pembayaranList];
+                          updated[pIdx].tanggal = e.target.value;
+                          setPembayaranList(updated);
+                        }}
+                        className="w-full px-2 py-1.5 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-850 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                        id={`pm-date-${pIdx}`}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        placeholder="Keterangan (ex: DP 1, Pelunasan)"
+                        value={pembayaran.keterangan}
+                        onChange={(e) => {
+                          const updated = [...pembayaranList];
+                          updated[pIdx].keterangan = e.target.value;
+                          setPembayaranList(updated);
+                        }}
+                        className="w-full px-2 py-1.5 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-850 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                        id={`pm-keterangan-${pIdx}`}
+                      />
+                    </div>
+                    <div className="w-[115px] shrink-0">
+                      <RupiahInput
+                        value={pembayaran.nominal}
+                        onChange={(val) => {
+                          const updated = [...pembayaranList];
+                          updated[pIdx].nominal = val;
+                          setPembayaranList(updated);
+                        }}
+                        className="w-full px-2 py-1.5 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 font-bold focus:outline-hidden focus:ring-1 focus:ring-indigo-500 text-right"
+                      />
+                    </div>
+                    {pembayaranList.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPembayaranList(prev => prev.filter((_, idx) => idx !== pIdx));
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition"
+                        title="Hapus Pembayaran"
+                        id={`pm-delete-${pIdx}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 flex justify-between px-1.5 pt-0.5 border-t border-slate-100 dark:border-slate-800/60">
+                <span>Total DP Terbayar ({pembayaranList.length}x):</span>
+                <span className="font-extrabold text-emerald-600 dark:text-emerald-400 text-[11px]">{formatRupiah(uangMasuk)}</span>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                Biaya Lain - lain (Ongkir, dll) (Rp)
-              </label>
-              <RupiahInput
-                value={biayaLainnya}
-                onChange={(val) => setBiayaLainnya(val)}
-                className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-bold text-rose-600 dark:text-rose-400"
-              />
+            {/* COLUMN 3: BIAYA LAIN-LAIN */}
+            <div className="flex flex-col justify-start space-y-2">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                  Biaya Lain - lain (Ongkir, dll) (Rp)
+                </label>
+                <RupiahInput
+                  value={biayaLainnya}
+                  onChange={(val) => setBiayaLainnya(val)}
+                  className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-bold text-rose-600 dark:text-rose-400"
+                />
+              </div>
+              <div className="p-3 bg-indigo-50/20 dark:bg-indigo-950/10 rounded-xl border border-indigo-100/30 dark:border-indigo-900/20 text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                <span className="font-semibold text-indigo-600 dark:text-indigo-400">Info Keuangan:</span> Setiap pembayaran masuk (DP) dicatat rinci untuk memotong Sisa Piutang PO. Keuntungan dihitung dari Total Tagihan dikurangi modal produksi dan komisi.
+              </div>
             </div>
 
-            <div className="bg-slate-55 dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80 col-span-2 flex flex-col justify-between">
-              <div className="flex justify-between items-start text-xs">
-                <div>
-                  <span className="block text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Total Qty Order</span>
-                  <span className="text-sm font-black text-slate-900 dark:text-white">{totalQty} Pcs</span>
+            {/* COLUMN 4: FINANCIAL SUMMARY CARD */}
+            <div className="bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800/80 flex flex-col justify-between space-y-3">
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Total Qty Order</span>
+                  <span className="font-extrabold text-slate-900 dark:text-white text-sm">{totalQty} Pcs</span>
                 </div>
-                <div>
-                  <span className="block text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Tagihan Bruto</span>
-                  <span className="text-sm font-black text-slate-900 dark:text-white">{formatRupiah(totalHarga)}</span>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Tagihan Bruto</span>
+                  <span className="font-extrabold text-slate-900 dark:text-white text-sm">{formatRupiah(totalHarga)}</span>
                 </div>
               </div>
 
-              <div className="border-t border-slate-200 dark:border-slate-800 my-1.5" />
+              <div className="border-t border-slate-200 dark:border-slate-800" />
 
-              <div className="flex justify-between items-end">
-                <div>
-                  <span className="block text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Keuntungan Bersih PO</span>
-                  <span className={`text-[13px] font-black ${profit >= 0 ? 'text-emerald-600 dark:text-emerald-450' : 'text-rose-600'}`}>
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Keuntungan Bersih</span>
+                  <span className={`text-sm font-black ${profit >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
                     {formatRupiah(profit)}
                   </span>
                 </div>
-                <div className="text-right">
-                  <span className="block text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Sisa Piutang</span>
-                  <span className={`text-sm font-black ${sisaTagihan > 0 ? 'text-rose-600 dark:text-rose-450' : 'text-emerald-600'}`}>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Sisa Tagihan</span>
+                  <span className={`text-base font-black ${sisaTagihan > 0 ? 'text-rose-500 dark:text-rose-400' : 'text-emerald-500 dark:text-emerald-400'}`}>
                     {sisaTagihan > 0 ? formatRupiah(sisaTagihan) : 'Lunas ✓'}
                   </span>
                 </div>

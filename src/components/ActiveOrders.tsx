@@ -65,12 +65,15 @@ export default function ActiveOrders({
   setSelectedYear
 }: ActiveOrdersProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('Semua');
-  const [sortBy, setSortBy] = useState<'deadline' | 'qty' | 'totalHarga' | 'createdAt'>('deadline');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  
+  const [progressFilter, setProgressFilter] = useState<string>('Semua');
+  const [paymentFilter, setPaymentFilter] = useState<string>('Semua');
+  const [deadlineFilter, setDeadlineFilter] = useState<string>('Semua');
+  const [customerFilter, setCustomerFilter] = useState<string>('Semua');
   const [tableMonth, setTableMonth] = useState<string>('Semua');
   const [tableYear, setTableYear] = useState<string>('Semua');
+  
+  const [sortBy, setSortBy] = useState<'deadline' | 'qty' | 'totalHarga' | 'sisaTagihan' | 'createdAt'>('deadline');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   
   // Selection state for batch receipts
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -80,6 +83,17 @@ export default function ActiveOrders({
 
   // State to confirm profit extraction safely without breaking sandboxed iframes
   const [confirmProfitId, setConfirmProfitId] = useState<string | null>(null);
+
+  // Derive unique customer list dynamically for filtering
+  const uniqueCustomers = useMemo(() => {
+    const names = new Set<string>();
+    pesananList.forEach(item => {
+      if (item.namaPemesan && item.namaPemesan.trim()) {
+        names.add(item.namaPemesan.trim());
+      }
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'id'));
+  }, [pesananList]);
 
   // Derive unique years from actual transaction history
   const availableYears = useMemo(() => {
@@ -112,12 +126,16 @@ export default function ActiveOrders({
     { value: '12', name: 'Desember' }
   ];
 
-  const handleToggleSort = (field: 'deadline' | 'qty' | 'totalHarga' | 'createdAt') => {
+  const handleToggleSort = (field: 'deadline' | 'qty' | 'totalHarga' | 'sisaTagihan' | 'createdAt') => {
     if (sortBy === field) {
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortBy(field);
-      setSortOrder('asc');
+      if (field === 'totalHarga' || field === 'sisaTagihan') {
+        setSortOrder('desc');
+      } else {
+        setSortOrder('asc');
+      }
     }
   };
 
@@ -147,66 +165,31 @@ export default function ActiveOrders({
   const filteredAndSortedList = useMemo(() => {
     return pesananList
       .filter(item => {
-        const safeSearch = searchTerm.toLowerCase();
-        const matchesSearch = 
-          (item.namaPemesan || '').toLowerCase().includes(safeSearch) ||
-          (item.namaPo || '').toLowerCase().includes(safeSearch) ||
-          (item.id || '').toLowerCase().includes(safeSearch) ||
-          (item.namaProduk || '').toLowerCase().includes(safeSearch) ||
-          (item.noTelepon || '').includes(searchTerm);
+        // 1. Search term (case insensitive search matches multiple fields)
+        const safeSearch = searchTerm.toLowerCase().trim();
+        let matchesSearch = true;
+        if (safeSearch) {
+          const itemMatch = 
+            (item.namaPemesan || '').toLowerCase().includes(safeSearch) ||
+            (item.namaPo || '').toLowerCase().includes(safeSearch) ||
+            (item.id || '').toLowerCase().includes(safeSearch) ||
+            (item.namaProduk || '').toLowerCase().includes(safeSearch) ||
+            (item.bahan || '').toLowerCase().includes(safeSearch) ||
+            (item.keterangan || '').toLowerCase().includes(safeSearch) ||
+            (item.modelKerah || '').toLowerCase().includes(safeSearch) ||
+            (item.noTelepon || '').includes(safeSearch);
 
-        let matchesStatus = false;
-        const cleanPoName = (item.namaPo || '').toLowerCase().trim();
-        if (statusFilter === 'Semua') {
-          matchesStatus = true;
-        } else if (statusFilter === 'Belum Bayar Sublim') {
-          const sublimCost = item.items && item.items.length > 0
-            ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
-            : (item.qty * (item.printPerPcs || 0));
-          const hasPaidSublim = settings.cashFlowList?.some(cf => {
-            const desc = (cf.keterangan || '').toLowerCase();
-            return desc.includes('sublim') && desc.includes(cleanPoName);
-          });
-          matchesStatus = sublimCost > 0 && !hasPaidSublim;
-        } else if (statusFilter === 'Belum Bayar Jahit') {
-          const jahitCost = item.items && item.items.length > 0
-            ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
-            : (item.qty * (item.jahitPerPcs || 0));
-          const hasPaidJahit = settings.cashFlowList?.some(cf => {
-            const desc = (cf.keterangan || '').toLowerCase();
-            return desc.includes('jahit') && desc.includes(cleanPoName);
-          });
-          matchesStatus = jahitCost > 0 && !hasPaidJahit;
-        } else if (statusFilter === 'Belum Bayar Komisi') {
-          const baseKomisi = item.komisiPerPcs || 0;
-          const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
-          const komisiCost = hasPenerimaKomisi
-            ? (item.items && item.items.length > 0
-                ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
-                : item.qty * baseKomisi)
-            : 0;
-          const hasPaidKomisi = settings.cashFlowList?.some(cf => {
-            const desc = (cf.keterangan || '').toLowerCase();
-            return desc.includes('komisi') && desc.includes(cleanPoName);
-          });
-          matchesStatus = komisiCost > 0 && !hasPaidKomisi;
-        } else if (statusFilter === 'Belum Ambil Keuntungan') {
-          const hasTakenProfit = settings.cashFlowList?.some(cf => {
-            const desc = (cf.keterangan || '').toLowerCase();
-            return desc.includes('ambil keuntungan') && desc.includes(cleanPoName);
-          });
-          matchesStatus = item.profit > 0 && !hasTakenProfit;
-        } else if (statusFilter === 'Sudah Ambil Keuntungan') {
-          const hasTakenProfit = settings.cashFlowList?.some(cf => {
-            const desc = (cf.keterangan || '').toLowerCase();
-            return desc.includes('ambil keuntungan') && desc.includes(cleanPoName);
-          });
-          matchesStatus = item.profit > 0 && hasTakenProfit;
-        } else {
-          matchesStatus = item.statusProduksi === statusFilter;
+          const itemsMatch = item.items && item.items.some(it => 
+            (it.namaProduk || '').toLowerCase().includes(safeSearch) ||
+            (it.bahan || '').toLowerCase().includes(safeSearch) ||
+            (it.keterangan || '').toLowerCase().includes(safeSearch) ||
+            (it.modelKerah || '').toLowerCase().includes(safeSearch)
+          );
+
+          matchesSearch = itemMatch || !!itemsMatch;
         }
-        
-        // Month and year boundaries (fallback securely if createdAt missing to stop crash)
+
+        // 2. Month and Year from creation date
         const dtStr = item.createdAt || '';
         const itemYear = dtStr.substring(0, 4);
         const itemMonth = dtStr.substring(5, 7); // "MM"
@@ -214,7 +197,87 @@ export default function ActiveOrders({
         const yearMatches = tableYear === 'Semua' || itemYear === tableYear;
         const monthMatches = tableMonth === 'Semua' || itemMonth === tableMonth;
 
-        return matchesSearch && matchesStatus && yearMatches && monthMatches;
+        // 3. Progress status filter
+        const matchesProgress = progressFilter === 'Semua' || item.statusProduksi === progressFilter;
+
+        // 4. Payment/Finance status filter
+        let matchesPayment = true;
+        const cleanPoName = (item.namaPo || '').toLowerCase().trim();
+        const isFullyPaid = (Number(item.sisaTagihan) || 0) <= 0;
+
+        const sublimCost = item.items && item.items.length > 0
+          ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
+          : (item.qty * (item.printPerPcs || 0));
+        const hasPaidSublim = settings.cashFlowList?.some(cf => {
+          const desc = (cf.keterangan || '').toLowerCase();
+          return desc.includes('sublim') && desc.includes(cleanPoName);
+        });
+
+        const jahitCost = item.items && item.items.length > 0
+          ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
+          : (item.qty * (item.jahitPerPcs || 0));
+        const hasPaidJahit = settings.cashFlowList?.some(cf => {
+          const desc = (cf.keterangan || '').toLowerCase();
+          return desc.includes('jahit') && desc.includes(cleanPoName);
+        });
+
+        const baseKomisi = item.komisiPerPcs || 0;
+        const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
+        const komisiCost = hasPenerimaKomisi
+          ? (item.items && item.items.length > 0
+              ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
+              : item.qty * baseKomisi)
+          : 0;
+        const hasPaidKomisi = settings.cashFlowList?.some(cf => {
+          const desc = (cf.keterangan || '').toLowerCase();
+          return desc.includes('komisi') && desc.includes(cleanPoName);
+        });
+
+        const hasTakenProfit = settings.cashFlowList?.some(cf => {
+          const desc = (cf.keterangan || '').toLowerCase();
+          return desc.includes('ambil keuntungan') && desc.includes(cleanPoName);
+        });
+
+        if (paymentFilter !== 'Semua') {
+          if (paymentFilter === 'Lunas') {
+            matchesPayment = isFullyPaid;
+          } else if (paymentFilter === 'Belum Lunas') {
+            matchesPayment = !isFullyPaid;
+          } else if (paymentFilter === 'Belum Bayar Sublim') {
+            matchesPayment = sublimCost > 0 && !hasPaidSublim;
+          } else if (paymentFilter === 'Belum Bayar Jahit') {
+            matchesPayment = jahitCost > 0 && !hasPaidJahit;
+          } else if (paymentFilter === 'Belum Bayar Komisi') {
+            matchesPayment = komisiCost > 0 && !hasPaidKomisi;
+          } else if (paymentFilter === 'Belum Ambil Keuntungan') {
+            matchesPayment = item.profit > 0 && !hasTakenProfit;
+          } else if (paymentFilter === 'Sudah Ambil Keuntungan') {
+            matchesPayment = item.profit > 0 && hasTakenProfit;
+          }
+        }
+
+        // 5. Deadline status filter
+        let matchesDeadline = true;
+        if (deadlineFilter !== 'Semua') {
+          const isFinished = item.statusProduksi === 'Beres';
+          const diff = new Date(item.deadline).getTime() - new Date().getTime();
+          const diffDays = Math.ceil(diff / (1000 * 60 * 60 * 24));
+          const isOverdue = diffDays < 0 && !isFinished;
+          const isNear = diffDays >= 0 && diffDays <= 3 && !isFinished;
+
+          if (deadlineFilter === 'Mendesak (≤ 3 Hari)') {
+            matchesDeadline = isNear;
+          } else if (deadlineFilter === 'Lewat Deadline') {
+            matchesDeadline = isOverdue;
+          } else if (deadlineFilter === 'Aman (> 3 Hari)') {
+            matchesDeadline = !isOverdue && !isNear;
+          }
+        }
+
+        // 6. Customer filter
+        const matchesCustomer = customerFilter === 'Semua' || (item.namaPemesan || '').trim() === customerFilter;
+
+        return matchesSearch && yearMatches && monthMatches && matchesProgress && matchesPayment && matchesDeadline && matchesCustomer;
       })
       .sort((a, b) => {
         let valueA: any = a[sortBy];
@@ -229,7 +292,7 @@ export default function ActiveOrders({
         if (valueA > valueB) return sortOrder === 'asc' ? 1 : -1;
         return 0;
       });
-  }, [pesananList, searchTerm, statusFilter, sortBy, sortOrder, tableMonth, tableYear]);
+  }, [pesananList, searchTerm, progressFilter, paymentFilter, deadlineFilter, customerFilter, tableMonth, tableYear, sortBy, sortOrder, settings.cashFlowList]);
 
   // Color mapping function
   const getStatusStyle = (status: StatusProduksi) => {
@@ -266,104 +329,220 @@ export default function ActiveOrders({
   return (
     <div className="space-y-6 animate-fade-in">
       
-      {/* Top action / search panel */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700/80 shadow-xs">
+      {/* Top action & advanced filters panel */}
+      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700/80 shadow-xs space-y-4">
         
-        {/* Search Field */}
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Cari Pesanan (Nama, PO, Tim, No. Jersey/ID)..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
-          />
-        </div>
-
-        {/* Filters and sorting */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Month filter dropdown */}
-          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
-            <Calendar className="h-3.5 w-3.5 text-indigo-500" />
-            <select
-              value={tableMonth}
-              onChange={(e) => setTableMonth(e.target.value)}
-              className="bg-transparent focus:outline-hidden cursor-pointer"
-            >
-              {MONTHS_LIST.map(m => (
-                <option key={m.value} value={m.value} className="bg-white dark:bg-slate-900 text-slate-850 dark:text-white">
-                  {m.name}
-                </option>
-              ))}
-            </select>
+        {/* Row 1: Search, Sort and Add Button */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Cari Pesanan (Nama Konsumen, PO/Tim, ID PO, Bahan, Kerah, Keterangan, No HP)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-705 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
+            />
           </div>
+          
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Sort trigger panel */}
+            <div className="flex items-center gap-1 bg-slate-55 dark:bg-slate-905 border border-slate-155 dark:border-slate-705/85 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => handleToggleSort('deadline')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  sortBy === 'deadline' 
+                    ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-2xs' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                }`}
+              >
+                Urut: Deadline {sortBy === 'deadline' && (sortOrder === 'asc' ? '↑' : '↓')}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleSort('sisaTagihan')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  sortBy === 'sisaTagihan' 
+                    ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-2xs' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                }`}
+              >
+                Urut: Sisa Tagihan {sortBy === 'sisaTagihan' && (sortOrder === 'asc' ? '↑' : '↓')}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleSort('totalHarga')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  sortBy === 'totalHarga' 
+                    ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-2xs' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                }`}
+              >
+                Urut: Total Tagihan {sortBy === 'totalHarga' && (sortOrder === 'asc' ? '↑' : '↓')}
+              </button>
+            </div>
 
-          {/* Year filter dropdown */}
-          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
-            <Calendar className="h-3.5 w-3.5 text-indigo-500" />
-            <select
-              value={tableYear}
-              onChange={(e) => setTableYear(e.target.value)}
-              className="bg-transparent focus:outline-hidden cursor-pointer"
-            >
-              <option value="Semua" className="bg-white dark:bg-slate-900 text-slate-850 dark:text-white">Semua Tahun</option>
-              {availableYears.map(yr => (
-                <option key={yr} value={yr} className="bg-white dark:bg-slate-900 text-slate-850 dark:text-white">
-                  Tahun {yr}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Status filter dropdown */}
-          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
-            <Filter className="h-3.5 w-3.5" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="bg-transparent focus:outline-hidden cursor-pointer"
-            >
-              {ALL_STATUSES.map(st => (
-                <option key={st} value={st} className="bg-white dark:bg-slate-900 text-slate-850 dark:text-white">
-                  Filter: {st}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Sort trigger helper */}
-          <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-1 rounded-xl">
             <button
-              onClick={() => handleToggleSort('deadline')}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                sortBy === 'deadline' 
-                  ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-2xs' 
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-              }`}
+              type="button"
+              onClick={onAddNew}
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md shadow-indigo-600/10 hover:shadow-lg transition-transform cursor-pointer"
             >
-              Deadline {sortBy === 'deadline' && (sortOrder === 'asc' ? '↑' : '↓')}
-            </button>
-            <button
-              onClick={() => handleToggleSort('totalHarga')}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                sortBy === 'totalHarga' 
-                  ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-2xs' 
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-              }`}
-            >
-              Tagihan {sortBy === 'totalHarga' && (sortOrder === 'asc' ? '↑' : '↓')}
+              <Plus className="h-4 w-4" />
+              <span>Jersey Baru</span>
             </button>
           </div>
-
-          <button
-            onClick={onAddNew}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md shadow-indigo-600/10 hover:shadow-lg transition-transform"
-          >
-            <Plus className="h-4 w-4" />
-            Jersey Baru
-          </button>
         </div>
+
+        {/* Row 2: Advanced filters grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 pt-4 border-t border-slate-100 dark:border-slate-750/70">
+          
+          {/* 1. Filter Bulan */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Bulan Produksi</label>
+            <div className="flex items-center gap-1.5 bg-slate-55 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+              <select
+                value={tableMonth}
+                onChange={(e) => setTableMonth(e.target.value)}
+                className="bg-transparent focus:outline-hidden cursor-pointer w-full"
+              >
+                {MONTHS_LIST.map(m => (
+                  <option key={m.value} value={m.value} className="bg-white dark:bg-slate-900 text-slate-850 dark:text-white">
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 2. Filter Tahun */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Tahun Produksi</label>
+            <div className="flex items-center gap-1.5 bg-slate-55 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+              <select
+                value={tableYear}
+                onChange={(e) => setTableYear(e.target.value)}
+                className="bg-transparent focus:outline-hidden cursor-pointer w-full"
+              >
+                <option value="Semua" className="bg-white dark:bg-slate-900 text-slate-850 dark:text-white">Semua Tahun</option>
+                {availableYears.map(yr => (
+                  <option key={yr} value={yr} className="bg-white dark:bg-slate-900 text-slate-850 dark:text-white">
+                    Tahun {yr}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 3. Filter Progress */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Progress Produksi</label>
+            <div className="flex items-center gap-1.5 bg-slate-55 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <Filter className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+              <select
+                value={progressFilter}
+                onChange={(e) => setProgressFilter(e.target.value)}
+                className="bg-transparent focus:outline-hidden cursor-pointer w-full"
+              >
+                <option value="Semua" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Semua Progress</option>
+                <option value="Setting" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Setting</option>
+                <option value="Print Press" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Print Press</option>
+                <option value="Jahit" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Jahit</option>
+                <option value="Tinggal Kirim" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Tinggal Kirim</option>
+                <option value="Beres" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Beres</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 4. Filter Tagihan */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Status Tagihan</label>
+            <div className="flex items-center gap-1.5 bg-slate-55 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <DollarSign className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+              <select
+                value={paymentFilter}
+                onChange={(e) => setPaymentFilter(e.target.value)}
+                className="bg-transparent focus:outline-hidden cursor-pointer w-full"
+              >
+                <option value="Semua" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Semua Status Bayar</option>
+                <option value="Lunas" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Lunas</option>
+                <option value="Belum Lunas" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Belum Lunas</option>
+                <option value="Belum Bayar Sublim" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Belum Bayar Sublim</option>
+                <option value="Belum Bayar Jahit" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Belum Bayar Jahit</option>
+                <option value="Belum Bayar Komisi" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Belum Bayar Komisi</option>
+                <option value="Belum Ambil Keuntungan" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Belum Ambil Untung</option>
+                <option value="Sudah Ambil Keuntungan" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Sudah Ambil Untung</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 5. Filter Deadline */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Batas Waktu (Deadline)</label>
+            <div className="flex items-center gap-1.5 bg-slate-55 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <Clock className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+              <select
+                value={deadlineFilter}
+                onChange={(e) => setDeadlineFilter(e.target.value)}
+                className="bg-transparent focus:outline-hidden cursor-pointer w-full"
+              >
+                <option value="Semua" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Semua Deadline</option>
+                <option value="Mendesak (≤ 3 Hari)" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">⚡ Mendesak (≤ 3 Hari)</option>
+                <option value="Lewat Deadline" className="bg-white dark:bg-slate-900 text-rose-500 font-bold dark:text-rose-400">⚠️ Lewat Deadline</option>
+                <option value="Aman (> 3 Hari)" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">✓ Aman (&gt; 3 Hari)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 6. Filter Nama Konsumen */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Nama Konsumen</label>
+            <div className="flex items-center gap-1.5 bg-slate-55 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <User className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+              <select
+                value={customerFilter}
+                onChange={(e) => setCustomerFilter(e.target.value)}
+                className="bg-transparent focus:outline-hidden cursor-pointer w-full"
+              >
+                <option value="Semua" className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">Semua Konsumen</option>
+                {uniqueCustomers.map(cust => (
+                  <option key={cust} value={cust} className="bg-white dark:bg-slate-900 text-slate-855 dark:text-white">
+                    {cust}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Clear Filter Toolbar summary */}
+        {(searchTerm || tableMonth !== 'Semua' || tableYear !== 'Semua' || progressFilter !== 'Semua' || paymentFilter !== 'Semua' || deadlineFilter !== 'Semua' || customerFilter !== 'Semua') && (
+          <div className="flex items-center justify-between pt-2.5 text-xs text-indigo-650 dark:text-indigo-400 bg-indigo-500/5 px-3 py-2 rounded-xl border border-indigo-100/50 dark:border-indigo-900/20">
+            <div className="font-medium truncate flex items-center gap-1.5">
+              <Filter className="h-3.5 w-3.5 text-indigo-505 animate-pulse shrink-0" />
+              <span>Filter aktif: Menampilkan {filteredAndSortedList.length} pesanan hasil penyaringan.</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setTableMonth('Semua');
+                setTableYear('Semua');
+                setProgressFilter('Semua');
+                setPaymentFilter('Semua');
+                setDeadlineFilter('Semua');
+                setCustomerFilter('Semua');
+              }}
+              className="text-[11px] font-extrabold text-indigo-700 dark:text-indigo-400 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 px-2.5 py-1 border border-slate-200 dark:border-slate-700 rounded-lg shadow-3xs cursor-pointer transition-all"
+            >
+              Reset Filter
+            </button>
+          </div>
+        )}
+
       </div>
 
       {/* Orders count label */}
@@ -429,7 +608,7 @@ export default function ActiveOrders({
         <div className="grid grid-cols-1 gap-4">
           {filteredAndSortedList.map((item) => {
             const nearDeadline = isNearDeadline(item.deadline, item.statusProduksi === 'Beres');
-            const isFullyPaid = item.sisaTagihan === 0;
+            const isFullyPaid = (Number(item.sisaTagihan) || 0) <= 0;
             
             const cellPoName = (item.namaPo || '').toLowerCase().trim();
             const sublimCost = item.items && item.items.length > 0
@@ -576,6 +755,26 @@ export default function ActiveOrders({
                       <p className="text-slate-500 dark:text-slate-400 text-xs line-clamp-2 italic leading-relaxed">
                         &ldquo;{item.keterangan || 'Tanpa keterangan tambahan.'}&rdquo;
                       </p>
+                    )}
+
+                    {/* Pembayaran List badges */}
+                    {item.pembayaranList && item.pembayaranList.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1.5 text-[9.5px] items-center">
+                        <span className="text-slate-400 dark:text-slate-500 font-bold mr-1 shrink-0">Histori DP:</span>
+                        {item.pembayaranList.map((p, idx) => (
+                          <span
+                            key={p.id || idx}
+                            className={`px-1.5 py-0.5 rounded-sm font-bold border leading-none shrink-0 select-none ${
+                              p.nominal > 0 
+                                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
+                                : 'bg-slate-50 dark:bg-slate-900 text-slate-450 dark:text-slate-500 border-slate-200 dark:border-slate-800'
+                            }`}
+                            title={`Tanggal: ${p.tanggal} - ${p.keterangan}`}
+                          >
+                            {p.keterangan || `Bayar ${idx + 1}`}: {formatRupiah(p.nominal)}
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </div>
 

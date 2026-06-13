@@ -533,7 +533,7 @@ export default function CashFlow({
 
         {/* Card 2: Total Uang Masuk */}
         <div className="p-5 rounded-2xl border border-emerald-100 dark:border-emerald-950/40 bg-emerald-50/15 dark:bg-emerald-950/10 relative overflow-hidden shadow-3xs">
-          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-450">T. UANG MASUK (INFLOW)</span>
+          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">T. UANG MASUK (INFLOW)</span>
           <h3 className="text-xl md:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2">
             {formatRupiah(financialSummary.totalMasuk)}
           </h3>
@@ -545,7 +545,7 @@ export default function CashFlow({
 
         {/* Card 3: Total Uang Keluar */}
         <div className="p-5 rounded-2xl border border-rose-100 dark:border-rose-950/40 bg-rose-50/15 dark:bg-rose-950/10 relative overflow-hidden shadow-3xs">
-          <span className="text-[10px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-450">T. UANG KELUAR (OUTFLOW)</span>
+          <span className="text-[10px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400">T. UANG KELUAR (OUTFLOW)</span>
           <h3 className="text-xl md:text-2xl font-black text-rose-600 dark:text-rose-400 mt-2">
             {formatRupiah(financialSummary.totalKeluar)}
           </h3>
@@ -676,7 +676,7 @@ export default function CashFlow({
                         <span className={`px-2 py-0.5 rounded-md text-[9.5px] font-bold border ${
                           tx.jenis === 'masuk'
                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-450 border-rose-500/20'
+                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
                         }`}>
                           {tx.kategori}
                         </span>
@@ -694,7 +694,7 @@ export default function CashFlow({
                       <td className="px-5 py-3.5 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
                         {tx.jenis === 'masuk' ? formatRupiah(tx.nominal) : '-'}
                       </td>
-                      <td className="px-5 py-3.5 text-right font-mono font-black text-rose-650 dark:text-rose-400 tabular-nums">
+                      <td className="px-5 py-3.5 text-right font-mono font-black text-rose-600 dark:text-rose-400 tabular-nums">
                         {tx.jenis === 'keluar' ? formatRupiah(tx.nominal) : '-'}
                       </td>
                       <td className="px-5 py-3.5 text-right font-mono font-extrabold text-slate-900 dark:text-white tabular-nums">
@@ -706,7 +706,7 @@ export default function CashFlow({
                         ) : (
                           <button
                             onClick={() => handleDeleteTransaction(tx.id)}
-                            className="p-1 px-2 rounded-md hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-650 transition-colors"
+                            className="p-1 px-2 rounded-md hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 transition-colors"
                             title="Hapus pencatatan manual"
                           >
                             <Trash2 className="h-3.5 w-3.5 mx-auto" />

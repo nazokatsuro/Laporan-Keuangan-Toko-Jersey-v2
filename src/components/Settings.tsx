@@ -296,7 +296,7 @@ export default function Settings({
       {/* Toast alert system feedback */}
       {successMsg && (
         <div className="fixed bottom-5 right-5 bg-slate-900 text-white dark:bg-indigo-950 dark:text-indigo-200 border border-indigo-500/30 px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 z-50 text-xs font-semibold animate-slide-in">
-          <ShieldCheck className="h-4 w-4 text-emerald-450 animate-bounce" />
+          <ShieldCheck className="h-4 w-4 text-emerald-400 animate-bounce" />
           <span>{successMsg}</span>
         </div>
       )}
@@ -464,7 +464,7 @@ export default function Settings({
                       <button
                         type="button"
                         onClick={() => onUpdateSettings({ logoUrl: '' })}
-                        className="absolute -top-1.5 -right-1.5 bg-rose-650 text-white rounded-full p-1 shadow-sm hover:scale-105"
+                        className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white rounded-full p-1 shadow-sm hover:scale-105"
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
@@ -710,7 +710,7 @@ export default function Settings({
           
           {/* Panel 3: Reset system operations */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-rose-100 dark:border-rose-900/30 p-5 shadow-xs space-y-4">
-            <h3 className="text-base font-bold text-rose-650 dark:text-rose-405 flex items-center gap-2 border-b border-rose-50 dark:border-rose-900/20 pb-3">
+            <h3 className="text-base font-bold text-rose-600 dark:text-rose-400 flex items-center gap-2 border-b border-rose-50 dark:border-rose-900/20 pb-3">
               <AlertTriangle className="h-4 w-4 animate-pulse" />
               Area Bahaya / Reset Sistem
             </h3>

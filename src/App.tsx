@@ -82,8 +82,25 @@ function normalizePesananList(list: any[]): Pesanan[] {
     const qty = typeof item.qty === 'number' ? item.qty : 0;
     const hargaPerPcs = typeof item.hargaPerPcs === 'number' ? item.hargaPerPcs : 0;
     const totalHarga = typeof item.totalHarga === 'number' ? item.totalHarga : (qty * hargaPerPcs);
-    const uangMasuk = typeof item.uangMasuk === 'number' ? item.uangMasuk : 0;
-    const sisaTagihan = typeof item.sisaTagihan === 'number' ? item.sisaTagihan : (totalHarga - uangMasuk);
+    const rawUangMasuk = typeof item.uangMasuk === 'number' ? item.uangMasuk : 0;
+
+    // Normalize pembayaranList
+    const pembayaranList = Array.isArray(item.pembayaranList) ? item.pembayaranList.map((p: any, pIdx: number) => ({
+      id: p.id || `pm-${Date.now()}-${pIdx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+      tanggal: p.tanggal || createdAt.substring(0, 10),
+      nominal: typeof p.nominal === 'number' ? p.nominal : 0,
+      keterangan: p.keterangan || `DP / Pembayaran Masuk Ke-${pIdx + 1}`
+    })) : (rawUangMasuk > 0 ? [
+      {
+        id: `pm-init-${id}`,
+        tanggal: createdAt.substring(0, 10),
+        nominal: rawUangMasuk,
+        keterangan: 'DP Masuk Ke-1'
+      }
+    ] : []);
+
+    const uangMasuk = pembayaranList.reduce((sum: number, p: any) => sum + p.nominal, 0);
+    const sisaTagihan = totalHarga - uangMasuk;
     const statusProduksi = item.statusProduksi || 'Setting';
     
     const printPerPcs = typeof item.printPerPcs === 'number' ? item.printPerPcs : 0;
@@ -91,6 +108,18 @@ function normalizePesananList(list: any[]): Pesanan[] {
     const biayaLainnya = typeof item.biayaLainnya === 'number' ? item.biayaLainnya : 0;
     const totalModal = typeof item.totalModal === 'number' ? item.totalModal : ((qty * printPerPcs) + (qty * jahitPerPcs) + biayaLainnya);
     
+    const getCanonicalCollar = (c?: string): string => {
+      if (!c) return 'O-Neck (Standar)';
+      const val = c.trim().toLowerCase();
+      if (val === 'o-neck' || val === 'o neck' || val === 'o-neck (standar)' || val === 'o neck standar' || val === 'kerah o') {
+        return 'O-Neck (Standar)';
+      }
+      if (val === 'v-neck' || val === 'v neck' || val === 'kerah v') {
+        return 'V-Neck';
+      }
+      return c.trim();
+    };
+
     // Normalize nested items if present
     const rawItems = Array.isArray(item.items) ? item.items : [
       {
@@ -101,7 +130,8 @@ function normalizePesananList(list: any[]): Pesanan[] {
         qty: qty,
         hargaPerPcs: hargaPerPcs,
         printPerPcs: printPerPcs,
-        jahitPerPcs: jahitPerPcs
+        jahitPerPcs: jahitPerPcs,
+        modelKerah: getCanonicalCollar(item.modelKerah)
       }
     ];
     const items = rawItems.map((sub: any, subIdx: number) => ({
@@ -115,6 +145,7 @@ function normalizePesananList(list: any[]): Pesanan[] {
       jahitPerPcs: typeof sub.jahitPerPcs === 'number' ? sub.jahitPerPcs : 0,
       penerimaKomisi: sub.penerimaKomisi || '',
       komisiPerPcs: typeof sub.komisiPerPcs === 'number' ? sub.komisiPerPcs : undefined,
+      modelKerah: getCanonicalCollar(sub.modelKerah || item.modelKerah),
     }));
 
     // Calculate dynamic profit: total harga - total modal - total broker commission
@@ -149,7 +180,9 @@ function normalizePesananList(list: any[]): Pesanan[] {
       items,
       penerimaKomisi: item.penerimaKomisi || '',
       komisiPerPcs: typeof item.komisiPerPcs === 'number' ? item.komisiPerPcs : undefined,
-      mockupUrl: item.mockupUrl || ''
+      modelKerah: item.modelKerah || 'O-Neck (Standar)',
+      mockupUrl: item.mockupUrl || '',
+      pembayaranList
     };
   });
 }

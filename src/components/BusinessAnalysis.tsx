@@ -614,7 +614,7 @@ export default function BusinessAnalysis({ pesananList }: BusinessAnalysisProps)
                         <p className="font-mono font-black text-slate-950 dark:text-white text-xs tabular-nums">
                           {formatRupiah(item.totalOmset)}
                         </p>
-                        <p className="text-[9.5px] font-semibold text-emerald-650 dark:text-emerald-450 mt-0.5">
+                        <p className="text-[9.5px] font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">
                           Profit: {formatRupiah(item.totalProfit)}
                         </p>
                       </div>
