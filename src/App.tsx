@@ -1204,6 +1204,7 @@ export default function App() {
                   setSelectedYear={setSelectedYear}
                   settings={settings}
                   onUpdateSettings={handleUpdateSettings}
+                  onUpdatePesananList={setPesananList}
                 />
               )}
 

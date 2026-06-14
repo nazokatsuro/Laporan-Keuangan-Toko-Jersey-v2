@@ -19,7 +19,12 @@ import {
   Layers,
   ShieldCheck,
   MessageSquare,
-  Send
+  Send,
+  Check,
+  Square,
+  CheckSquare,
+  Search,
+  SlidersHorizontal
 } from 'lucide-react';
 import { ShopSettings } from '../types';
 import { 
@@ -49,6 +54,7 @@ interface DashboardProps {
   setSelectedYear: (year: string) => void;
   settings: ShopSettings;
   onUpdateSettings: (updates: Partial<ShopSettings>) => void;
+  onUpdatePesananList?: (newList: Pesanan[]) => void;
 }
 
 export default function Dashboard({ 
@@ -60,13 +66,293 @@ export default function Dashboard({
   selectedYear,
   setSelectedYear,
   settings,
-  onUpdateSettings
+  onUpdateSettings,
+  onUpdatePesananList
 }: DashboardProps) {
   // Config states for targets editing on Dashboard
   const [isEditingOmset, setIsEditingOmset] = useState(false);
   const [tempOmset, setTempOmset] = useState(settings.targetOmset || 100000000);
   const [isEditingProduksi, setIsEditingProduksi] = useState(false);
   const [tempProduksi, setTempProduksi] = useState(settings.targetProduksi || 1000);
+
+  // Payment quick checklists local states (persistent using localStorage)
+  const [checklistSearch, setChecklistSearch] = useState(() => localStorage.getItem('laporan_jersey_clk_search') || '');
+  const [showAllChecklistPeriods, setShowAllChecklistPeriods] = useState(() => {
+    const saved = localStorage.getItem('laporan_jersey_clk_all_periods');
+    return saved !== 'false'; // default to true
+  });
+  const [hidePaidChecklist, setHidePaidChecklist] = useState(() => {
+    const saved = localStorage.getItem('laporan_jersey_clk_hide_paid');
+    return saved === 'true'; // default to false
+  });
+  const [activeChecklistTab, setActiveChecklistTab] = useState<'semua' | 'jahit' | 'sublim' | 'komisi'>(() => {
+    return (localStorage.getItem('laporan_jersey_clk_tab') as any) || 'semua';
+  });
+
+  // Sync to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_clk_search', checklistSearch);
+  }, [checklistSearch]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_clk_all_periods', String(showAllChecklistPeriods));
+  }, [showAllChecklistPeriods]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_clk_hide_paid', String(hidePaidChecklist));
+  }, [hidePaidChecklist]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_clk_tab', activeChecklistTab);
+  }, [activeChecklistTab]);
+
+  // Process the checklist data
+  const paymentChecklists = useMemo(() => {
+    const listJahit: Array<{ order: Pesanan; cost: number; isPaid: boolean; id: string }> = [];
+    const listSublim: Array<{ order: Pesanan; cost: number; isPaid: boolean; id: string }> = [];
+    const listKomisi: Array<{ order: Pesanan; cost: number; isPaid: boolean; id: string; receiver: string }> = [];
+    const listTagihan: Array<{ order: Pesanan; cost: number; isPaid: boolean; id: string }> = [];
+
+    pesananList.forEach(item => {
+      // Apply period filter if option toggle is disabled (Hanya Bulan Terpilih)
+      if (!showAllChecklistPeriods) {
+        const dtStr = item.createdAt || new Date().toISOString();
+        const itemYear = dtStr.substring(0, 4);
+        const itemMonth = dtStr.substring(5, 7);
+        const yearMatches = selectedYear === 'Semua' || itemYear === selectedYear;
+        const monthMatches = selectedMonth === 'Semua' || itemMonth === selectedMonth;
+        if (!yearMatches || !monthMatches) return;
+      }
+
+      // Apply search term if any
+      const cleanPoName = (item.namaPo || '').toLowerCase().trim();
+      const cleanPemesan = (item.namaPemesan || '').toLowerCase().trim();
+      const sTerm = checklistSearch.toLowerCase().trim();
+      if (sTerm && !cleanPoName.includes(sTerm) && !cleanPemesan.includes(sTerm)) {
+        return;
+      }
+
+      // 1. Jahit Calculation & Status Check
+      const jahitCost = item.items && item.items.length > 0
+        ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
+        : (item.qty * (item.jahitPerPcs || 0));
+
+      if (jahitCost > 0) {
+        const hasPaidJahit = settings.cashFlowList?.some(cf => {
+          const desc = (cf.keterangan || '').toLowerCase();
+          return desc.includes('jahit') && desc.includes(cleanPoName);
+        }) || false;
+
+        if (!hidePaidChecklist || !hasPaidJahit) {
+          listJahit.push({
+            id: item.id,
+            order: item,
+            cost: jahitCost,
+            isPaid: hasPaidJahit
+          });
+        }
+      }
+
+      // 2. Sublim Calculation & Status Check
+      const sublimCost = item.items && item.items.length > 0
+        ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
+        : (item.qty * (item.printPerPcs || 0));
+
+      if (sublimCost > 0) {
+        const hasPaidSublim = settings.cashFlowList?.some(cf => {
+          const desc = (cf.keterangan || '').toLowerCase();
+          return desc.includes('sublim') && desc.includes(cleanPoName);
+        }) || false;
+
+        if (!hidePaidChecklist || !hasPaidSublim) {
+          listSublim.push({
+            id: item.id,
+            order: item,
+            cost: sublimCost,
+            isPaid: hasPaidSublim
+          });
+        }
+      }
+
+      // 3. Komisi Calculation & Status Check
+      const baseKomisi = item.komisiPerPcs || 0;
+      const hasPenerimaKomisi = !!item.penerimaKomisi?.trim() || (item.items?.some(it => !!it.penerimaKomisi?.trim()) ?? false);
+      const brokerName = item.penerimaKomisi?.trim() || item.items?.find(it => !!it.penerimaKomisi?.trim())?.penerimaKomisi?.trim() || 'Broker';
+
+      const komisiCost = hasPenerimaKomisi
+        ? (item.items && item.items.length > 0
+            ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
+            : item.qty * baseKomisi)
+        : 0;
+
+      if (komisiCost > 0 && hasPenerimaKomisi) {
+        const hasPaidKomisi = settings.cashFlowList?.some(cf => {
+          const desc = (cf.keterangan || '').toLowerCase();
+          return desc.includes('komisi') && desc.includes(cleanPoName);
+        }) || false;
+
+        if (!hidePaidChecklist || !hasPaidKomisi) {
+          listKomisi.push({
+            id: item.id,
+            order: item,
+            cost: komisiCost,
+            isPaid: hasPaidKomisi,
+            receiver: brokerName
+          });
+        }
+      }
+
+      // 4. Sisa Tagihan Pelanggan Status Check
+      const unpaidTagihan = Number(item.sisaTagihan) !== undefined ? Number(item.sisaTagihan) : (item.totalHarga - (item.uangMasuk || 0));
+      const hasSisa = unpaidTagihan > 0;
+
+      if (hasSisa) {
+        listTagihan.push({
+          id: item.id,
+          order: item,
+          cost: unpaidTagihan,
+          isPaid: false
+        });
+      } else {
+        if (!hidePaidChecklist) {
+          listTagihan.push({
+            id: item.id,
+            order: item,
+            cost: item.totalHarga - (item.uangMasuk || 0),
+            isPaid: true
+          });
+        }
+      }
+    });
+
+    return {
+      jahit: listJahit,
+      sublim: listSublim,
+      komisi: listKomisi,
+      tagihan: listTagihan
+    };
+  }, [pesananList, settings.cashFlowList, showAllChecklistPeriods, selectedMonth, selectedYear, checklistSearch, hidePaidChecklist]);
+
+  const handleToggleChecked = (type: 'jahit' | 'sublim' | 'komisi' | 'tagihan', data: any) => {
+    const item = data.order;
+    const cleanPoName = (item.namaPo || '').toLowerCase().trim();
+    const isCurrentlyPaid = data.isPaid;
+
+    if (type === 'tagihan') {
+      if (!onUpdatePesananList) {
+        alert('Fitur sinkronisasi data draf tidak tersedia di view ini.');
+        return;
+      }
+
+      let updatedList = pesananList.map(p => {
+        if (p.id === item.id) {
+          if (isCurrentlyPaid) {
+            // Revert pelunasan
+            const prevPembayaran = p.pembayaranList || [];
+            const updatedPembayaran = prevPembayaran.filter(pay => 
+              !(pay.keterangan || '').toLowerCase().includes('pelunasan otomatis')
+            );
+            const newUangMasuk = updatedPembayaran.reduce((sum, pay) => sum + pay.nominal, 0);
+            return {
+              ...p,
+              pembayaranList: updatedPembayaran,
+              uangMasuk: newUangMasuk,
+              sisaTagihan: p.totalHarga - newUangMasuk
+            };
+          } else {
+            // Mark as Paid: add a fast payment list record
+            const unpaidAmount = p.sisaTagihan || p.totalHarga - p.uangMasuk;
+            if (unpaidAmount > 0) {
+              const newPayment = {
+                id: 'pay-' + Math.random().toString(36).substring(2, 9),
+                tanggal: new Date().toISOString().substring(0, 10),
+                nominal: unpaidAmount,
+                keterangan: 'Pelunasan Otomatis (Dashboard)'
+              };
+              const updatedPembayaran = [...(p.pembayaranList || []), newPayment];
+              const newUangMasuk = updatedPembayaran.reduce((sum, pay) => sum + pay.nominal, 0);
+              return {
+                ...p,
+                pembayaranList: updatedPembayaran,
+                uangMasuk: newUangMasuk,
+                sisaTagihan: p.totalHarga - newUangMasuk
+              };
+            }
+          }
+        }
+        return p;
+      });
+
+      // Update cashflow history
+      if (isCurrentlyPaid) {
+        // Remove Pelunasan log from Cashflow
+        const updatedLogs = (settings.cashFlowList || []).filter(cf => {
+          if (cf.jenis !== 'masuk') return true;
+          const desc = (cf.keterangan || '').toLowerCase();
+          return !(desc.includes('pelunasan') && desc.includes(cleanPoName));
+        });
+        onUpdateSettings({ cashFlowList: updatedLogs });
+      } else {
+        // Add Pelunasan log to Cashflow
+        const unpaidAmount = item.sisaTagihan || item.totalHarga - item.uangMasuk;
+        if (unpaidAmount > 0) {
+          const newCf = {
+            id: 'cf-' + Math.random().toString(36).substring(2, 9),
+            tanggal: new Date().toISOString().substring(0, 10),
+            kategori: 'Pelunasan Pelanggan',
+            keterangan: `Pelunasan Sisa Tagihan PO ${item.namaPo} (Lunas Cepat)`,
+            jenis: 'masuk' as const,
+            nominal: unpaidAmount
+          };
+          const updatedLogs = [...(settings.cashFlowList || []), newCf];
+          onUpdateSettings({ cashFlowList: updatedLogs });
+        }
+      }
+
+      onUpdatePesananList(updatedList);
+    } else {
+      if (isCurrentlyPaid) {
+        // Mark as UNPAID: remove corresponding log from cashflow
+        const updatedLogs = (settings.cashFlowList || []).filter(cf => {
+          if (cf.jenis !== 'keluar') return true;
+          const desc = (cf.keterangan || '').toLowerCase();
+          const matchesType = type === 'jahit' 
+            ? desc.includes('jahit') 
+            : type === 'sublim' 
+              ? desc.includes('sublim') 
+              : desc.includes('komisi');
+          return !(matchesType && desc.includes(cleanPoName));
+        });
+        onUpdateSettings({ cashFlowList: updatedLogs });
+      } else {
+        // Mark as PAID: add to cashflow as 'keluar'
+        let category = '';
+        let desc = '';
+        if (type === 'jahit') {
+          category = 'Jahit';
+          desc = `Bayar Jahit PO ${item.namaPo}`;
+        } else if (type === 'sublim') {
+          category = 'Sublim';
+          desc = `Bayar Sublim/Print PO ${item.namaPo}`;
+        } else if (type === 'komisi') {
+          category = 'Komisi';
+          desc = `Bayar Komisi Broker (${data.receiver}) PO ${item.namaPo}`;
+        }
+
+        const newItem = {
+          id: 'cf-' + Math.random().toString(36).substring(2, 9),
+          tanggal: new Date().toISOString().substring(0, 10),
+          kategori: category,
+          keterangan: desc,
+          jenis: 'keluar' as const,
+          nominal: data.cost
+        };
+
+        const updatedLogs = [...(settings.cashFlowList || []), newItem];
+        onUpdateSettings({ cashFlowList: updatedLogs });
+      }
+    }
+  };
 
   // Compute average monthly operational outflows (historical)
   const averageMonthlyExpenseGlobal = useMemo(() => {
@@ -730,6 +1016,360 @@ export default function Dashboard({
             <p className="text-lg font-bold text-slate-800 dark:text-white">{stats.pesananBelumLunas} Pesanan</p>
           </div>
         </div>
+      </div>
+
+      {/* SECTION: OPERATIONAL RAPID PAYMENT CHECKLIST FOR VENDORS & BROKERS */}
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700/80 shadow-3xs space-y-5">
+        
+        {/* Header Section */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-700/60 pb-4">
+          <div className="space-y-1">
+            <h3 className="font-extrabold text-sm md:text-base text-slate-800 dark:text-white flex items-center gap-2">
+              <span className="p-1.5 bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 rounded-lg">
+                <CheckSquare className="h-4.5 w-4.5" />
+              </span>
+              Ceklis Cepat Pelunasan Pelanggan, HPP &amp; Komisi Broker
+            </h3>
+            <p className="text-xs text-slate-550 dark:text-slate-400">
+              Ubah status secara cepat dengan mengeklik ceklis untuk otomatis mencatat pelunasan masuk / biaya keluar ke Arus Kas
+            </p>
+          </div>
+          
+          {/* Controls bar */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Search filter */}
+            <div className="relative w-full sm:w-auto">
+              <input
+                type="text"
+                placeholder="Cari PO / Pelanggan..."
+                value={checklistSearch}
+                onChange={(e) => setChecklistSearch(e.target.value)}
+                className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-8 py-1.5 text-xs font-semibold text-slate-800 dark:text-white w-full sm:w-44 focus:outline-none focus:ring-2 focus:ring-indigo-505"
+              />
+              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              {checklistSearch && (
+                <button 
+                  onClick={() => setChecklistSearch('')}
+                  className="absolute right-2.5 top-2 text-sm text-slate-455 hover:text-rose-500 font-bold"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+
+            {/* Shift Periods */}
+            <button
+              onClick={() => setShowAllChecklistPeriods(prev => !prev)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border flex items-center gap-1.5 cursor-pointer hover:scale-[1.01] ${
+                showAllChecklistPeriods
+                  ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-600 dark:text-indigo-400'
+                  : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+              }`}
+              title={showAllChecklistPeriods ? "Format: Menampilkan mutlak seluruh database PO" : "Format: Batasi hanya bulan filter aktif saja"}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+              <span>{showAllChecklistPeriods ? 'Seluruh Periode' : `Hanya Bulan ${selectedMonthName}`}</span>
+            </button>
+
+            {/* Hide Completed Toggle */}
+            <button
+              onClick={() => setHidePaidChecklist(prev => !prev)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border flex items-center gap-1.5 cursor-pointer hover:scale-[1.01] ${
+                hidePaidChecklist
+                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
+                  : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-655 dark:text-slate-400'
+              }`}
+            >
+              <span>{hidePaidChecklist ? 'Sembunyikan Lunas' : 'Tampilkan Semua Status'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4 columns grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+          
+          {/* TAB COLUMN 1: JAHIT */}
+          <div className="border border-slate-100 dark:border-slate-700/60 rounded-xl p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px]">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white">Ongkos Jahit</h4>
+              </div>
+              <span className="text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-440 font-extrabold px-2 py-0.5 rounded-md">
+                {paymentChecklists.jahit.filter(x => !x.isPaid).length} Belum Bayar
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+              {paymentChecklists.jahit.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center opacity-70 py-10">
+                  <span className="text-2xl">✓</span>
+                  <p className="text-[11px] font-bold text-slate-500 mt-1">Seluruh PO jahit lunas / terfilter</p>
+                </div>
+              ) : (
+                paymentChecklists.jahit.map(item => (
+                  <div 
+                    key={`clk-jahit-${item.id}`}
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border transition-all ${
+                      item.isPaid
+                        ? 'bg-emerald-500/5 border-emerald-500/20 dark:bg-emerald-950/10 dark:border-emerald-900/20 opacity-75'
+                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80 hover:border-slate-200 dark:hover:border-slate-750'
+                    }`}
+                  >
+                    <button
+                      onClick={() => handleToggleChecked('jahit', item)}
+                      className={`h-5 w-5 rounded-md flex items-center justify-center border shrink-0 transition-all ${
+                        item.isPaid 
+                          ? 'bg-emerald-500 border-emerald-500 text-white shadow-2xs' 
+                          : 'border-slate-350 dark:border-slate-600 hover:border-indigo-500 bg-white dark:bg-slate-950'
+                      }`}
+                      title={item.isPaid ? "Klik untuk tandai belum bayar" : "Klik untuk tandai lunas bayar jahit"}
+                    >
+                      {item.isPaid ? <Check className="h-3.5 w-3.5 stroke-[3.5px]" /> : null}
+                    </button>
+                    
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+                          {item.order.namaPo}
+                        </h5>
+                        <span className={`text-[8.5px] font-black px-1.5 py-0.2 rounded-md ${
+                          item.order.statusProduksi === 'Beres' 
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-440'
+                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-440'
+                        }`}>
+                          {item.order.statusProduksi}
+                        </span>
+                      </div>
+                      <p className={`font-black text-xs text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-505' : ''}`}>
+                        {formatRupiah(item.cost)}
+                      </p>
+                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5">
+                        <span className="truncate max-w-[120px]">{item.order.qty} Pcs • {item.order.namaPemesan}</span>
+                        {item.isPaid ? (
+                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px]">LUNAS ✓</span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-450 font-black text-[8.5px]">BELUM</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* TAB COLUMN 2: SUBLIM */}
+          <div className="border border-slate-100 dark:border-slate-700/60 rounded-xl p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px]">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-pink-500" />
+                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white">Biaya Sublim / Print</h4>
+              </div>
+              <span className="text-[10px] bg-pink-500/15 text-pink-600 dark:text-pink-400 font-extrabold px-2 py-0.5 rounded-md">
+                {paymentChecklists.sublim.filter(x => !x.isPaid).length} Belum Bayar
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+              {paymentChecklists.sublim.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center opacity-70 py-10">
+                  <span className="text-2xl">✓</span>
+                  <p className="text-[11px] font-bold text-slate-500 mt-1">Seluruh PO sublim lunas / terfilter</p>
+                </div>
+              ) : (
+                paymentChecklists.sublim.map(item => (
+                  <div 
+                    key={`clk-sublim-${item.id}`}
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border transition-all ${
+                      item.isPaid
+                        ? 'bg-emerald-500/5 border-emerald-500/20 dark:bg-emerald-950/10 dark:border-emerald-900/20 opacity-75'
+                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80 hover:border-slate-200 dark:hover:border-slate-750'
+                    }`}
+                  >
+                    <button
+                      onClick={() => handleToggleChecked('sublim', item)}
+                      className={`h-5 w-5 rounded-md flex items-center justify-center border shrink-0 transition-all ${
+                        item.isPaid 
+                          ? 'bg-emerald-500 border-emerald-500 text-white shadow-2xs' 
+                          : 'border-slate-350 dark:border-slate-600 hover:border-indigo-500 bg-white dark:bg-slate-950'
+                      }`}
+                      title={item.isPaid ? "Klik untuk tandai belum bayar" : "Klik untuk tandai lunas bayar sublim"}
+                    >
+                      {item.isPaid ? <Check className="h-3.5 w-3.5 stroke-[3.5px]" /> : null}
+                    </button>
+                    
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+                          {item.order.namaPo}
+                        </h5>
+                        <span className={`text-[8.5px] font-black px-1.5 py-0.2 rounded-md ${
+                          item.order.statusProduksi === 'Beres' 
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-440'
+                            : 'bg-pink-500/10 text-pink-600 dark:text-pink-440'
+                        }`}>
+                          {item.order.statusProduksi}
+                        </span>
+                      </div>
+                      <p className={`font-black text-xs text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-505' : ''}`}>
+                        {formatRupiah(item.cost)}
+                      </p>
+                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5">
+                        <span className="truncate max-w-[120px]">{item.order.qty} Pcs • {item.order.namaPemesan}</span>
+                        {item.isPaid ? (
+                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px]">LUNAS ✓</span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-450 font-black text-[8.5px]">BELUM</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* TAB COLUMN 3: KOMISI BROKER */}
+          <div className="border border-slate-100 dark:border-slate-705/60 rounded-xl p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px]">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-fuchsia-500" />
+                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white">Komisi Broker</h4>
+              </div>
+              <span className="text-[10px] bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 font-extrabold px-2 py-0.5 rounded-md">
+                {paymentChecklists.komisi.filter(x => !x.isPaid).length} Belum Bayar
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+              {paymentChecklists.komisi.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center opacity-70 py-10">
+                  <span className="text-2xl">✓</span>
+                  <p className="text-[11px] font-bold text-slate-500 mt-1">Seluruh komisi broker lunas / terfilter</p>
+                </div>
+              ) : (
+                paymentChecklists.komisi.map(item => (
+                  <div 
+                    key={`clk-komisi-${item.id}`}
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border transition-all ${
+                      item.isPaid
+                        ? 'bg-emerald-500/5 border-emerald-500/20 dark:bg-emerald-950/10 dark:border-emerald-900/20 opacity-75'
+                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80 hover:border-slate-200 dark:hover:border-slate-750'
+                    }`}
+                  >
+                    <button
+                      onClick={() => handleToggleChecked('komisi', item)}
+                      className={`h-5 w-5 rounded-md flex items-center justify-center border shrink-0 transition-all ${
+                        item.isPaid 
+                          ? 'bg-emerald-500 border-emerald-500 text-white shadow-2xs' 
+                          : 'border-slate-350 dark:border-slate-600 hover:border-indigo-500 bg-white dark:bg-slate-950'
+                      }`}
+                      title={item.isPaid ? "Klik untuk tandai belum bayar" : "Klik untuk tandai lunas bayar komisi"}
+                    >
+                      {item.isPaid ? <Check className="h-3.5 w-3.5 stroke-[3.5px]" /> : null}
+                    </button>
+                    
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+                          {item.order.namaPo}
+                        </h5>
+                        <span className="text-[8.5px] font-black px-1.5 py-0.2 rounded-md bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 truncate max-w-[80px]">
+                          {item.receiver}
+                        </span>
+                      </div>
+                      <p className={`font-black text-xs text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-550' : ''}`}>
+                        {formatRupiah(item.cost)}
+                      </p>
+                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5">
+                        <span className="truncate max-w-[120px]">{item.order.qty} Pcs • {item.order.namaPemesan}</span>
+                        {item.isPaid ? (
+                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px]">LUNAS ✓</span>
+                        ) : (
+                          <span className="text-amber-600 dark:text-amber-450 font-black text-[8.5px]">BELUM</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* TAB COLUMN 4: SISA TAGIHAN PELANGGAN */}
+          <div className="border border-slate-100 dark:border-slate-700/60 rounded-xl p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px]">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white">Sisa Tagihan</h4>
+              </div>
+              <span className="text-[10px] bg-rose-500/15 text-rose-600 dark:text-rose-450 font-extrabold px-2 py-0.5 rounded-md">
+                {paymentChecklists.tagihan.filter(x => !x.isPaid).length} Belum Pelunasan
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+              {paymentChecklists.tagihan.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center opacity-70 py-10">
+                  <span className="text-2xl">✓</span>
+                  <p className="text-[11px] font-bold text-slate-500 mt-1">Seluruh tagihan pelanggan lunas / terfilter</p>
+                </div>
+              ) : (
+                paymentChecklists.tagihan.map(item => (
+                  <div 
+                    key={`clk-tagihan-${item.id}`}
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border transition-all ${
+                      item.isPaid
+                        ? 'bg-emerald-500/5 border-emerald-500/20 dark:bg-emerald-950/10 dark:border-emerald-900/20 opacity-75'
+                        : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80 hover:border-slate-200 dark:hover:border-slate-750'
+                    }`}
+                  >
+                    <button
+                      onClick={() => handleToggleChecked('tagihan', item)}
+                      className={`h-5 w-5 rounded-md flex items-center justify-center border shrink-0 transition-all ${
+                        item.isPaid 
+                          ? 'bg-emerald-500 border-emerald-500 text-white shadow-2xs' 
+                          : 'border-slate-350 dark:border-slate-600 hover:border-indigo-500 bg-white dark:bg-slate-950'
+                      }`}
+                      title={item.isPaid ? "Klik untuk tandai belum lunas" : "Klik untuk tandai lunas cepat"}
+                    >
+                      {item.isPaid ? <Check className="h-3.5 w-3.5 stroke-[3.5px]" /> : null}
+                    </button>
+                    
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-505' : ''}`}>
+                          {item.order.namaPo}
+                        </h5>
+                        <span className={`text-[8.5px] font-black px-1.5 py-0.2 rounded-md ${
+                          item.order.statusProduksi === 'Beres' 
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-440'
+                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-450'
+                        }`}>
+                          {item.order.statusProduksi}
+                        </span>
+                      </div>
+                      <p className={`font-black text-xs text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-550' : ''}`}>
+                        {formatRupiah(item.cost)}
+                      </p>
+                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5">
+                        <span className="truncate max-w-[124px]">{item.order.qty} Pcs • {item.order.namaPemesan}</span>
+                        {item.isPaid ? (
+                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px]">LUNAS ✓</span>
+                        ) : (
+                          <span className="text-rose-600 dark:text-rose-455 font-black text-[8.5px]">BELUM</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+        </div>
+
       </div>
 
       {/* Charts & Interactive Section */}
