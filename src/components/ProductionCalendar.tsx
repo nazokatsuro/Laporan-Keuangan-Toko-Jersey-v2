@@ -25,17 +25,39 @@ interface ProductionCalendarProps {
 }
 
 export default function ProductionCalendar({ pesananList, onSelectOrder }: ProductionCalendarProps) {
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => {
+    const saved = localStorage.getItem('laporan_jersey_cal_date');
+    return saved ? new Date(saved) : new Date();
+  });
   const [selectedOrder, setSelectedOrder] = useState<Pesanan | null>(null);
   
   // Status Filters
-  const [activeFilters, setActiveFilters] = useState<Record<StatusProduksi, boolean>>({
-    'Setting': true,
-    'Print Press': true,
-    'Jahit': true,
-    'Tinggal Kirim': true,
-    'Beres': true
+  const [activeFilters, setActiveFilters] = useState<Record<StatusProduksi, boolean>>(() => {
+    const saved = localStorage.getItem('laporan_jersey_cal_filters');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // use default fallback
+      }
+    }
+    return {
+      'Setting': true,
+      'Print Press': true,
+      'Jahit': true,
+      'Tinggal Kirim': true,
+      'Beres': true
+    };
   });
+
+  // Sync state to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_cal_date', currentDate.toISOString());
+  }, [currentDate]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_cal_filters', JSON.stringify(activeFilters));
+  }, [activeFilters]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();

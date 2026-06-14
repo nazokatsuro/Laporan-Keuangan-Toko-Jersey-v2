@@ -50,7 +50,14 @@ const CHART_COLORS = [
 ];
 
 export default function BusinessAnalysis({ pesananList }: BusinessAnalysisProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('produk');
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    return (localStorage.getItem('laporan_jersey_ba_active_tab') as TabType) || 'produk';
+  });
+
+  // Sync activeTab to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_ba_active_tab', activeTab);
+  }, [activeTab]);
 
   // Multi-facet Product parsing heuristics
   const productData = useMemo(() => {

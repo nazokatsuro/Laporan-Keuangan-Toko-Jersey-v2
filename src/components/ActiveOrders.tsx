@@ -64,16 +64,53 @@ export default function ActiveOrders({
   selectedYear,
   setSelectedYear
 }: ActiveOrdersProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [progressFilter, setProgressFilter] = useState<string>('Semua');
-  const [paymentFilter, setPaymentFilter] = useState<string>('Semua');
-  const [deadlineFilter, setDeadlineFilter] = useState<string>('Semua');
-  const [customerFilter, setCustomerFilter] = useState<string>('Semua');
-  const [tableMonth, setTableMonth] = useState<string>('Semua');
-  const [tableYear, setTableYear] = useState<string>('Semua');
+  const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('laporan_jersey_tx_search') || '');
+  const [progressFilter, setProgressFilter] = useState<string>(() => localStorage.getItem('laporan_jersey_tx_progress') || 'Semua');
+  const [paymentFilter, setPaymentFilter] = useState<string>(() => localStorage.getItem('laporan_jersey_tx_payment') || 'Semua');
+  const [deadlineFilter, setDeadlineFilter] = useState<string>(() => localStorage.getItem('laporan_jersey_tx_deadline') || 'Semua');
+  const [customerFilter, setCustomerFilter] = useState<string>(() => localStorage.getItem('laporan_jersey_tx_customer') || 'Semua');
+  const [tableMonth, setTableMonth] = useState<string>(() => localStorage.getItem('laporan_jersey_tx_month') || 'Semua');
+  const [tableYear, setTableYear] = useState<string>(() => localStorage.getItem('laporan_jersey_tx_year') || 'Semua');
   
-  const [sortBy, setSortBy] = useState<'deadline' | 'qty' | 'totalHarga' | 'sisaTagihan' | 'createdAt'>('deadline');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortBy, setSortBy] = useState<'deadline' | 'qty' | 'totalHarga' | 'sisaTagihan' | 'createdAt'>(() => (localStorage.getItem('laporan_jersey_tx_sort_by') as any) || 'deadline');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() => (localStorage.getItem('laporan_jersey_tx_sort_order') as any) || 'asc');
+
+  // Sync states to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_tx_search', searchTerm);
+  }, [searchTerm]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_tx_progress', progressFilter);
+  }, [progressFilter]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_tx_payment', paymentFilter);
+  }, [paymentFilter]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_tx_deadline', deadlineFilter);
+  }, [deadlineFilter]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_tx_customer', customerFilter);
+  }, [customerFilter]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_tx_month', tableMonth);
+  }, [tableMonth]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_tx_year', tableYear);
+  }, [tableYear]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_tx_sort_by', sortBy);
+  }, [sortBy]);
+
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_tx_sort_order', sortOrder);
+  }, [sortOrder]);
   
   // Selection state for batch receipts
   const [selectedIds, setSelectedIds] = useState<string[]>([]);

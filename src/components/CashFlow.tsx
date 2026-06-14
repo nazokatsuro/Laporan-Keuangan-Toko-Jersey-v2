@@ -53,8 +53,15 @@ export default function CashFlow({
   selectedYear,
   setSelectedYear
 }: CashFlowProps) {
-  const [filterType, setFilterType] = useState<FilterType>('Bulanan');
+  const [filterType, setFilterType] = useState<FilterType>(() => {
+    return (localStorage.getItem('laporan_jersey_cf_filter_type') as FilterType) || 'Bulanan';
+  });
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // Sync filterType to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('laporan_jersey_cf_filter_type', filterType);
+  }, [filterType]);
   
   // Local fallback states if not passed as props
   const [localMonth, setLocalMonth] = useState<string>(() => {
