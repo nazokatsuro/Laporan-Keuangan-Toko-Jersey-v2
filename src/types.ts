@@ -17,6 +17,7 @@ export interface PesananItem {
   namaProduk: string;
   bahan: string;
   keterangan: string;
+  catatanJahit?: string;
   qty: number;
   hargaPerPcs: number;
   printPerPcs: number;
@@ -36,6 +37,7 @@ export interface Pesanan {
   namaProduk: string;
   bahan: string;
   keterangan: string;
+  catatanJahit?: string;
   qty: number;
   hargaPerPcs: number;
   totalHarga: number; // qty * hargaPerPcs (or sum of items' total)

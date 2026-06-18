@@ -243,15 +243,22 @@ export function SpkJahitDocument({ item, index, pesananArray, settings }: SpkJah
 
                   <div className="space-y-5">
                     {/* Deskripsi Jahit */}
-                    <div className="p-3.5 bg-indigo-50/20 rounded-xl border border-indigo-100/70 h-full flex flex-col">
-                      <span className="block text-[9px] font-extrabold text-indigo-900 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                        <ClipboardList className="h-3 w-3 text-indigo-600" /> Deskripsi Jahitan &amp; Catatan
+                    <div className="p-3.5 bg-amber-50/20 rounded-xl border border-amber-200/50 h-full flex flex-col space-y-4">
+                      <span className="block text-[9px] font-extrabold text-amber-900 uppercase tracking-widest flex items-center gap-1.5 border-b border-amber-100 pb-1.5">
+                        <ClipboardList className="h-3 w-3 text-amber-600" /> Deskripsi Kerja &amp; Catatan Jahit
                       </span>
-                      <p className="text-xs text-slate-755 whitespace-pre-wrap leading-relaxed flex-1">
-                        {item.items && item.items.length > 0
-                          ? item.items.map(it => `${it.namaProduk}: ${it.keterangan || '(Tanpa Catatan)'}`).join('\n')
-                          : (item.keterangan || '(Tanpa Catatan)')}
-                      </p>
+
+                      {/* Catatan Khusus Jahit */}
+                      <div>
+                        <span className="block text-[8px] font-extrabold text-amber-850 uppercase tracking-wider mb-1 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Catatan Khusus Penjahit
+                        </span>
+                        <div className="text-[11px] text-slate-900 font-bold whitespace-pre-wrap leading-relaxed">
+                          {item.items && item.items.length > 0
+                            ? item.items.map(it => `${it.namaProduk}: ${it.catatanJahit || '(Tanpa Catatan Khusus)'}`).join('\n')
+                            : (item.catatanJahit || '(Tanpa Catatan Khusus)')}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -133,7 +133,8 @@ export default function ActiveOrders({
       `Bahan         : ${item.items && item.items.length > 0 ? item.items.map(it => `${it.namaProduk} (${it.bahan})`).join(', ') : (item.bahan || '')}`,
       `Tgl Deadline  : ${item.deadline || ''}`,
       `Bentuk Kerah  : ${item.items && item.items.length > 0 ? item.items.map(it => `${it.namaProduk} (${it.modelKerah || ''})`).join(', ') : (item.modelKerah || '')}`,
-      `Deskripsi Jahitan :\n${item.items && item.items.length > 0 ? item.items.map(it => `- ${it.namaProduk}: ${it.keterangan || '(Tanpa Catatan)'}`).join('\n') : (item.keterangan || '(Tanpa Catatan)')}`,
+      `Catatan Konsumen (Desain/Spesifikasi) :\n${item.items && item.items.length > 0 ? item.items.map(it => `- ${it.namaProduk}: ${it.keterangan || '(Tanpa Catatan)'}`).join('\n') : (item.keterangan || '(Tanpa Catatan)')}`,
+      `Catatan Khusus Jahit (Penjahit) :\n${item.items && item.items.length > 0 ? item.items.map(it => `- ${it.namaProduk}: ${it.catatanJahit || '(Tanpa Catatan Khusus)'}`).join('\n') : (item.catatanJahit || '(Tanpa Catatan Khusus)')}`,
       `Data size atau data nama nama dari konsumen :\n${item.detailSizeNama || '(Belum Ada Data Size / Nama)'}`
     ];
     const text = lines.join('\n');
@@ -237,6 +238,7 @@ export default function ActiveOrders({
             (item.namaProduk || '').toLowerCase().includes(safeSearch) ||
             (item.bahan || '').toLowerCase().includes(safeSearch) ||
             (item.keterangan || '').toLowerCase().includes(safeSearch) ||
+            (item.catatanJahit || '').toLowerCase().includes(safeSearch) ||
             (item.modelKerah || '').toLowerCase().includes(safeSearch) ||
             (item.noTelepon || '').includes(safeSearch);
 
@@ -244,6 +246,7 @@ export default function ActiveOrders({
             (it.namaProduk || '').toLowerCase().includes(safeSearch) ||
             (it.bahan || '').toLowerCase().includes(safeSearch) ||
             (it.keterangan || '').toLowerCase().includes(safeSearch) ||
+            (it.catatanJahit || '').toLowerCase().includes(safeSearch) ||
             (it.modelKerah || '').toLowerCase().includes(safeSearch)
           );
 

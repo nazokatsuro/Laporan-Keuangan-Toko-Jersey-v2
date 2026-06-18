@@ -206,6 +206,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       if (pesananToEdit.items && pesananToEdit.items.length > 0) {
         setItems(pesananToEdit.items.map(it => ({
           ...it,
+          catatanJahit: it.catatanJahit || '',
           modelKerah: getCanonicalCollar(it.modelKerah || pesananToEdit.modelKerah)
         })));
       } else {
@@ -216,6 +217,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
             namaProduk: pesananToEdit.namaProduk || 'Jersey Futsal Fullprint',
             bahan: pesananToEdit.bahan || 'Dryfit Jarum',
             keterangan: pesananToEdit.keterangan || '',
+            catatanJahit: pesananToEdit.catatanJahit || '',
             qty: pesananToEdit.qty || 12,
             hargaPerPcs: pesananToEdit.hargaPerPcs || 110000,
             printPerPcs: pesananToEdit.printPerPcs ?? 35000,
@@ -257,6 +259,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
           namaProduk: 'Jersey Futsal Fullprint',
           bahan: 'Dryfit Jarum',
           keterangan: '',
+          catatanJahit: '',
           qty: 12,
           hargaPerPcs: 110000,
           printPerPcs: 35000,
@@ -284,6 +287,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
         namaProduk: 'Jersey Futsal Fullprint',
         bahan: 'Dryfit Jarum',
         keterangan: '',
+        catatanJahit: '',
         qty: 12,
         hargaPerPcs: 110000,
         printPerPcs: 35000,
@@ -389,6 +393,10 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       ? items[0].keterangan 
       : items.map((item, idx) => `[Item ${idx + 1}] ${item.namaProduk}: ${item.keterangan || '-'}`).join('; ');
 
+    const summaryCatatanJahit = items.length === 1
+      ? (items[0].catatanJahit || '')
+      : items.map((item, idx) => item.catatanJahit ? `[Item ${idx + 1}] ${item.namaProduk}: ${item.catatanJahit}` : '').filter(Boolean).join('; ');
+
     const summaryModelKerah = items.length === 1
       ? (items[0].modelKerah || 'O-Neck (Standar)')
       : items.map(item => item.modelKerah || 'O-Neck (Standar)').filter((v, idx, arr) => arr.indexOf(v) === idx).join(', ');
@@ -431,6 +439,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       namaProduk: summaryNamaProduk,
       bahan: summaryBahan,
       keterangan: summaryKeterangan,
+      catatanJahit: summaryCatatanJahit,
       qty: totalQty,
       hargaPerPcs: firstItem.hargaPerPcs,
       totalHarga,
@@ -762,18 +771,34 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                   </div>
                 </div>
 
-                {/* Sub-inputs */}
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                    Catatan Desain & Pembagian Ukuran (S, M, L, XL, dll)
-                  </label>
-                  <textarea
-                    rows={2}
-                    placeholder="E.g. Logo dada kiri bordir. Ukuran: L-8 pcs, XL-4 pcs. Nama punggung diprint..."
-                    value={item.keterangan}
-                    onChange={(e) => updateItemField(index, 'keterangan', e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
-                  />
+                 {/* Sub-inputs - Split Notes */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-500"></span>
+                      Catatan Untuk Konsumen (Tampil di Nota Pelanggan Saja)
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="E.g. Logo dada kiri bordir, nama punggung diprint, warna dasar hitam pekat..."
+                      value={item.keterangan || ''}
+                      onChange={(e) => updateItemField(index, 'keterangan', e.target.value)}
+                      className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 border border-amber-450"></span>
+                      Catatan Khusus Jahit (Hanya Tampil di SPK Jahit)
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="E.g. Kerah V-neck lancip, belahan samping kanan-kiri, benang jahit senada..."
+                      value={item.catatanJahit || ''}
+                      onChange={(e) => updateItemField(index, 'catatanJahit', e.target.value)}
+                      className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-705 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
 
                 {/* Numeric fields of the product card */}
