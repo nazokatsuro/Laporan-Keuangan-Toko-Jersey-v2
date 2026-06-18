@@ -58,7 +58,9 @@ export interface Pesanan {
   items?: PesananItem[];
 
   mockupUrl?: string; // Base64 string of the jersey mockup
+  fotoKerahUrl?: string; // Base64 string of the uploaded collar image
   pembayaranList?: PembayaranMasuk[];
+  detailSizeNama?: string; // Sizing details and name lists for tailoring
 }
 
 export interface CashFlowTransaction {

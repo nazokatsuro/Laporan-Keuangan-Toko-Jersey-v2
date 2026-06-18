@@ -424,8 +424,8 @@ export async function safeHtml2canvas(element: HTMLElement, options: any = {}): 
     // Force desktop-like window rendering inside html2canvas virtual viewport
     captureOptions.windowWidth = 750;
     captureOptions.width = 680;
-    captureOptions.height = element.scrollHeight;
-    captureOptions.windowHeight = element.scrollHeight + 200;
+    captureOptions.height = element.scrollHeight + 60; // 60px safety buffer to prevent bottom truncating
+    captureOptions.windowHeight = element.scrollHeight + 260;
   } else if (isFinancialReport) {
     // For financial report, force exact desktop dimension rendering
     captureOptions.windowWidth = 1250;
@@ -469,7 +469,7 @@ export async function safeHtml2canvas(element: HTMLElement, options: any = {}): 
         if (parent) {
           parent.style.position = 'relative';
           parent.style.width = '700px';
-          parent.style.height = `${clonedEl.scrollHeight + 20}px`;
+          parent.style.height = `${clonedEl.scrollHeight + 80}px`;
           parent.style.overflow = 'visible';
         }
       } else if (isFinancialReport || clonedEl.id === 'financial-report-paper') {

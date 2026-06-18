@@ -142,8 +142,15 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
   const [mockupUrl, setMockupUrl] = useState('');
   const [isCompressing, setIsCompressing] = useState(false);
 
+  // Collar image URL (base64 string)
+  const [fotoKerahUrl, setFotoKerahUrl] = useState('');
+  const [isCompressingKerah, setIsCompressingKerah] = useState(false);
+
   // Multiple product items inside this 1 PO
   const [items, setItems] = useState<PesananItem[]>([]);
+
+  // Sizing details & names list from user
+  const [detailSizeNama, setDetailSizeNama] = useState('');
 
   // Memoized lists of collars combining baseline and custom ones
   const availableCollars = useMemo(() => {
@@ -176,8 +183,10 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setStatusProduksi(pesananToEdit.statusProduksi);
       setBiayaLainnya(pesananToEdit.biayaLainnya ?? 0);
       setMockupUrl(pesananToEdit.mockupUrl || '');
+      setFotoKerahUrl(pesananToEdit.fotoKerahUrl || '');
       setPenerimaKomisi(pesananToEdit.penerimaKomisi || '');
       setKomisiPerPcs(pesananToEdit.komisiPerPcs || 0);
+      setDetailSizeNama(pesananToEdit.detailSizeNama || '');
 
       // Load creation date
       if (pesananToEdit.createdAt) {
@@ -238,6 +247,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setKomisiPerPcs(0);
       setStatusProduksi('Setting');
       setMockupUrl('');
+      setFotoKerahUrl('');
+      setDetailSizeNama('');
       setDateMode('today');
       setCustomDate(getLocalDateString());
       setItems([
@@ -436,7 +447,9 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       komisiPerPcs: Number(komisiPerPcs) || 0,
       items,
       mockupUrl,
-      pembayaranList
+      fotoKerahUrl,
+      pembayaranList,
+      detailSizeNama: detailSizeNama.trim()
     };
 
     // Automatically register any newly entered custom collar models in the shop settings for next transactions
@@ -1133,6 +1146,129 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                 <span>Belum ada mockup</span>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Step 3.5.2: Gambar Bentuk Kerah */}
+        <div id="upload_collar_image" className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/80 p-5 shadow-sm space-y-4">
+          <h3 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2 border-b border-slate-50 dark:border-slate-700 pb-2">
+            <Layers className="h-4 w-4 text-violet-500" />
+            Foto / Gambar Bentuk Kerah Custom (Opsional)
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Unggah gambar atau bentuk kerah yang diinginkan pelanggan untuk panduan pengerjaan tukang jahit di SPK.
+          </p>
+
+          <div className="flex flex-col md:flex-row gap-6 items-center">
+            {/* Upload Area */}
+            <div className="w-full md:flex-1">
+              <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-violet-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 rounded-2xl cursor-pointer transition group">
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  {isCompressingKerah ? (
+                    <>
+                      <Loader2 className="h-8 w-8 text-violet-500 animate-spin mb-2" />
+                      <p className="text-xs font-bold text-violet-500">
+                        Sedang mengoptimalkan gambar...
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Memperkecil ukuran berkas agar hemat penyimpanan
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-8 w-8 text-slate-400 group-hover:text-violet-500 transition mb-2" />
+                      <p className="text-xs font-bold text-slate-700 dark:text-slate-350">
+                        Klik atau seret gambar kerah ke sini
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Format PNG, JPG, JPEG (Max. 5MB)
+                      </p>
+                    </>
+                  )}
+                </div>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  className="hidden" 
+                  disabled={isCompressingKerah}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      if (file.size > 5 * 1024 * 1024) {
+                        alert("Ukuran gambar maksimal adalah 5MB");
+                        return;
+                      }
+                      setIsCompressingKerah(true);
+                      try {
+                        const compressedBase64 = await compressImage(file, 800, 800, 0.7);
+                        setFotoKerahUrl(compressedBase64);
+                      } catch (err: any) {
+                        console.error("Gagal mengompresi gambar kerah:", err);
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          if (event.target?.result) {
+                            setFotoKerahUrl(event.target.result as string);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      } finally {
+                        setIsCompressingKerah(false);
+                      }
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            {/* Preview Section */}
+            {isCompressingKerah ? (
+              <div className="w-full max-w-[200px] h-36 border border-dashed border-violet-300 dark:border-violet-700/60 rounded-2xl flex flex-col items-center justify-center text-violet-400 bg-violet-50/10 text-xs">
+                <Loader2 className="h-6 w-6 mb-1 animate-spin text-violet-500" />
+                <span>Memproses...</span>
+              </div>
+            ) : fotoKerahUrl ? (
+              <div className="relative w-full max-w-[200px] h-36 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-center p-2 group overflow-hidden">
+                <img 
+                  src={fotoKerahUrl} 
+                  alt="Collar Preview" 
+                  className="max-h-full max-w-full object-contain rounded-lg shadow-2xs"
+                  referrerPolicy="no-referrer"
+                />
+                <button
+                  type="button"
+                  onClick={() => setFotoKerahUrl('')}
+                  className="absolute top-2 right-2 p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full shadow-md opacity-90 hover:opacity-100 transition duration-150"
+                  title="Hapus gambar kerah"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="w-full max-w-[200px] h-36 border border-dashed border-slate-200 dark:border-slate-750 rounded-2xl flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-900/20 text-xs">
+                <ImageIcon className="h-6 w-6 mb-1 opacity-60" />
+                <span>Belum ada gambar kerah</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Step 3.6: Detail Sizing & Daftar Nama Konsumen (Untuk Tukang Jahit) */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/80 p-5 shadow-sm space-y-4">
+          <h3 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2 border-b border-slate-50 dark:border-slate-700 pb-2">
+            <ClipboardList className="h-4 w-4 text-indigo-500" />
+            Detail Sizing &amp; Daftar Nama Konsumen (Untuk Tukang Jahit)
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Tulis rincian ukuran (size chart) dan nama-nama dari konsumen di bawah ini agar otomatis masuk ke format cetak PDF khusus jahit dan draf copy-paste untuk WhatsApp (WA).
+          </p>
+          <div>
+            <textarea
+              rows={4}
+              placeholder="Contoh:&#10;- Budi (Size L, No. Punggung 10)&#10;- Andi (Size M, No. Punggung 7)&#10;- Dani (Size XL, No. Punggung 9)&#10;&#10;Atau ukuran rekap:&#10;S: 2 pcs, M: 5 pcs, L: 8 pcs, XL: 3 pcs"
+              value={detailSizeNama}
+              onChange={(e) => setDetailSizeNama(e.target.value)}
+              className="w-full px-4 py-3 text-sm rounded-xl border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:ring-1 focus:ring-indigo-500/25 focus:border-indigo-505 focus:outline-hidden font-mono"
+            />
           </div>
         </div>
 

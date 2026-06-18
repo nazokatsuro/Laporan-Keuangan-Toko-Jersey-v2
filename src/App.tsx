@@ -182,6 +182,8 @@ function normalizePesananList(list: any[]): Pesanan[] {
       komisiPerPcs: typeof item.komisiPerPcs === 'number' ? item.komisiPerPcs : undefined,
       modelKerah: item.modelKerah || 'O-Neck (Standar)',
       mockupUrl: item.mockupUrl || '',
+      fotoKerahUrl: item.fotoKerahUrl || '',
+      detailSizeNama: item.detailSizeNama || '',
       pembayaranList
     };
   });
@@ -229,7 +231,7 @@ export default function App() {
 
   // Active invoice being active previewed or batch invoices
   const [pesananForNota, setPesananForNota] = useState<Pesanan | Pesanan[] | null>(null);
-  const [notaType, setNotaType] = useState<'pelanggan' | 'sublim' | 'jahit' | 'komisi'>('pelanggan');
+  const [notaType, setNotaType] = useState<'pelanggan' | 'sublim' | 'jahit' | 'komisi' | 'spk_jahit'>('pelanggan');
 
   // Active state for Warning center modal
   const [showAlertsModal, setShowAlertsModal] = useState<boolean>(false);
@@ -635,7 +637,7 @@ export default function App() {
   };
 
   // Launch Invoice Generator View
-  const handleLaunchNota = (item: Pesanan | Pesanan[], type: 'pelanggan' | 'sublim' | 'jahit' | 'komisi' = 'pelanggan') => {
+  const handleLaunchNota = (item: Pesanan | Pesanan[], type: 'pelanggan' | 'sublim' | 'jahit' | 'komisi' | 'spk_jahit' = 'pelanggan') => {
     setNotaType(type);
     setPesananForNota(item);
   };

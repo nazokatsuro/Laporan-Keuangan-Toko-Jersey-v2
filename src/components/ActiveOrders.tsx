@@ -30,7 +30,9 @@ import {
   AlertTriangle,
   DollarSign,
   Printer,
-  Scissors
+  Scissors,
+  Copy,
+  Clipboard
 } from 'lucide-react';
 
 interface ActiveOrdersProps {
@@ -40,7 +42,7 @@ interface ActiveOrdersProps {
   onAddNew: () => void;
   onEdit: (pesanan: Pesanan) => void;
   onDelete: (id: string) => void;
-  onGenerateNota: (pesanan: Pesanan | Pesanan[], type?: 'pelanggan' | 'sublim' | 'jahit' | 'komisi') => void;
+  onGenerateNota: (pesanan: Pesanan | Pesanan[], type?: 'pelanggan' | 'sublim' | 'jahit' | 'komisi' | 'spk_jahit') => void;
   onUpdateStatus: (id: string, newStatus: StatusProduksi) => void;
   selectedMonth: string;
   setSelectedMonth: (month: string) => void;
@@ -120,6 +122,28 @@ export default function ActiveOrders({
 
   // State to confirm profit extraction safely without breaking sandboxed iframes
   const [confirmProfitId, setConfirmProfitId] = useState<string | null>(null);
+
+  // State for copying feedback
+  const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
+
+  const handleCopyTailorDescription = (item: Pesanan) => {
+    const lines = [
+      `Nama Konsumen : ${item.namaPemesan || ''}`,
+      `Nama PO/Tim   : ${item.namaPo || ''}`,
+      `Bahan         : ${item.items && item.items.length > 0 ? item.items.map(it => `${it.namaProduk} (${it.bahan})`).join(', ') : (item.bahan || '')}`,
+      `Tgl Deadline  : ${item.deadline || ''}`,
+      `Bentuk Kerah  : ${item.items && item.items.length > 0 ? item.items.map(it => `${it.namaProduk} (${it.modelKerah || ''})`).join(', ') : (item.modelKerah || '')}`,
+      `Deskripsi Jahitan :\n${item.items && item.items.length > 0 ? item.items.map(it => `- ${it.namaProduk}: ${it.keterangan || '(Tanpa Catatan)'}`).join('\n') : (item.keterangan || '(Tanpa Catatan)')}`,
+      `Data size atau data nama nama dari konsumen :\n${item.detailSizeNama || '(Belum Ada Data Size / Nama)'}`
+    ];
+    const text = lines.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedOrderId(item.id);
+      setTimeout(() => setCopiedOrderId(null), 2500);
+    }).catch(err => {
+      console.error("Gagal menyalin teks:", err);
+    });
+  };
 
   // Derive unique customer list dynamically for filtering
   const uniqueCustomers = useMemo(() => {
@@ -990,6 +1014,42 @@ export default function ActiveOrders({
                           <span>Nota Jahit</span>
                         </div>
                         <span className="text-[10px] text-amber-400 font-normal">Vendor</span>
+                      </button>
+
+                      {/* 4.1 Cetak SPK Deskripsi Kerja Jahit */}
+                      <button
+                        type="button"
+                        onClick={() => onGenerateNota(item, 'spk_jahit')}
+                        title="Cetak PDF Deskripsi Kerja Jahit khusus untuk Tukang Jahit"
+                        className="w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-xs font-bold text-violet-600 dark:text-violet-400 bg-violet-50/70 dark:bg-violet-950/45 hover:bg-violet-100 dark:hover:bg-violet-950/75 border border-violet-150 dark:border-violet-900/50 rounded-lg transition-all cursor-pointer shadow-3xs shrink-0"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Clipboard className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                          <span>PDF Deskripsi Jahit</span>
+                        </div>
+                        <span className="text-[10px] text-violet-400 font-normal">SPK</span>
+                      </button>
+
+                      {/* 4.5 Salin Deskripsi Jahit */}
+                      <button
+                        type="button"
+                        onClick={() => handleCopyTailorDescription(item)}
+                        title="Salin deskripsi lengkap pesanan ke clipboard untuk langsung dikirim ke WhatsApp penjahit"
+                        className={`w-full flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer shadow-3xs shrink-0 select-none border ${
+                          copiedOrderId === item.id 
+                            ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 border-emerald-500/30' 
+                            : 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/45 hover:bg-indigo-100 dark:hover:bg-indigo-950/75 border-indigo-150 dark:border-indigo-900/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          {copiedOrderId === item.id ? (
+                            <Check className="h-3.5 w-3.5 text-emerald-550 shrink-0" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                          )}
+                          <span>{copiedOrderId === item.id ? 'Tersalin!' : 'Salin Deskripsi Jahit'}</span>
+                        </div>
+                        <span className="text-[10px] text-indigo-400 font-normal">WA</span>
                       </button>
 
                       {/* 5. Cetak Nota Komisi */}
