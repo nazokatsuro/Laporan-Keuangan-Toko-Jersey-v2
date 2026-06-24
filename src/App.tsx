@@ -187,6 +187,7 @@ function normalizePesananList(list: any[]): Pesanan[] {
       mockupUrl: item.mockupUrl || '',
       fotoKerahUrl: item.fotoKerahUrl || '',
       detailSizeNama: item.detailSizeNama || '',
+      detailSizeNamaGambarUrl: item.detailSizeNamaGambarUrl || '',
       pembayaranList
     };
   });

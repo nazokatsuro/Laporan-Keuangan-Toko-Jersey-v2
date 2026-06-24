@@ -151,6 +151,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
 
   // Sizing details & names list from user
   const [detailSizeNama, setDetailSizeNama] = useState('');
+  const [detailSizeNamaGambarUrl, setDetailSizeNamaGambarUrl] = useState('');
+  const [isCompressingSizingFile, setIsCompressingSizingFile] = useState(false);
 
   // Memoized lists of collars combining baseline and custom ones
   const availableCollars = useMemo(() => {
@@ -187,6 +189,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setPenerimaKomisi(pesananToEdit.penerimaKomisi || '');
       setKomisiPerPcs(pesananToEdit.komisiPerPcs || 0);
       setDetailSizeNama(pesananToEdit.detailSizeNama || '');
+      setDetailSizeNamaGambarUrl(pesananToEdit.detailSizeNamaGambarUrl || '');
 
       // Load creation date
       if (pesananToEdit.createdAt) {
@@ -251,6 +254,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setMockupUrl('');
       setFotoKerahUrl('');
       setDetailSizeNama('');
+      setDetailSizeNamaGambarUrl('');
       setDateMode('today');
       setCustomDate(getLocalDateString());
       setItems([
@@ -458,7 +462,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       mockupUrl,
       fotoKerahUrl,
       pembayaranList,
-      detailSizeNama: detailSizeNama.trim()
+      detailSizeNama: detailSizeNama.trim(),
+      detailSizeNamaGambarUrl
     };
 
     // Automatically register any newly entered custom collar models in the shop settings for next transactions
@@ -1284,16 +1289,117 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
             Detail Sizing &amp; Daftar Nama Konsumen (Untuk Tukang Jahit)
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Tulis rincian ukuran (size chart) dan nama-nama dari konsumen di bawah ini agar otomatis masuk ke format cetak PDF khusus jahit dan draf copy-paste untuk WhatsApp (WA).
+            Unggah gambar rincian ukuran/nama dari konsumen (misal kertas coretan atau tangkapan layar chat WA) atau ketik manual agar terlampir di PDF khusus jahit.
           </p>
-          <div>
-            <textarea
-              rows={4}
-              placeholder="Contoh:&#10;- Budi (Size L, No. Punggung 10)&#10;- Andi (Size M, No. Punggung 7)&#10;- Dani (Size XL, No. Punggung 9)&#10;&#10;Atau ukuran rekap:&#10;S: 2 pcs, M: 5 pcs, L: 8 pcs, XL: 3 pcs"
-              value={detailSizeNama}
-              onChange={(e) => setDetailSizeNama(e.target.value)}
-              className="w-full px-4 py-3 text-sm rounded-xl border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:ring-1 focus:ring-indigo-500/25 focus:border-indigo-505 focus:outline-hidden font-mono"
-            />
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start pt-2">
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Opsi 1: Rincian Manual (Teks)
+              </label>
+              <textarea
+                rows={5}
+                placeholder="Contoh:&#10;- Budi (Size L, No. Punggung 10)&#10;- Andi (Size M, No. Punggung 7)&#10;- Dani (Size XL, No. Punggung 9)&#10;&#10;Atau ukuran rekap:&#10;S: 2 pcs, M: 5 pcs, L: 8 pcs, XL: 3 pcs"
+                value={detailSizeNama}
+                onChange={(e) => setDetailSizeNama(e.target.value)}
+                className="w-full px-4 py-3 text-sm rounded-xl border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:ring-1 focus:ring-indigo-500/25 focus:border-indigo-505 focus:outline-hidden font-mono"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Opsi 2: Upload Gambar Rincian / Sizing (WhatsApp / Kertas / Foto)
+              </label>
+              
+              <div className="flex flex-col sm:flex-row gap-4 items-center">
+                {/* File Upload Box */}
+                <div className="w-full sm:flex-1">
+                  <label className="flex flex-col items-center justify-center w-full h-[124px] border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 rounded-2xl cursor-pointer transition group">
+                    <div className="flex flex-col items-center justify-center pt-3 pb-3 text-center px-4">
+                      {isCompressingSizingFile ? (
+                        <>
+                          <Loader2 className="h-6 w-6 text-indigo-500 animate-spin mb-1.5" />
+                          <p className="text-[11px] font-bold text-indigo-500">
+                            Mengoptimalkan...
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-6 w-6 text-slate-400 group-hover:text-indigo-500 transition mb-1.5" />
+                          <p className="text-[11px] font-bold text-slate-700 dark:text-slate-350">
+                            Klik / seret gambar rincian ke sini
+                          </p>
+                          <p className="text-[9px] text-slate-400 mt-0.5">
+                            PNG, JPG, JPEG (Max. 5MB)
+                          </p>
+                        </>
+                      )}
+                    </div>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden" 
+                      disabled={isCompressingSizingFile}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 5 * 1024 * 1024) {
+                            alert("Ukuran gambar maksimal adalah 5MB");
+                            return;
+                          }
+                          setIsCompressingSizingFile(true);
+                          try {
+                            const compressedBase64 = await compressImage(file, 1000, 1000, 0.7);
+                            setDetailSizeNamaGambarUrl(compressedBase64);
+                          } catch (err: any) {
+                            console.error("Gagal mengompresi gambar sizing:", err);
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              if (event.target?.result) {
+                                setDetailSizeNamaGambarUrl(event.target.result as string);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          } finally {
+                            setIsCompressingSizingFile(false);
+                          }
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {/* Sizing image preview */}
+                {isCompressingSizingFile ? (
+                  <div className="w-full sm:max-w-[124px] h-[124px] border border-dashed border-indigo-300 dark:border-indigo-700/60 rounded-2xl flex flex-col items-center justify-center text-indigo-400 bg-indigo-50/10 text-[10px]">
+                    <Loader2 className="h-5 w-5 mb-1 animate-spin text-indigo-500" />
+                    <span>Memproses...</span>
+                  </div>
+                ) : detailSizeNamaGambarUrl ? (
+                  <div className="relative w-full sm:max-w-[124px] h-[124px] bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-center p-2 group overflow-hidden">
+                    <img 
+                      src={detailSizeNamaGambarUrl} 
+                      alt="Detail Sizing Image" 
+                      className="max-h-full max-w-full object-contain rounded-lg shadow-2xs animate-fade-in"
+                      referrerPolicy="no-referrer"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setDetailSizeNamaGambarUrl('')}
+                      className="absolute top-1.5 right-1.5 p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full shadow-md opacity-90 hover:opacity-100 transition duration-150"
+                      title="Hapus gambar sizing"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-full sm:max-w-[124px] h-[124px] border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-900/20 text-xs text-center px-2">
+                    <ImageIcon className="h-5 w-5 mb-1 opacity-60" />
+                    <span>Tidak ada gambar rincian</span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

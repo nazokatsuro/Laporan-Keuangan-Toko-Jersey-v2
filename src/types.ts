@@ -63,6 +63,7 @@ export interface Pesanan {
   fotoKerahUrl?: string; // Base64 string of the uploaded collar image
   pembayaranList?: PembayaranMasuk[];
   detailSizeNama?: string; // Sizing details and name lists for tailoring
+  detailSizeNamaGambarUrl?: string; // Base64 string of sizing list image from user
 }
 
 export interface CashFlowTransaction {

@@ -9,34 +9,54 @@ import {
   ImageOff
 } from 'lucide-react';
 
-interface SpkJahitPageDetail {
-  type: 'details' | 'drawings' | 'sizing';
+export interface SpkJahitPageDetail {
+  type: 'details' | 'mockup' | 'collar' | 'sizing' | 'sizing_image';
   badge: string;
   sub: string;
   sizingLines?: string[];
+  sizingImageUrl?: string;
   pageLabel: string;
 }
 
 export function getSpkJahitPagesContent(item: Pesanan): SpkJahitPageDetail[] {
   const pages: SpkJahitPageDetail[] = [];
 
-  // Page 1 is always main details
+  // Page 1 is always main details (Detail Pesanan)
   pages.push({
     type: 'details',
     badge: 'SPK JAHIT (1/[TOTAL])',
-    sub: 'Fokus Kerja & Spesifikasi Jahit',
+    sub: 'Detail & Spesifikasi Pesanan',
     pageLabel: 'page1',
   });
 
-  // Page 2 is always drawings (Mockup & Collar) - centered proportionally
+  // Page 2 is Mockup Design (Gambar Mockup)
   pages.push({
-    type: 'drawings',
+    type: 'mockup',
     badge: 'SPK JAHIT (2/[TOTAL])',
-    sub: 'Gambar Mockup & Bentuk Kerah (Collar)',
-    pageLabel: 'page2',
+    sub: 'Gambar Mockup Desain Jersey (PO)',
+    pageLabel: 'page2_mockup',
   });
 
-  // Page 3+ is for sizing data, if it exists
+  // Page 3 is Collar Styles (Gambar Bentuk Kerah)
+  pages.push({
+    type: 'collar',
+    badge: 'SPK JAHIT (3/[TOTAL])',
+    sub: 'Bentuk & Pola Kerah (Collar Styles)',
+    pageLabel: 'page3_collar',
+  });
+
+  // Page 4+ is for Sizing Image and/or Sizing text data (khusus supaya tidak terpotong)
+  if (item.detailSizeNamaGambarUrl) {
+    pages.push({
+      type: 'sizing_image',
+      badge: `SPK JAHIT (${pages.length + 1}/[TOTAL])`,
+      sub: 'Gambar Rincian Sizing / Daftar Nama dari Konsumen',
+      sizingImageUrl: item.detailSizeNamaGambarUrl,
+      pageLabel: 'page_sizing_img',
+    });
+  }
+
+  // Sizing details list from user
   const rawLines = item.detailSizeNama 
     ? item.detailSizeNama.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0) 
     : [];
@@ -52,20 +72,20 @@ export function getSpkJahitPagesContent(item: Pesanan): SpkJahitPageDetail[] {
     chunkedLines.forEach((linesChunk, idx) => {
       pages.push({
         type: 'sizing',
-        badge: `SPK JAHIT (${3 + idx}/[TOTAL])`,
+        badge: `SPK JAHIT (${pages.length + 1}/[TOTAL])`,
         sub: chunkedLines.length > 1 
           ? `Data Sizing & Daftar Nama Konsumen (Bagian ${idx + 1})` 
           : 'Data Sizing & Daftar Nama Konsumen (Lengkap)',
         sizingLines: linesChunk,
-        pageLabel: `page3-${idx}`,
+        pageLabel: `page4_sizing_${idx}`,
       });
     });
   }
 
   // Update total pages in badges
   const total = pages.length;
-  pages.forEach((p) => {
-    p.badge = p.badge.replace('[TOTAL]', total.toString());
+  pages.forEach((p, pIdx) => {
+    p.badge = `SPK JAHIT (${pIdx + 1}/${total})`;
   });
 
   return pages;
@@ -79,7 +99,7 @@ function CollarGraphic({ type }: { type?: string }) {
       <div className="flex flex-col items-center justify-center p-2 bg-slate-50 border border-slate-200 rounded-lg h-28 w-28 mx-auto shadow-xs">
         <svg className="w-20 h-16 text-indigo-650" viewBox="0 0 100 60" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M10 0 C40 20, 60 20, 90 0 M20 0 L50 48 L80 0" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M20 0 L50 36 L80 0" stroke="currentColor" strokeWidth="2" strokeLinearray="2,2" />
+          <path d="M20 0 L50 36 L80 0" stroke="currentColor" strokeWidth="2" strokeDasharray="2,2" />
           <text x="50" y="55" fill="#4f46e5" fontSize="8" fontWeight="bold" textAnchor="middle">V-NECK STYLE</text>
         </svg>
       </div>
@@ -119,7 +139,7 @@ function CollarGraphic({ type }: { type?: string }) {
       <div className="flex flex-col items-center justify-center p-2 bg-slate-50 border border-slate-200 rounded-lg h-28 w-28 mx-auto shadow-xs">
         <svg className="w-20 h-16 text-indigo-650" viewBox="0 0 100 60" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M20 5 C35 15, 65 15, 80 5" stroke="currentColor" strokeWidth="3" />
-          <path d="M50 12 L50 48" stroke="currentColor" strokeWidth="4" strokeLinearray="1,1"/>
+          <path d="M50 12 L50 48" stroke="currentColor" strokeWidth="4" strokeDasharray="1,1"/>
           <rect x="47" y="16" width="6" height="10" rx="1" fill="#374151" />
           <text x="50" y="58" fill="#4f46e5" fontSize="8" fontWeight="bold" textAnchor="middle">ZIPPER STYLE</text>
         </svg>
@@ -264,56 +284,54 @@ export function SpkJahitDocument({ item, index, pesananArray, settings }: SpkJah
                 </div>
               )}
 
-              {page.type === 'drawings' && (
-                <div className="grid grid-cols-2 gap-6 pt-4 flex-1 items-stretch">
-                  {/* Jersey Mockup Card */}
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between h-full min-h-[340px]">
-                    <span className="block text-[9px] font-extrabold text-slate-450 uppercase tracking-widest mb-3 text-center">
-                      Gambar Mockup Desain Jersey (PO)
-                    </span>
-                    <div className="flex-1 flex items-center justify-center bg-white rounded-lg border border-slate-150 p-2 overflow-hidden shadow-inner">
-                      {item.mockupUrl ? (
-                        <img 
-                          src={item.mockupUrl} 
-                          alt="Jersey Mockup" 
-                          className="max-h-[260px] max-w-full object-contain mx-auto transition-transform duration-300 hover:scale-105"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center text-slate-300 gap-1.5 py-12">
-                          <ImageOff className="h-10 w-10 text-slate-400 animate-pulse" />
-                          <span className="text-[10.5px] font-bold text-slate-400">Mockup desain tidak tersedia</span>
-                        </div>
-                      )}
-                    </div>
+              {page.type === 'mockup' && (
+                <div className="p-5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between h-full min-h-[460px]">
+                  <span className="block text-[9px] font-extrabold text-slate-500 uppercase tracking-widest mb-3 text-center border-b border-slate-200 pb-2">
+                    Gambar Mockup Desain Jersey (PO)
+                  </span>
+                  <div className="flex-1 flex items-center justify-center bg-white rounded-lg border border-slate-150 p-4 overflow-hidden shadow-xs min-h-[380px]">
+                    {item.mockupUrl ? (
+                      <img 
+                        src={item.mockupUrl} 
+                        alt="Jersey Mockup" 
+                        className="max-h-[360px] max-w-full object-contain mx-auto transition-transform duration-300 hover:scale-105"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-slate-350 gap-2 py-16">
+                        <ImageOff className="h-12 w-12 text-slate-400 animate-pulse" />
+                        <span className="text-xs font-bold text-slate-450">Detail desain/mockup belum diunggah</span>
+                      </div>
+                    )}
                   </div>
+                </div>
+              )}
 
-                  {/* Bentuk Kerah Card */}
-                  <div className="p-4 bg-indigo-50/15 rounded-xl border border-indigo-150/50 flex flex-col justify-between h-full min-h-[340px]">
-                    <div>
-                      <span className="block text-[9px] font-extrabold text-indigo-900 uppercase tracking-widest mb-2 flex items-center justify-center gap-1.5">
-                        <Layers className="h-3.5 w-3.5 text-indigo-600" /> Bentuk Kerah (Collar)
-                      </span>
-                      <p className="text-sm font-black text-slate-855 text-center mb-3">
-                        {item.items && item.items.length > 0
-                          ? item.items.map(it => `${it.modelKerah || 'O-Neck (Standar)'}`).join(', ')
-                          : (item.modelKerah || 'O-Neck (Standar)')}
-                      </p>
-                    </div>
-                    <div className="flex-1 flex items-center justify-center bg-white rounded-lg border border-indigo-105 p-3 overflow-hidden shadow-inner select-none">
-                      {item.fotoKerahUrl ? (
-                        <img
-                          src={item.fotoKerahUrl}
-                          alt="Custom Collar"
-                          className="max-h-[220px] max-w-full object-contain rounded-lg mx-auto"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-full flex justify-center items-center">
-                          <CollarGraphic type={item.modelKerah || (item.items && item.items[0]?.modelKerah)} />
-                        </div>
-                      )}
-                    </div>
+              {page.type === 'collar' && (
+                <div className="p-5 bg-indigo-50/15 rounded-xl border border-indigo-150/50 flex flex-col justify-between h-full min-h-[460px]">
+                  <div>
+                    <span className="block text-[9px] font-extrabold text-indigo-900 uppercase tracking-widest mb-2 flex items-center justify-center gap-1.5 border-b border-indigo-100 pb-2">
+                      <Layers className="h-4 w-4 text-indigo-600" /> Spesifikasi &amp; Bentuk Kerah (Collar)
+                    </span>
+                    <p className="text-base font-black text-slate-900 text-center mb-4">
+                      {item.items && item.items.length > 0
+                        ? item.items.map(it => `${it.modelKerah || 'O-Neck (Standar)'}`).join(', ')
+                        : (item.modelKerah || 'O-Neck (Standar)')}
+                    </p>
+                  </div>
+                  <div className="flex-1 flex items-center justify-center bg-white rounded-lg border border-indigo-105 p-5 overflow-hidden shadow-xs min-h-[340px] select-none">
+                    {item.fotoKerahUrl ? (
+                      <img
+                        src={item.fotoKerahUrl}
+                        alt="Custom Collar"
+                        className="max-h-[320px] max-w-full object-contain rounded-lg mx-auto"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full flex justify-center items-center scale-110">
+                        <CollarGraphic type={item.modelKerah || (item.items && item.items[0]?.modelKerah)} />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -340,6 +358,22 @@ export function SpkJahitDocument({ item, index, pesananArray, settings }: SpkJah
                         </div>
                       ))}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {page.type === 'sizing_image' && page.sizingImageUrl && (
+                <div className="p-4 bg-amber-50/20 rounded-xl border border-amber-200/50 flex flex-col h-full min-h-[440px] items-stretch justify-between">
+                  <span className="block text-[9px] font-extrabold text-amber-900 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                    <ClipboardList className="h-3.5 w-3.5 text-amber-600" /> {page.sub}
+                  </span>
+                  <div className="flex-1 flex items-center justify-center bg-white rounded-lg border border-amber-100 p-2.5 overflow-hidden shadow-xs h-[340px]">
+                    <img 
+                      src={page.sizingImageUrl} 
+                      alt="Gambar Sizing Tailor" 
+                      className="max-h-[320px] max-w-full object-contain rounded-md"
+                      referrerPolicy="no-referrer"
+                    />
                   </div>
                 </div>
               )}

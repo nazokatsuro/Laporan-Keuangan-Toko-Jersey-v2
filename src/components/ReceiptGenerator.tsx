@@ -6,7 +6,7 @@
 import React, { useRef, useState } from 'react';
 import { Pesanan, ShopSettings } from '../types';
 import { formatRupiah, safeHtml2canvas } from '../utils';
-import { SpkJahitDocument } from './SpkJahitDocument';
+import { SpkJahitDocument, getSpkJahitPagesContent, SpkJahitPageDetail } from './SpkJahitDocument';
 import { 
   Download, 
   Printer, 
@@ -148,68 +148,6 @@ interface ReceiptGeneratorProps {
   settings: ShopSettings;
   notaType?: 'pelanggan' | 'sublim' | 'jahit' | 'komisi' | 'spk_jahit';
   onCancel: () => void;
-}
-
-interface SpkJahitPageDetail {
-  type: 'details' | 'drawings' | 'sizing';
-  badge: string;
-  sub: string;
-  sizingLines?: string[];
-  pageLabel: string;
-}
-
-export function getSpkJahitPagesContent(item: any): SpkJahitPageDetail[] {
-  const pages: SpkJahitPageDetail[] = [];
-
-  // Page 1 is always main details
-  pages.push({
-    type: 'details',
-    badge: 'SPK JAHIT (1/[TOTAL])',
-    sub: 'Fokus Kerja & Spesifikasi Jahit',
-    pageLabel: 'page1',
-  });
-
-  // Page 2 is always drawings (Mockup & Collar) - centered proportionally
-  pages.push({
-    type: 'drawings',
-    badge: 'SPK JAHIT (2/[TOTAL])',
-    sub: 'Gambar Mockup & Bentuk Kerah (Collar)',
-    pageLabel: 'page2',
-  });
-
-  // Page 3+ is for sizing data, if it exists
-  const rawLines = item.detailSizeNama 
-    ? item.detailSizeNama.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0) 
-    : [];
-
-  if (rawLines.length > 0) {
-    // Each page can hold up to 60 lines divided into two columns of 30 lines each
-    const linesPerPage = 60;
-    const chunkedLines: string[][] = [];
-    for (let i = 0; i < rawLines.length; i += linesPerPage) {
-      chunkedLines.push(rawLines.slice(i, i + linesPerPage));
-    }
-
-    chunkedLines.forEach((linesChunk, idx) => {
-      pages.push({
-        type: 'sizing',
-        badge: `SPK JAHIT (${3 + idx}/[TOTAL])`,
-        sub: chunkedLines.length > 1 
-          ? `Data Sizing & Daftar Nama Konsumen (Bagian ${idx + 1})` 
-          : 'Data Sizing & Daftar Nama Konsumen (Lengkap)',
-        sizingLines: linesChunk,
-        pageLabel: `page3-${idx}`,
-      });
-    });
-  }
-
-  // Update total pages in badges
-  const total = pages.length;
-  pages.forEach((p) => {
-    p.badge = p.badge.replace('[TOTAL]', total.toString());
-  });
-
-  return pages;
 }
 
 interface InvoicePageInfo {
@@ -375,6 +313,33 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
     }
   };
 
+  const getNotaTitleForFilename = (type: string) => {
+    switch (type) {
+      case 'spk_jahit':
+        return 'SPK_JAHIT';
+      case 'sublim':
+        return 'NOTA_SUBLIM';
+      case 'jahit':
+        return 'NOTA_JAHIT';
+      case 'komisi':
+        return 'NOTA_KOMISI';
+      case 'pelanggan':
+      default:
+        return 'NOTA_PELANGGAN';
+    }
+  };
+
+  const getFourLettersForTransactions = () => {
+    return pesananArray
+      .map((item) => {
+        const name = (getVal(item.id, 'namaPo', item.namaPo) || item.namaPo || '')
+          .trim()
+          .replace(/[^a-zA-Z0-9]/g, '');
+        return name.slice(0, 4).toUpperCase() || 'TX';
+      })
+      .join('-');
+  };
+
   // Convert receipts to JPG (HD resolution files downloaded sequentially with a brief delay)
   const downloadJPG = async () => {
     const wasEditing = isEditingTexts;
@@ -387,14 +352,19 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
     setExporting(true);
     try {
       const targets: { id: string; filename: string }[] = [];
+      const title = getNotaTitleForFilename(notaType);
+      const txAbbrs = getFourLettersForTransactions();
+
       for (const item of pesananArray) {
         const pages = getInvoicePages(item, notaType);
-        const poNameNorm = getVal(item.id, 'namaPo', item.namaPo).replace(/\s+/g, '_');
-        const prefix = notaType === 'spk_jahit' ? 'SPK' : 'NOTA';
+        const itemPoName = (getVal(item.id, 'namaPo', item.namaPo) || item.namaPo || '')
+          .trim()
+          .replace(/[^a-zA-Z0-9]/g, '');
+        const itemAbbr = itemPoName.slice(0, 4).toUpperCase() || 'TX';
         pages.forEach((p) => {
           targets.push({
             id: p.id,
-            filename: `${prefix}-${item.id}-${poNameNorm}${p.suffix}.jpg`
+            filename: `${title}-${txAbbrs}-${itemAbbr}${p.suffix}.jpg`
           });
         });
       }
@@ -402,7 +372,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
       if (pesananArray.length > 1) {
         targets.push({
           id: 'invoice-paper-batch-summary',
-          filename: `REKAP-BATCH-${pesananArray.length}_TRANSAKSI.jpg`
+          filename: `${title}-${txAbbrs}-REKAP.jpg`
         });
       }
 
@@ -500,10 +470,9 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
       }
 
       if (pdf) {
-        const firstPo = getVal(pesananArray[0].id, 'namaPo', pesananArray[0].namaPo);
-        const filename = isBatch 
-          ? `BATCH-NOTA-${pesananArray.length}_TRANSAKSI.pdf`
-          : `NOTA-${pesananArray[0].id}-${firstPo.replace(/\s+/g, '_')}.pdf`;
+        const title = getNotaTitleForFilename(notaType);
+        const txAbbrs = getFourLettersForTransactions();
+        const filename = `${title}-${txAbbrs}.pdf`;
         pdf.save(filename);
       }
     } catch (error) {
@@ -1290,13 +1259,27 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                     </div>
 
                     {/* Sizing Data Box */}
-                    {item.detailSizeNama && (
+                    {(item.detailSizeNama || item.detailSizeNamaGambarUrl) && (
                       <div className="p-4 bg-amber-50/40 rounded-xl border border-amber-250/70 text-left mt-4 w-full">
                         <span className="block text-[9px] font-extrabold text-amber-800 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                           <Check className="h-3.5 w-3.5 text-amber-605" /> Data Sizing &amp; Daftar Nama Konsumen
                         </span>
-                        <div className="text-[11px] text-slate-850 whitespace-pre-wrap font-mono leading-relaxed bg-white p-3 rounded-lg border border-amber-105">
-                          {item.detailSizeNama}
+                        <div className="space-y-3">
+                          {item.detailSizeNama && (
+                            <div className="text-[11px] text-slate-850 whitespace-pre-wrap font-mono leading-relaxed bg-white p-3 rounded-lg border border-amber-105">
+                              {item.detailSizeNama}
+                            </div>
+                          )}
+                          {item.detailSizeNamaGambarUrl && (
+                            <div className="bg-white p-2.5 rounded-lg border border-amber-100 flex justify-center">
+                              <img 
+                                src={item.detailSizeNamaGambarUrl}
+                                alt="Gambar Detail Sizing"
+                                className="max-h-80 max-w-full object-contain rounded-lg"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -1665,18 +1648,30 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                   
                   {/* Payment status badge / notes */}
                   <div className="flex-1 max-w-sm space-y-3 w-full text-left">
-                    {item.detailSizeNama && notaType !== 'jahit' && (
+                    {(item.detailSizeNama || item.detailSizeNamaGambarUrl) && (
                       <div className="p-3 bg-amber-50/50 rounded-lg border border-amber-200/80 text-left">
                         <span className="block text-[8.5px] font-extrabold text-amber-800 uppercase tracking-wider mb-1 text-left font-sans">
                           Detail Sizing &amp; Daftar Nama Konsumen
                         </span>
-                        <div className="text-[10px] text-slate-800 whitespace-pre-wrap font-mono leading-normal bg-white p-2 rounded-md border border-amber-100 text-left">
-                          {pages.length > 1
-                            ? rawLines.slice(0, 10).join('\n')
-                            : item.detailSizeNama
-                          }
-                        </div>
-                        {pages.length > 1 && (
+                        {item.detailSizeNama && (
+                          <div className="text-[10px] text-slate-800 whitespace-pre-wrap font-mono leading-normal bg-white p-2 rounded-md border border-amber-100 text-left mb-2">
+                            {pages.length > 1
+                              ? rawLines.slice(0, 10).join('\n')
+                              : item.detailSizeNama
+                            }
+                          </div>
+                        )}
+                        {item.detailSizeNamaGambarUrl && (
+                          <div className="p-1 bg-white rounded-md border border-amber-100 flex justify-center max-h-32 overflow-hidden">
+                            <img 
+                              src={item.detailSizeNamaGambarUrl} 
+                              alt="Sizing preview" 
+                              className="max-h-24 max-w-full object-contain"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+                        {pages.length > 1 && rawLines.length > 10 && (
                           <div className="mt-1.5 text-center text-[8px] bg-amber-100/70 border border-amber-200 text-amber-800 py-1 px-2 rounded font-bold uppercase tracking-wider font-sans">
                             📋 {rawLines.length - 10} Nama Lainnya Terlampir di Halaman Sizing (Lampiran)
                           </div>
@@ -1684,7 +1679,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                       </div>
                     )}
 
-                    {item.mockupUrl && notaType !== 'jahit' && (
+                    {item.mockupUrl && (
                       <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-left">
                         <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-1 text-left">
                           Mockup Desain Jersey (PO)
