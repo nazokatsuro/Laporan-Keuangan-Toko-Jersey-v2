@@ -164,19 +164,7 @@ export function getInvoicePages(item: any, notaType: string): InvoicePageInfo[] 
     }));
   }
 
-  // Check if detailSizeNama triggers splitting
-  const rawLines = item.detailSizeNama 
-    ? item.detailSizeNama.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0) 
-    : [];
-
-  // Limit of 12 lines. If exceeded, split!
-  if (notaType !== 'jahit' && rawLines.length > 12) {
-    return [
-      { id: `invoice-paper-${item.id}-page1`, suffix: '-FAKTUR' },
-      { id: `invoice-paper-${item.id}-page2`, suffix: '-SIZING', isSizingPage: true }
-    ];
-  }
-
+  // Regular receipts (Nota Pelanggan, Sublim, Jahit, Komisi) are single-page invoices without sizing attachments
   return [
     { id: `invoice-paper-${item.id}`, suffix: '' }
   ];
@@ -1648,37 +1636,6 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                   
                   {/* Payment status badge / notes */}
                   <div className="flex-1 max-w-sm space-y-3 w-full text-left">
-                    {(item.detailSizeNama || item.detailSizeNamaGambarUrl) && (
-                      <div className="p-3 bg-amber-50/50 rounded-lg border border-amber-200/80 text-left">
-                        <span className="block text-[8.5px] font-extrabold text-amber-800 uppercase tracking-wider mb-1 text-left font-sans">
-                          Detail Sizing &amp; Daftar Nama Konsumen
-                        </span>
-                        {item.detailSizeNama && (
-                          <div className="text-[10px] text-slate-800 whitespace-pre-wrap font-mono leading-normal bg-white p-2 rounded-md border border-amber-100 text-left mb-2">
-                            {pages.length > 1
-                              ? rawLines.slice(0, 10).join('\n')
-                              : item.detailSizeNama
-                            }
-                          </div>
-                        )}
-                        {item.detailSizeNamaGambarUrl && (
-                          <div className="p-1 bg-white rounded-md border border-amber-100 flex justify-center max-h-32 overflow-hidden">
-                            <img 
-                              src={item.detailSizeNamaGambarUrl} 
-                              alt="Sizing preview" 
-                              className="max-h-24 max-w-full object-contain"
-                              referrerPolicy="no-referrer"
-                            />
-                          </div>
-                        )}
-                        {pages.length > 1 && rawLines.length > 10 && (
-                          <div className="mt-1.5 text-center text-[8px] bg-amber-100/70 border border-amber-200 text-amber-800 py-1 px-2 rounded font-bold uppercase tracking-wider font-sans">
-                            📋 {rawLines.length - 10} Nama Lainnya Terlampir di Halaman Sizing (Lampiran)
-                          </div>
-                        )}
-                      </div>
-                    )}
-
                     {item.mockupUrl && (
                       <div className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-left">
                         <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-1 text-left">
