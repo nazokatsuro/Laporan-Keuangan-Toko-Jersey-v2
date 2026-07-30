@@ -216,12 +216,15 @@ export default function App() {
       const localSettings = localStorage.getItem('laporan_jersey_settings');
       if (localSettings) {
         const parsed = JSON.parse(localSettings);
-        return { ...DEFAULT_SETTINGS, ...parsed, darkMode: true };
+        const cleanCashFlow = Array.isArray(parsed.cashFlowList)
+          ? parsed.cashFlowList.filter((item: any) => !['CF-001', 'CF-002', 'CF-003', 'CF-004', 'CF-005', 'CF-006', 'CF-007', 'CF-008', 'CF-009'].includes(item.id))
+          : [];
+        return { ...DEFAULT_SETTINGS, ...parsed, cashFlowList: cleanCashFlow, darkMode: true };
       }
     } catch (e) {
       console.error("Gagal memuat settings dari localStorage:", e);
     }
-    return { ...DEFAULT_SETTINGS, darkMode: true };
+    return { ...DEFAULT_SETTINGS, cashFlowList: [], darkMode: true };
   });
 
   // Guest Bypass Mode for testing when login popups are blocked inside sandboxed iframes

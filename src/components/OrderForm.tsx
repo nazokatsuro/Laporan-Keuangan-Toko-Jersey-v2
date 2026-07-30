@@ -1093,20 +1093,20 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                     <>
                       <Loader2 className="h-8 w-8 text-indigo-500 animate-spin mb-2" />
                       <p className="text-xs font-bold text-indigo-500">
-                        Sedang mengoptimalkan gambar...
+                        Mengunggah gambar HD...
                       </p>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        Memperkecil ukuran berkas agar hemat penyimpanan
+                        Menyimpan gambar resolusi asli (Tanpa Kompresi)
                       </p>
                     </>
                   ) : (
                     <>
                       <Upload className="h-8 w-8 text-slate-400 group-hover:text-indigo-500 transition mb-2" />
                       <p className="text-xs font-bold text-slate-700 dark:text-slate-350">
-                        Klik atau seret gambar ke sini
+                        Klik atau seret gambar HD ke sini
                       </p>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        Format PNG, JPG, JPEG (Max. 5MB)
+                        Format PNG, JPG, JPEG (Max. 15MB - Kualitas HD)
                       </p>
                     </>
                   )}
@@ -1119,26 +1119,25 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      if (file.size > 5 * 1024 * 1024) {
-                        alert("Ukuran gambar maksimal adalah 5MB");
+                      if (file.size > 15 * 1024 * 1024) {
+                        alert("Ukuran gambar maksimal adalah 15MB");
                         return;
                       }
                       setIsCompressing(true);
                       try {
-                        // Compress the image down to 800px max dimensions and 0.7 JPEG quality
-                        const compressedBase64 = await compressImage(file, 800, 800, 0.7);
-                        setMockupUrl(compressedBase64);
-                      } catch (err: any) {
-                        console.error("Gagal mengompresi gambar mockup:", err);
-                        // Fallback to uncompressed file
                         const reader = new FileReader();
                         reader.onload = (event) => {
                           if (event.target?.result) {
                             setMockupUrl(event.target.result as string);
                           }
+                          setIsCompressing(false);
+                        };
+                        reader.onerror = () => {
+                          setIsCompressing(false);
                         };
                         reader.readAsDataURL(file);
-                      } finally {
+                      } catch (err: any) {
+                        console.error("Gagal mengunggah gambar mockup:", err);
                         setIsCompressing(false);
                       }
                     }
@@ -1198,20 +1197,20 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                     <>
                       <Loader2 className="h-8 w-8 text-violet-500 animate-spin mb-2" />
                       <p className="text-xs font-bold text-violet-500">
-                        Sedang mengoptimalkan gambar...
+                        Mengunggah gambar kerah HD...
                       </p>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        Memperkecil ukuran berkas agar hemat penyimpanan
+                        Menyimpan gambar resolusi asli (Tanpa Kompresi)
                       </p>
                     </>
                   ) : (
                     <>
                       <Upload className="h-8 w-8 text-slate-400 group-hover:text-violet-500 transition mb-2" />
                       <p className="text-xs font-bold text-slate-700 dark:text-slate-350">
-                        Klik atau seret gambar kerah ke sini
+                        Klik atau seret gambar kerah HD ke sini
                       </p>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        Format PNG, JPG, JPEG (Max. 5MB)
+                        Format PNG, JPG, JPEG (Max. 15MB - Kualitas HD)
                       </p>
                     </>
                   )}
@@ -1224,24 +1223,25 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      if (file.size > 5 * 1024 * 1024) {
-                        alert("Ukuran gambar maksimal adalah 5MB");
+                      if (file.size > 15 * 1024 * 1024) {
+                        alert("Ukuran gambar maksimal adalah 15MB");
                         return;
                       }
                       setIsCompressingKerah(true);
                       try {
-                        const compressedBase64 = await compressImage(file, 800, 800, 0.7);
-                        setFotoKerahUrl(compressedBase64);
-                      } catch (err: any) {
-                        console.error("Gagal mengompresi gambar kerah:", err);
                         const reader = new FileReader();
                         reader.onload = (event) => {
                           if (event.target?.result) {
                             setFotoKerahUrl(event.target.result as string);
                           }
+                          setIsCompressingKerah(false);
+                        };
+                        reader.onerror = () => {
+                          setIsCompressingKerah(false);
                         };
                         reader.readAsDataURL(file);
-                      } finally {
+                      } catch (err: any) {
+                        console.error("Gagal mengunggah gambar kerah:", err);
                         setIsCompressingKerah(false);
                       }
                     }
@@ -1320,17 +1320,17 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                         <>
                           <Loader2 className="h-6 w-6 text-indigo-500 animate-spin mb-1.5" />
                           <p className="text-[11px] font-bold text-indigo-500">
-                            Mengoptimalkan...
+                            Mengunggah HD...
                           </p>
                         </>
                       ) : (
                         <>
                           <Upload className="h-6 w-6 text-slate-400 group-hover:text-indigo-500 transition mb-1.5" />
                           <p className="text-[11px] font-bold text-slate-700 dark:text-slate-350">
-                            Klik / seret gambar rincian ke sini
+                            Klik / seret gambar rincian HD ke sini
                           </p>
                           <p className="text-[9px] text-slate-400 mt-0.5">
-                            PNG, JPG, JPEG (Max. 5MB)
+                            PNG, JPG, JPEG (Max. 15MB - Kualitas HD)
                           </p>
                         </>
                       )}
@@ -1343,24 +1343,25 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          if (file.size > 5 * 1024 * 1024) {
-                            alert("Ukuran gambar maksimal adalah 5MB");
+                          if (file.size > 15 * 1024 * 1024) {
+                            alert("Ukuran gambar maksimal adalah 15MB");
                             return;
                           }
                           setIsCompressingSizingFile(true);
                           try {
-                            const compressedBase64 = await compressImage(file, 1000, 1000, 0.7);
-                            setDetailSizeNamaGambarUrl(compressedBase64);
-                          } catch (err: any) {
-                            console.error("Gagal mengompresi gambar sizing:", err);
                             const reader = new FileReader();
                             reader.onload = (event) => {
                               if (event.target?.result) {
                                 setDetailSizeNamaGambarUrl(event.target.result as string);
                               }
+                              setIsCompressingSizingFile(false);
+                            };
+                            reader.onerror = () => {
+                              setIsCompressingSizingFile(false);
                             };
                             reader.readAsDataURL(file);
-                          } finally {
+                          } catch (err: any) {
+                            console.error("Gagal mengunggah gambar sizing:", err);
                             setIsCompressingSizingFile(false);
                           }
                         }

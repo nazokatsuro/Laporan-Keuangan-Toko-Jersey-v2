@@ -1169,7 +1169,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                                 <img
                                   src={item.fotoKerahUrl}
                                   alt="Custom Collar"
-                                  className="max-h-full max-w-full object-contain rounded"
+                                  className="max-h-full max-w-full w-auto h-auto object-contain rounded"
                                   referrerPolicy="no-referrer"
                                 />
                               </div>
@@ -1210,7 +1210,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
                               <img 
                                 src={item.mockupUrl} 
                                 alt="Jersey Mockup" 
-                                className="max-h-full max-w-full object-contain"
+                                className="max-h-full max-w-full w-auto h-auto object-contain"
                                 referrerPolicy="no-referrer"
                               />
                             </div>

@@ -27,11 +27,13 @@ export function calculateCashFlowAkhir(pesananList: Pesanan[], manualList: ShopS
     if (po.uangMasuk > 0) saldo += po.uangMasuk;
   });
 
-  // Manual Transactions
+  // Manual Transactions (ignoring legacy sample CF-001..CF-009)
   if (manualList) {
     manualList.forEach(tx => {
-      if (tx.jenis === 'masuk') saldo += tx.nominal;
-      else saldo -= tx.nominal;
+      if (!['CF-001', 'CF-002', 'CF-003', 'CF-004', 'CF-005', 'CF-006', 'CF-007', 'CF-008', 'CF-009'].includes(tx.id)) {
+        if (tx.jenis === 'masuk') saldo += tx.nominal;
+        else saldo -= tx.nominal;
+      }
     });
   }
 
@@ -58,80 +60,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   stempelTokoSubtext: 'Apparel',
   roleSignToko: 'Finance Administration',
   hormatKamiToko: 'Hormat Kami,',
-  cashFlowList: [
-    {
-      id: 'CF-001',
-      tanggal: `${curYear}-${curMonth}-01`,
-      kategori: 'Pelunasan pelanggan',
-      keterangan: 'Lunas PO Esport Legend',
-      jenis: 'masuk',
-      nominal: 2160000
-    },
-    {
-      id: 'CF-002',
-      tanggal: `${curYear}-${curMonth}-05`,
-      kategori: 'DP pelanggan',
-      keterangan: 'DP PO Garuda Jaya',
-      jenis: 'masuk',
-      nominal: 1500000
-    },
-    {
-      id: 'CF-003',
-      tanggal: `${curYear}-${curMonth}-06`,
-      kategori: 'Sublim',
-      keterangan: 'Biaya cetak sublim Garuda',
-      jenis: 'keluar',
-      nominal: 840000
-    },
-    {
-      id: 'CF-004',
-      tanggal: `${curYear}-${curMonth}-07`,
-      kategori: 'Jahit',
-      keterangan: 'Ongkos jahit Garuda',
-      jenis: 'keluar',
-      nominal: 480000
-    },
-    {
-      id: 'CF-005',
-      tanggal: `${curYear}-${curMonth}-10`,
-      kategori: 'Pelunasan pelanggan',
-      keterangan: 'Lunas PO Srikandi FC',
-      jenis: 'masuk',
-      nominal: 2025000
-    },
-    {
-      id: 'CF-006',
-      tanggal: `${curYear}-${curMonth}-11`,
-      kategori: 'Jahit',
-      keterangan: 'Ongkos jahit Srikandi VC',
-      jenis: 'keluar',
-      nominal: 270000
-    },
-    {
-      id: 'CF-007',
-      tanggal: `${curYear}-${curMonth}-12`,
-      kategori: 'Pendapatan lain',
-      keterangan: 'Penjualan sisa bahan poliester',
-      jenis: 'masuk',
-      nominal: 350000
-    },
-    {
-      id: 'CF-008',
-      tanggal: `${curYear}-${curMonth}-14`,
-      kategori: 'Pembelian bahan',
-      keterangan: 'Beli bahan Milano & Jarum',
-      jenis: 'keluar',
-      nominal: 1200000
-    },
-    {
-      id: 'CF-009',
-      tanggal: `${curYear}-${curMonth}-15`,
-      kategori: 'Operasional',
-      keterangan: 'Biaya listrik workshop',
-      jenis: 'keluar',
-      nominal: 350000
-    }
-  ]
+  cashFlowList: []
 };
 
 export const DEFAULT_ORDERS: Pesanan[] = [
@@ -516,56 +445,27 @@ export async function safeHtml2canvas(element: HTMLElement, options: any = {}): 
 }
 
 /**
- * Compresses an image File using an HTML5 Canvas to prevent local storage quota exceeded errors.
- * Resizes the image to maximum dimensions and compresses quality to 70% JPEG.
+ * Reads an image file as a Data URL retaining 100% losslessly uncompressed HD quality.
  */
 export function compressImage(
   file: File, 
-  maxWidth: number = 800, 
-  maxHeight: number = 800, 
-  quality: number = 0.7
+  maxWidth: number = 3840, 
+  maxHeight: number = 3840, 
+  quality: number = 0.98
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.readAsDataURL(file);
     reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        // Keep proportional aspect ratio
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height);
-            height = maxHeight;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-          resolve(compressedDataUrl);
-        } else {
-          resolve(event.target?.result as string); // Fallback to uncompressed if 2D context fails
-        }
-      };
-      img.onerror = (err) => {
-        reject(err);
-      };
+      const result = event.target?.result as string;
+      if (result) {
+        resolve(result);
+      } else {
+        reject(new Error("Gagal membaca berkas gambar"));
+      }
     };
     reader.onerror = (err) => {
       reject(err);
     };
+    reader.readAsDataURL(file);
   });
 }

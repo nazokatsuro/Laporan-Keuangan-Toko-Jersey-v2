@@ -177,6 +177,36 @@ export function SpkJahitDocument({ item, index, pesananArray, settings }: SpkJah
         const isLastItemOfAll = index === pesananArray.length - 1;
         const shouldBreakPage = !isLastPageOfThisItem || !isLastItemOfAll;
 
+        const isFullImagePage = 
+          (page.type === 'mockup' && Boolean(item.mockupUrl)) ||
+          (page.type === 'sizing_image' && Boolean(page.sizingImageUrl)) ||
+          (page.type === 'collar' && Boolean(item.fotoKerahUrl));
+
+        if (isFullImagePage) {
+          const imageUrl = page.type === 'mockup' 
+            ? item.mockupUrl 
+            : page.type === 'sizing_image' 
+              ? page.sizingImageUrl 
+              : item.fotoKerahUrl;
+
+          return (
+            <div
+              key={`${item.id}-${page.pageLabel}`}
+              id={`invoice-paper-${item.id}-${page.pageLabel}`}
+              className={`w-full max-w-[680px] bg-white p-4 rounded-xs shadow-md border border-slate-200/60 font-sans relative invoice-card flex flex-col items-center justify-center text-center min-h-[920px] sm:min-h-[960px] ${
+                shouldBreakPage ? 'page-break' : ''
+              }`}
+            >
+              <img 
+                src={imageUrl} 
+                alt={page.sub} 
+                className="max-w-full max-h-[920px] w-auto h-auto object-contain mx-auto my-auto rounded-xs shadow-2xs"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          );
+        }
+
         return (
           <div
             key={`${item.id}-${page.pageLabel}`}

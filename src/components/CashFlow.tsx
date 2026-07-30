@@ -129,9 +129,10 @@ export default function CashFlow({
   const [keterangan, setKeterangan] = useState('');
   const [nominal, setNominal] = useState<number>(0);
 
-  // Initialize cashFlowList if missing
+  // Initialize cashFlowList if missing, filtering legacy dummy IDs (CF-001 to CF-009)
   const manualList = useMemo(() => {
-    return settings.cashFlowList || [];
+    const list = settings.cashFlowList || [];
+    return list.filter(item => !['CF-001', 'CF-002', 'CF-003', 'CF-004', 'CF-005', 'CF-006', 'CF-007', 'CF-008', 'CF-009'].includes(item.id));
   }, [settings.cashFlowList]);
 
   // Merge automated PO cash flow with manual cash flow to achieve seamless integrity
@@ -646,7 +647,22 @@ export default function CashFlow({
       <div className="bg-white dark:bg-slate-805 rounded-2xl border border-slate-100 dark:border-slate-750/70 shadow-3xs overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-105 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between">
           <h3 className="text-xs font-black uppercase tracking-wider text-slate-450">Histori Transaksi Utama</h3>
-          <span className="text-[10px] font-bold text-slate-400">{filteredTransactions.length} baris dicatat</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold text-slate-400">{filteredTransactions.length} baris dicatat</span>
+            {manualList.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Bersihkan semua catatan transaksi kas manual?')) {
+                    onUpdateSettings({ cashFlowList: [] });
+                  }
+                }}
+                className="text-[10px] font-bold text-rose-500 hover:text-rose-600 dark:text-rose-400 flex items-center gap-1 bg-rose-50 dark:bg-rose-950/30 px-2 py-1 rounded border border-rose-200/50 dark:border-rose-900/50 cursor-pointer"
+              >
+                <Trash2 className="h-3 w-3" /> Bersihkan Kas Manual
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
