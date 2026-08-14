@@ -5,7 +5,13 @@
 
 import React, { useState, useMemo } from 'react';
 import { Pesanan, StatusProduksi, ShopSettings, CashFlowTransaction } from '../types';
-import { formatRupiah } from '../utils';
+import { 
+  formatRupiah,
+  checkHasPaidSublim,
+  checkHasPaidJahit,
+  checkHasPaidKomisi,
+  checkHasTakenProfit
+} from '../utils';
 import { 
   Search, 
   Filter, 
@@ -38,7 +44,7 @@ import {
 interface ActiveOrdersProps {
   pesananList: Pesanan[];
   settings: ShopSettings;
-  onLogToCashFlow: (kategori: string, jenis: 'masuk'|'keluar', nominal: number, keterangan: string) => void;
+  onLogToCashFlow: (kategori: string, jenis: 'masuk'|'keluar', nominal: number, keterangan: string, relatedOrderId?: string, tipeBiaya?: 'jahit' | 'sublim' | 'komisi' | 'profit' | 'pelunasan' | 'dp' | 'operasional') => void;
   onAddNew: () => void;
   onEdit: (pesanan: Pesanan) => void;
   onDelete: (id: string) => void;
@@ -266,24 +272,17 @@ export default function ActiveOrders({
 
         // 4. Payment/Finance status filter
         let matchesPayment = true;
-        const cleanPoName = (item.namaPo || '').toLowerCase().trim();
         const isFullyPaid = (Number(item.sisaTagihan) || 0) <= 0;
 
         const sublimCost = item.items && item.items.length > 0
           ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
           : (item.qty * (item.printPerPcs || 0));
-        const hasPaidSublim = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('sublim') && desc.includes(cleanPoName);
-        });
+        const hasPaidSublim = checkHasPaidSublim(item, settings.cashFlowList);
 
         const jahitCost = item.items && item.items.length > 0
           ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
           : (item.qty * (item.jahitPerPcs || 0));
-        const hasPaidJahit = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('jahit') && desc.includes(cleanPoName);
-        });
+        const hasPaidJahit = checkHasPaidJahit(item, settings.cashFlowList);
 
         const baseKomisi = item.komisiPerPcs || 0;
         const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
@@ -292,15 +291,9 @@ export default function ActiveOrders({
               ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
               : item.qty * baseKomisi)
           : 0;
-        const hasPaidKomisi = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('komisi') && desc.includes(cleanPoName);
-        });
+        const hasPaidKomisi = checkHasPaidKomisi(item, settings.cashFlowList);
 
-        const hasTakenProfit = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('ambil keuntungan') && desc.includes(cleanPoName);
-        });
+        const hasTakenProfit = checkHasTakenProfit(item, settings.cashFlowList);
 
         if (paymentFilter !== 'Semua') {
           if (paymentFilter === 'Lunas') {
@@ -674,21 +667,14 @@ export default function ActiveOrders({
             const nearDeadline = isNearDeadline(item.deadline, item.statusProduksi === 'Beres');
             const isFullyPaid = (Number(item.sisaTagihan) || 0) <= 0;
             
-            const cellPoName = (item.namaPo || '').toLowerCase().trim();
             const sublimCost = item.items && item.items.length > 0
               ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
               : (item.qty * (item.printPerPcs || 0));
-            const hasPaidSublim = settings.cashFlowList?.some(cf => {
-              const desc = (cf.keterangan || '').toLowerCase();
-              return desc.includes('sublim') && desc.includes(cellPoName);
-            });
+            const hasPaidSublim = checkHasPaidSublim(item, settings.cashFlowList);
             const jahitCost = item.items && item.items.length > 0
               ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
               : (item.qty * (item.jahitPerPcs || 0));
-            const hasPaidJahit = settings.cashFlowList?.some(cf => {
-              const desc = (cf.keterangan || '').toLowerCase();
-              return desc.includes('jahit') && desc.includes(cellPoName);
-            });
+            const hasPaidJahit = checkHasPaidJahit(item, settings.cashFlowList);
 
             const baseKomisi = item.komisiPerPcs || 0;
             const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
@@ -697,15 +683,9 @@ export default function ActiveOrders({
                   ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
                   : item.qty * baseKomisi)
               : 0;
-            const hasPaidKomisi = settings.cashFlowList?.some(cf => {
-              const desc = (cf.keterangan || '').toLowerCase();
-              return desc.includes('komisi') && desc.includes(cellPoName);
-            });
+            const hasPaidKomisi = checkHasPaidKomisi(item, settings.cashFlowList);
 
-            const hasTakenProfit = settings.cashFlowList?.some(cf => {
-              const desc = (cf.keterangan || '').toLowerCase();
-              return desc.includes('ambil keuntungan') && desc.includes(cellPoName);
-            });
+            const hasTakenProfit = checkHasTakenProfit(item, settings.cashFlowList);
 
             return (
               <div 
@@ -882,18 +862,34 @@ export default function ActiveOrders({
 
                     {/* Notifikasi Pembayaran Produksi & Komisi */}
                     {((!hasPaidSublim && sublimCost > 0) || (!hasPaidJahit && jahitCost > 0) || (!hasPaidKomisi && komisiCost > 0)) && (
-                      <div 
-                        className="text-[10px] sm:text-[11px] font-bold text-[#ff3b5c] animate-pulse truncate"
-                        style={{ animationDuration: '1.5s' }}
-                        title="Masih ada biaya produksi atau komisi yang belum dibayar"
-                      >
-                        {(() => {
-                          const badges = [];
-                          if (!hasPaidSublim && sublimCost > 0) badges.push('BELUM BAYAR SUBLIM');
-                          if (!hasPaidJahit && jahitCost > 0) badges.push('BELUM BAYAR JAHIT');
-                          if (!hasPaidKomisi && komisiCost > 0) badges.push('BELUM BAYAR KOMISI');
-                          return '🔴 ' + badges.join(' • ');
-                        })()}
+                      <div className="flex flex-wrap items-center justify-center gap-1.5 pt-0.5 w-full">
+                        {!hasPaidSublim && sublimCost > 0 && (
+                          <span 
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-500/15 dark:bg-rose-500/25 text-rose-600 dark:text-rose-400 border border-rose-500/30 animate-pulse select-none"
+                            title={`Belum bayar Sublim: ${formatRupiah(sublimCost)}`}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                            BELUM BAYAR SUBLIM ({formatRupiah(sublimCost)})
+                          </span>
+                        )}
+                        {!hasPaidJahit && jahitCost > 0 && (
+                          <span 
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-500/15 dark:bg-rose-500/25 text-rose-600 dark:text-rose-400 border border-rose-500/30 animate-pulse select-none"
+                            title={`Belum bayar Jahit: ${formatRupiah(jahitCost)}`}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                            BELUM BAYAR JAHIT ({formatRupiah(jahitCost)})
+                          </span>
+                        )}
+                        {!hasPaidKomisi && komisiCost > 0 && (
+                          <span 
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500/15 dark:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse select-none"
+                            title={`Belum bayar Komisi: ${formatRupiah(komisiCost)}`}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                            BELUM BAYAR KOMISI ({formatRupiah(komisiCost)})
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1077,7 +1073,7 @@ export default function ActiveOrders({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  onLogToCashFlow('Ambil Keuntungan', 'keluar', item.profit, `Ambil Keuntungan PO ${item.namaPo}`);
+                                  onLogToCashFlow('Ambil Keuntungan', 'keluar', item.profit, `Ambil Keuntungan PO ${item.namaPo} [${item.id}]`, item.id, 'profit');
                                   setConfirmProfitId(null);
                                 }}
                                 className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold py-1 px-2 rounded-lg transition-all border border-emerald-600 shadow-3xs cursor-pointer text-center"

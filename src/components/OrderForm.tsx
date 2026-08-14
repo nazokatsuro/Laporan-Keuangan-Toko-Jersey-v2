@@ -349,9 +349,15 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
   }, [items, biayaLainnya]);
 
   const totalKomisi = useMemo(() => {
-    const baseKomisi = Number(komisiPerPcs) || 0;
-    return items.reduce((sum, item) => sum + (item.qty * (item.komisiPerPcs !== undefined ? item.komisiPerPcs : baseKomisi)), 0);
-  }, [items, komisiPerPcs]);
+    const hasGlobalBroker = !!penerimaKomisi.trim();
+    const baseKomisi = hasGlobalBroker ? (Number(komisiPerPcs) || 0) : 0;
+    return items.reduce((sum, item) => {
+      const itemHasBroker = !!(item.penerimaKomisi?.trim() || hasGlobalBroker);
+      if (!itemHasBroker) return sum;
+      const itKomisi = item.komisiPerPcs !== undefined ? item.komisiPerPcs : baseKomisi;
+      return sum + (item.qty * itKomisi);
+    }, 0);
+  }, [items, komisiPerPcs, penerimaKomisi]);
 
   const profit = useMemo(() => {
     return totalHarga - totalModal - totalKomisi;
@@ -457,7 +463,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       totalModal,
       profit,
       penerimaKomisi: penerimaKomisi.trim(),
-      komisiPerPcs: Number(komisiPerPcs) || 0,
+      komisiPerPcs: penerimaKomisi.trim() ? (Number(komisiPerPcs) || 0) : 0,
       items,
       mockupUrl,
       fotoKerahUrl,

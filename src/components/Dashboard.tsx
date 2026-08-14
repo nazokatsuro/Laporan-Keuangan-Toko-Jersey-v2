@@ -5,7 +5,13 @@
 
 import React, { useMemo, useState } from 'react';
 import { Pesanan, StatusProduksi } from '../types';
-import { formatRupiah } from '../utils';
+import { 
+  formatRupiah,
+  checkHasPaidSublim,
+  checkHasPaidJahit,
+  checkHasPaidKomisi,
+  checkHasTakenProfit
+} from '../utils';
 import { 
   TrendingUp, 
   DollarSign, 
@@ -138,10 +144,7 @@ export default function Dashboard({
         : (item.qty * (item.jahitPerPcs || 0));
 
       if (jahitCost > 0) {
-        const hasPaidJahit = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('jahit') && desc.includes(cleanPoName);
-        }) || false;
+        const hasPaidJahit = checkHasPaidJahit(item, settings.cashFlowList);
 
         if (!hidePaidChecklist || !hasPaidJahit) {
           listJahit.push({
@@ -159,10 +162,7 @@ export default function Dashboard({
         : (item.qty * (item.printPerPcs || 0));
 
       if (sublimCost > 0) {
-        const hasPaidSublim = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('sublim') && desc.includes(cleanPoName);
-        }) || false;
+        const hasPaidSublim = checkHasPaidSublim(item, settings.cashFlowList);
 
         if (!hidePaidChecklist || !hasPaidSublim) {
           listSublim.push({
@@ -186,10 +186,7 @@ export default function Dashboard({
         : 0;
 
       if (komisiCost > 0 && hasPenerimaKomisi) {
-        const hasPaidKomisi = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('komisi') && desc.includes(cleanPoName);
-        }) || false;
+        const hasPaidKomisi = checkHasPaidKomisi(item, settings.cashFlowList);
 
         if (!hidePaidChecklist || !hasPaidKomisi) {
           listKomisi.push({
@@ -288,8 +285,13 @@ export default function Dashboard({
         // Remove Pelunasan log from Cashflow
         const updatedLogs = (settings.cashFlowList || []).filter(cf => {
           if (cf.jenis !== 'masuk') return true;
+          if (cf.relatedOrderId === item.id && (cf.tipeBiaya === 'pelunasan' || (cf.kategori || '').toLowerCase().includes('pelunasan'))) {
+            return false;
+          }
           const desc = (cf.keterangan || '').toLowerCase();
-          return !(desc.includes('pelunasan') && desc.includes(cleanPoName));
+          if (desc.includes(item.id.toLowerCase())) return false;
+          if (cleanPoName.length >= 3 && desc.includes('pelunasan') && desc.includes(cleanPoName)) return false;
+          return true;
         });
         onUpdateSettings({ cashFlowList: updatedLogs });
       } else {
@@ -300,9 +302,11 @@ export default function Dashboard({
             id: 'cf-' + Math.random().toString(36).substring(2, 9),
             tanggal: new Date().toISOString().substring(0, 10),
             kategori: 'Pelunasan Pelanggan',
-            keterangan: `Pelunasan Sisa Tagihan PO ${item.namaPo} (Lunas Cepat)`,
+            keterangan: `Pelunasan Sisa Tagihan PO ${item.namaPo} [${item.id}] (Lunas Cepat)`,
             jenis: 'masuk' as const,
-            nominal: unpaidAmount
+            nominal: unpaidAmount,
+            relatedOrderId: item.id,
+            tipeBiaya: 'pelunasan' as const
           };
           const updatedLogs = [...(settings.cashFlowList || []), newCf];
           onUpdateSettings({ cashFlowList: updatedLogs });
@@ -315,13 +319,20 @@ export default function Dashboard({
         // Mark as UNPAID: remove corresponding log from cashflow
         const updatedLogs = (settings.cashFlowList || []).filter(cf => {
           if (cf.jenis !== 'keluar') return true;
+          if (cf.relatedOrderId === item.id && (cf.tipeBiaya === type || (cf.kategori || '').toLowerCase().includes(type) || (cf.keterangan || '').toLowerCase().includes(type))) {
+            return false;
+          }
           const desc = (cf.keterangan || '').toLowerCase();
+          const cat = (cf.kategori || '').toLowerCase();
           const matchesType = type === 'jahit' 
-            ? desc.includes('jahit') 
+            ? (desc.includes('jahit') || cat.includes('jahit'))
             : type === 'sublim' 
-              ? desc.includes('sublim') 
-              : desc.includes('komisi');
-          return !(matchesType && desc.includes(cleanPoName));
+              ? (desc.includes('sublim') || cat.includes('sublim')) 
+              : (desc.includes('komisi') || cat.includes('komisi'));
+          
+          if (!matchesType) return true;
+          if (desc.includes(item.id.toLowerCase())) return false;
+          return true;
         });
         onUpdateSettings({ cashFlowList: updatedLogs });
       } else {
@@ -330,13 +341,13 @@ export default function Dashboard({
         let desc = '';
         if (type === 'jahit') {
           category = 'Jahit';
-          desc = `Bayar Jahit PO ${item.namaPo}`;
+          desc = `Bayar Jahit PO ${item.namaPo} [${item.id}]`;
         } else if (type === 'sublim') {
           category = 'Sublim';
-          desc = `Bayar Sublim/Print PO ${item.namaPo}`;
+          desc = `Bayar Sublim/Print PO ${item.namaPo} [${item.id}]`;
         } else if (type === 'komisi') {
           category = 'Komisi';
-          desc = `Bayar Komisi Broker (${data.receiver}) PO ${item.namaPo}`;
+          desc = `Bayar Komisi Broker (${data.receiver}) PO ${item.namaPo} [${item.id}]`;
         }
 
         const newItem = {
@@ -345,7 +356,9 @@ export default function Dashboard({
           kategori: category,
           keterangan: desc,
           jenis: 'keluar' as const,
-          nominal: data.cost
+          nominal: data.cost,
+          relatedOrderId: item.id,
+          tipeBiaya: type
         };
 
         const updatedLogs = [...(settings.cashFlowList || []), newItem];
