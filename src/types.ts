@@ -73,6 +73,7 @@ export interface CashFlowTransaction {
   keterangan: string;
   jenis: 'masuk' | 'keluar';
   nominal: number;
+  orderId?: string; // Links transaction to a specific Pesanan ID to avoid namaPo collisions
 }
 
 export interface AuditorDismissedAlert {

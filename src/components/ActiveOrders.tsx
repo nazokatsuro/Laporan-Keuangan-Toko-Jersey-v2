@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Pesanan, StatusProduksi, ShopSettings, CashFlowTransaction } from '../types';
-import { formatRupiah } from '../utils';
+import { formatRupiah, checkOrderPaymentStatus } from '../utils';
 import { 
   Search, 
   Filter, 
@@ -38,7 +38,7 @@ import {
 interface ActiveOrdersProps {
   pesananList: Pesanan[];
   settings: ShopSettings;
-  onLogToCashFlow: (kategori: string, jenis: 'masuk'|'keluar', nominal: number, keterangan: string) => void;
+  onLogToCashFlow: (kategori: string, jenis: 'masuk'|'keluar', nominal: number, keterangan: string, orderId?: string) => void;
   onAddNew: () => void;
   onEdit: (pesanan: Pesanan) => void;
   onDelete: (id: string) => void;
@@ -266,24 +266,15 @@ export default function ActiveOrders({
 
         // 4. Payment/Finance status filter
         let matchesPayment = true;
-        const cleanPoName = (item.namaPo || '').toLowerCase().trim();
         const isFullyPaid = (Number(item.sisaTagihan) || 0) <= 0;
 
         const sublimCost = item.items && item.items.length > 0
           ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
           : (item.qty * (item.printPerPcs || 0));
-        const hasPaidSublim = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('sublim') && desc.includes(cleanPoName);
-        });
 
         const jahitCost = item.items && item.items.length > 0
           ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
           : (item.qty * (item.jahitPerPcs || 0));
-        const hasPaidJahit = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('jahit') && desc.includes(cleanPoName);
-        });
 
         const baseKomisi = item.komisiPerPcs || 0;
         const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
@@ -292,15 +283,12 @@ export default function ActiveOrders({
               ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
               : item.qty * baseKomisi)
           : 0;
-        const hasPaidKomisi = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('komisi') && desc.includes(cleanPoName);
-        });
 
-        const hasTakenProfit = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('ambil keuntungan') && desc.includes(cleanPoName);
-        });
+        const paymentStatus = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList);
+        const hasPaidSublim = paymentStatus.isSublimPaid;
+        const hasPaidJahit = paymentStatus.isJahitPaid;
+        const hasPaidKomisi = paymentStatus.isKomisiPaid;
+        const hasTakenProfit = paymentStatus.isProfitTaken;
 
         if (paymentFilter !== 'Semua') {
           if (paymentFilter === 'Lunas') {
@@ -674,21 +662,13 @@ export default function ActiveOrders({
             const nearDeadline = isNearDeadline(item.deadline, item.statusProduksi === 'Beres');
             const isFullyPaid = (Number(item.sisaTagihan) || 0) <= 0;
             
-            const cellPoName = (item.namaPo || '').toLowerCase().trim();
             const sublimCost = item.items && item.items.length > 0
               ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
               : (item.qty * (item.printPerPcs || 0));
-            const hasPaidSublim = settings.cashFlowList?.some(cf => {
-              const desc = (cf.keterangan || '').toLowerCase();
-              return desc.includes('sublim') && desc.includes(cellPoName);
-            });
+
             const jahitCost = item.items && item.items.length > 0
               ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
               : (item.qty * (item.jahitPerPcs || 0));
-            const hasPaidJahit = settings.cashFlowList?.some(cf => {
-              const desc = (cf.keterangan || '').toLowerCase();
-              return desc.includes('jahit') && desc.includes(cellPoName);
-            });
 
             const baseKomisi = item.komisiPerPcs || 0;
             const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
@@ -697,15 +677,12 @@ export default function ActiveOrders({
                   ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
                   : item.qty * baseKomisi)
               : 0;
-            const hasPaidKomisi = settings.cashFlowList?.some(cf => {
-              const desc = (cf.keterangan || '').toLowerCase();
-              return desc.includes('komisi') && desc.includes(cellPoName);
-            });
 
-            const hasTakenProfit = settings.cashFlowList?.some(cf => {
-              const desc = (cf.keterangan || '').toLowerCase();
-              return desc.includes('ambil keuntungan') && desc.includes(cellPoName);
-            });
+            const paymentStatus = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList);
+            const hasPaidSublim = paymentStatus.isSublimPaid;
+            const hasPaidJahit = paymentStatus.isJahitPaid;
+            const hasPaidKomisi = paymentStatus.isKomisiPaid;
+            const hasTakenProfit = paymentStatus.isProfitTaken;
 
             return (
               <div 
@@ -1077,7 +1054,7 @@ export default function ActiveOrders({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  onLogToCashFlow('Ambil Keuntungan', 'keluar', item.profit, `Ambil Keuntungan PO ${item.namaPo}`);
+                                  onLogToCashFlow('Ambil Keuntungan', 'keluar', item.profit, `Ambil Keuntungan PO ${item.namaPo} [ID:${item.id}]`, item.id);
                                   setConfirmProfitId(null);
                                 }}
                                 className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold py-1 px-2 rounded-lg transition-all border border-emerald-600 shadow-3xs cursor-pointer text-center"

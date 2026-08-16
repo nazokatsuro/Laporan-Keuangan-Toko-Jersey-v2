@@ -10,7 +10,8 @@ import {
   DEFAULT_SETTINGS, 
   generateId, 
   formatRupiah,
-  calculateCashFlowAkhir 
+  calculateCashFlowAkhir,
+  checkOrderPaymentStatus 
 } from './utils';
 
 // Import Modular Components
@@ -536,24 +537,17 @@ export default function App() {
       }
 
       // 3. Vendor Payment Alerts (Sublim & Jahit)
-      const appCleanPoName = (item.namaPo || '').toLowerCase().trim();
       const sublimCost = item.items && item.items.length > 0
         ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
         : (item.qty * (item.printPerPcs || 0));
-      const hasPaidSublim = cfList.some(cf => {
-        const desc = (cf.keterangan || '').toLowerCase();
-        return desc.includes('sublim') && desc.includes(appCleanPoName);
-      });
-      const isSublimUnpaid = sublimCost > 0 && !hasPaidSublim;
 
       const jahitCost = item.items && item.items.length > 0
         ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
         : (item.qty * (item.jahitPerPcs || 0));
-      const hasPaidJahit = cfList.some(cf => {
-        const desc = (cf.keterangan || '').toLowerCase();
-        return desc.includes('jahit') && desc.includes(appCleanPoName);
-      });
-      const isJahitUnpaid = jahitCost > 0 && !hasPaidJahit;
+
+      const paymentStatus = checkOrderPaymentStatus(item, cfList, pesananList);
+      const isSublimUnpaid = sublimCost > 0 && !paymentStatus.isSublimPaid;
+      const isJahitUnpaid = jahitCost > 0 && !paymentStatus.isJahitPaid;
 
       if (isSublimUnpaid || isJahitUnpaid) {
          let issueMsg = '';
@@ -607,7 +601,13 @@ export default function App() {
     setActiveTab('transaksi');
   };
 
-  const handleLogToCashFlow = (kategori: string, jenis: 'masuk'|'keluar', nominal: number, keterangan: string) => {
+  const handleLogToCashFlow = (
+    kategori: string, 
+    jenis: 'masuk'|'keluar', 
+    nominal: number, 
+    keterangan: string,
+    orderId?: string
+  ) => {
     setSettings(prev => {
       const newLogs = [...(prev.cashFlowList || [])];
       newLogs.push({
@@ -616,7 +616,8 @@ export default function App() {
         kategori,
         keterangan,
         jenis,
-        nominal
+        nominal,
+        orderId
       });
       return { ...prev, cashFlowList: newLogs };
     });

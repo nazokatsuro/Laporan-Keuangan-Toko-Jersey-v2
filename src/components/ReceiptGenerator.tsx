@@ -5,7 +5,7 @@
 
 import React, { useRef, useState } from 'react';
 import { Pesanan, ShopSettings } from '../types';
-import { formatRupiah, safeHtml2canvas } from '../utils';
+import { formatRupiah, safeHtml2canvas, checkOrderPaymentStatus } from '../utils';
 import { SpkJahitDocument, getSpkJahitPagesContent, SpkJahitPageDetail } from './SpkJahitDocument';
 import { 
   Download, 
@@ -204,9 +204,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
 
   // Helper to check if sublim is paid
   const isSublimPaid = (item: Pesanan) => {
-    return settings.cashFlowList?.some(cf => 
-      cf.keterangan.includes(`Bayar Sublim/Print PO ${item.namaPo}`)
-    ) || false;
+    return checkOrderPaymentStatus(item, settings.cashFlowList, pesananArray).isSublimPaid;
   };
 
   // Helper to calculate jahit cost for an individual PO/order
@@ -218,9 +216,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
 
   // Helper to check if jahit is paid
   const isJahitPaid = (item: Pesanan) => {
-    return settings.cashFlowList?.some(cf => 
-      cf.keterangan.includes(`Bayar Jahit PO ${item.namaPo}`)
-    ) || false;
+    return checkOrderPaymentStatus(item, settings.cashFlowList, pesananArray).isJahitPaid;
   };
 
   // Helper to calculate commission cost for an individual PO/order
@@ -237,9 +233,7 @@ export default function ReceiptGenerator({ pesanan, settings, notaType = 'pelang
 
   // Helper to check if commission is paid via cash flow
   const isKomisiPaid = (item: Pesanan) => {
-    return settings.cashFlowList?.some(cf => 
-      cf.keterangan.toLowerCase().includes(`komisi`) && cf.keterangan.includes(item.namaPo)
-    ) || false;
+    return checkOrderPaymentStatus(item, settings.cashFlowList, pesananArray).isKomisiPaid;
   };
 
   const totalQty = pesananArray.reduce((acc, curr) => acc + curr.qty, 0);

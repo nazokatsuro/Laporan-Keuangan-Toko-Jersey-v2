@@ -5,7 +5,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Pesanan, StatusProduksi } from '../types';
-import { formatRupiah } from '../utils';
+import { formatRupiah, isTransactionForOrder, checkOrderPaymentStatus } from '../utils';
 import { 
   TrendingUp, 
   DollarSign, 
@@ -138,10 +138,7 @@ export default function Dashboard({
         : (item.qty * (item.jahitPerPcs || 0));
 
       if (jahitCost > 0) {
-        const hasPaidJahit = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('jahit') && desc.includes(cleanPoName);
-        }) || false;
+        const hasPaidJahit = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isJahitPaid;
 
         if (!hidePaidChecklist || !hasPaidJahit) {
           listJahit.push({
@@ -159,10 +156,7 @@ export default function Dashboard({
         : (item.qty * (item.printPerPcs || 0));
 
       if (sublimCost > 0) {
-        const hasPaidSublim = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('sublim') && desc.includes(cleanPoName);
-        }) || false;
+        const hasPaidSublim = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isSublimPaid;
 
         if (!hidePaidChecklist || !hasPaidSublim) {
           listSublim.push({
@@ -186,10 +180,7 @@ export default function Dashboard({
         : 0;
 
       if (komisiCost > 0 && hasPenerimaKomisi) {
-        const hasPaidKomisi = settings.cashFlowList?.some(cf => {
-          const desc = (cf.keterangan || '').toLowerCase();
-          return desc.includes('komisi') && desc.includes(cleanPoName);
-        }) || false;
+        const hasPaidKomisi = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isKomisiPaid;
 
         if (!hidePaidChecklist || !hasPaidKomisi) {
           listKomisi.push({
@@ -235,7 +226,6 @@ export default function Dashboard({
 
   const handleToggleChecked = (type: 'jahit' | 'sublim' | 'komisi' | 'tagihan', data: any) => {
     const item = data.order;
-    const cleanPoName = (item.namaPo || '').toLowerCase().trim();
     const isCurrentlyPaid = data.isPaid;
 
     if (type === 'tagihan') {
@@ -285,24 +275,28 @@ export default function Dashboard({
 
       // Update cashflow history
       if (isCurrentlyPaid) {
-        // Remove Pelunasan log from Cashflow
+        // Remove Pelunasan log from Cashflow for THIS specific order
         const updatedLogs = (settings.cashFlowList || []).filter(cf => {
           if (cf.jenis !== 'masuk') return true;
           const desc = (cf.keterangan || '').toLowerCase();
-          return !(desc.includes('pelunasan') && desc.includes(cleanPoName));
+          const cat = (cf.kategori || '').toLowerCase();
+          const isPelunasan = desc.includes('pelunasan') || cat.includes('pelunasan');
+          if (!isPelunasan) return true;
+          return !isTransactionForOrder(cf, item, pesananList);
         });
         onUpdateSettings({ cashFlowList: updatedLogs });
       } else {
-        // Add Pelunasan log to Cashflow
+        // Add Pelunasan log to Cashflow with orderId
         const unpaidAmount = item.sisaTagihan || item.totalHarga - item.uangMasuk;
         if (unpaidAmount > 0) {
           const newCf = {
             id: 'cf-' + Math.random().toString(36).substring(2, 9),
             tanggal: new Date().toISOString().substring(0, 10),
             kategori: 'Pelunasan Pelanggan',
-            keterangan: `Pelunasan Sisa Tagihan PO ${item.namaPo} (Lunas Cepat)`,
+            keterangan: `Pelunasan Sisa Tagihan PO ${item.namaPo} [ID:${item.id}] (Lunas Cepat)`,
             jenis: 'masuk' as const,
-            nominal: unpaidAmount
+            nominal: unpaidAmount,
+            orderId: item.id
           };
           const updatedLogs = [...(settings.cashFlowList || []), newCf];
           onUpdateSettings({ cashFlowList: updatedLogs });
@@ -312,31 +306,34 @@ export default function Dashboard({
       onUpdatePesananList(updatedList);
     } else {
       if (isCurrentlyPaid) {
-        // Mark as UNPAID: remove corresponding log from cashflow
+        // Mark as UNPAID: remove corresponding log from cashflow for THIS specific order
         const updatedLogs = (settings.cashFlowList || []).filter(cf => {
           if (cf.jenis !== 'keluar') return true;
           const desc = (cf.keterangan || '').toLowerCase();
+          const cat = (cf.kategori || '').toLowerCase();
           const matchesType = type === 'jahit' 
-            ? desc.includes('jahit') 
+            ? (desc.includes('jahit') || cat.includes('jahit')) 
             : type === 'sublim' 
-              ? desc.includes('sublim') 
-              : desc.includes('komisi');
-          return !(matchesType && desc.includes(cleanPoName));
+              ? (desc.includes('sublim') || cat.includes('sublim')) 
+              : (desc.includes('komisi') || cat.includes('komisi'));
+          
+          if (!matchesType) return true;
+          return !isTransactionForOrder(cf, item, pesananList);
         });
         onUpdateSettings({ cashFlowList: updatedLogs });
       } else {
-        // Mark as PAID: add to cashflow as 'keluar'
+        // Mark as PAID: add to cashflow as 'keluar' with orderId
         let category = '';
         let desc = '';
         if (type === 'jahit') {
           category = 'Jahit';
-          desc = `Bayar Jahit PO ${item.namaPo}`;
+          desc = `Bayar Jahit PO ${item.namaPo} [ID:${item.id}]`;
         } else if (type === 'sublim') {
           category = 'Sublim';
-          desc = `Bayar Sublim/Print PO ${item.namaPo}`;
+          desc = `Bayar Sublim/Print PO ${item.namaPo} [ID:${item.id}]`;
         } else if (type === 'komisi') {
           category = 'Komisi';
-          desc = `Bayar Komisi Broker (${data.receiver}) PO ${item.namaPo}`;
+          desc = `Bayar Komisi Broker (${data.receiver}) PO ${item.namaPo} [ID:${item.id}]`;
         }
 
         const newItem = {
@@ -345,7 +342,8 @@ export default function Dashboard({
           kategori: category,
           keterangan: desc,
           jenis: 'keluar' as const,
-          nominal: data.cost
+          nominal: data.cost,
+          orderId: item.id
         };
 
         const updatedLogs = [...(settings.cashFlowList || []), newItem];

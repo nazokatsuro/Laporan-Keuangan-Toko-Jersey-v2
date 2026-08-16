@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Pesanan, ShopSettings } from './types';
+import { Pesanan, ShopSettings, CashFlowTransaction } from './types';
 import html2canvas from 'html2canvas';
 
 export function formatRupiah(value: number): string {
@@ -17,6 +17,114 @@ export function formatRupiah(value: number): string {
 
 export function generateId(): string {
   return 'ORD-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+}
+
+/**
+ * Checks if a cash flow transaction belongs to a specific order (Pesanan).
+ * Prioritizes explicit `orderId`, then checks for order ID markers in keterangan,
+ * and falls back to clean namaPo matching ONLY if no other order shares the same namaPo.
+ */
+export function isTransactionForOrder(
+  cf: CashFlowTransaction,
+  order: Pesanan,
+  allOrders?: Pesanan[]
+): boolean {
+  // 1. Explicit orderId field
+  if (cf.orderId) {
+    return cf.orderId === order.id;
+  }
+
+  const desc = (cf.keterangan || '').toLowerCase();
+  const orderIdLower = order.id.toLowerCase();
+
+  // 2. Explicit order ID embedded in description [ID:ORD-...] or (#ORD-...)
+  if (
+    desc.includes(`[id:${orderIdLower}]`) ||
+    desc.includes(`[id: ${orderIdLower}]`) ||
+    desc.includes(`(id:${orderIdLower})`) ||
+    desc.includes(`(#${orderIdLower})`) ||
+    desc.includes(orderIdLower)
+  ) {
+    return true;
+  }
+
+  // If another order ID is explicitly in description, do not match this order
+  const idMatch = desc.match(/\bord-[a-z0-9]+/i);
+  if (idMatch && idMatch[0].toLowerCase() !== orderIdLower) {
+    return false;
+  }
+
+  // 3. Fallback for legacy records without orderId or ID marker in description:
+  const cleanPoName = (order.namaPo || '').toLowerCase().trim();
+  if (!cleanPoName || !desc.includes(cleanPoName)) {
+    return false;
+  }
+
+  // If multiple orders share this exact namaPo, legacy transactions without ID
+  // should only match the earliest created order to prevent newly created orders from inheriting old paid statuses!
+  if (allOrders && allOrders.length > 0) {
+    const ordersWithSamePo = allOrders.filter(
+      o => (o.namaPo || '').toLowerCase().trim() === cleanPoName
+    );
+    if (ordersWithSamePo.length > 1) {
+      const earliestOrder = [...ordersWithSamePo].sort((a, b) => 
+        (a.createdAt || '').localeCompare(b.createdAt || '')
+      )[0];
+      return earliestOrder.id === order.id;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Accurately determines vendor debts and profit status for a given order
+ */
+export function checkOrderPaymentStatus(
+  order: Pesanan,
+  cashFlowList: CashFlowTransaction[] | undefined,
+  allOrders?: Pesanan[]
+) {
+  const cfList = cashFlowList || [];
+
+  const isSublimPaid = cfList.some(cf => {
+    if (cf.jenis !== 'keluar') return false;
+    const cat = (cf.kategori || '').toLowerCase();
+    const desc = (cf.keterangan || '').toLowerCase();
+    const isSublimTx = cat.includes('sublim') || desc.includes('sublim');
+    return isSublimTx && isTransactionForOrder(cf, order, allOrders);
+  });
+
+  const isJahitPaid = cfList.some(cf => {
+    if (cf.jenis !== 'keluar') return false;
+    const cat = (cf.kategori || '').toLowerCase();
+    const desc = (cf.keterangan || '').toLowerCase();
+    const isJahitTx = cat.includes('jahit') || desc.includes('jahit');
+    return isJahitTx && isTransactionForOrder(cf, order, allOrders);
+  });
+
+  const isKomisiPaid = cfList.some(cf => {
+    if (cf.jenis !== 'keluar') return false;
+    const cat = (cf.kategori || '').toLowerCase();
+    const desc = (cf.keterangan || '').toLowerCase();
+    const isKomisiTx = cat.includes('komisi') || desc.includes('komisi');
+    return isKomisiTx && isTransactionForOrder(cf, order, allOrders);
+  });
+
+  const isProfitTaken = cfList.some(cf => {
+    if (cf.jenis !== 'keluar') return false;
+    const cat = (cf.kategori || '').toLowerCase();
+    const desc = (cf.keterangan || '').toLowerCase();
+    const isProfitTx = cat.includes('ambil keuntungan') || cat.includes('keuntungan') || desc.includes('ambil keuntungan');
+    return isProfitTx && isTransactionForOrder(cf, order, allOrders);
+  });
+
+  return {
+    isSublimPaid,
+    isJahitPaid,
+    isKomisiPaid,
+    isProfitTaken
+  };
 }
 
 export function calculateCashFlowAkhir(pesananList: Pesanan[], manualList: ShopSettings['cashFlowList']): number {
