@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Pesanan, ShopSettings, CashFlowTransaction } from './types';
+import { Pesanan, ShopSettings } from './types';
 import html2canvas from 'html2canvas';
 
 export function formatRupiah(value: number): string {
@@ -38,115 +38,6 @@ export function calculateCashFlowAkhir(pesananList: Pesanan[], manualList: ShopS
   }
 
   return saldo;
-}
-
-export function checkHasPaidSublim(order: Pesanan, cashFlowList?: CashFlowTransaction[]): boolean {
-  if (!cashFlowList || cashFlowList.length === 0 || !order.id) return false;
-  const orderId = order.id.toLowerCase();
-
-  return cashFlowList.some(cf => {
-    if (cf.jenis !== 'keluar') return false;
-    
-    // 1. Direct ID match (most accurate)
-    if (cf.relatedOrderId) {
-      if (cf.relatedOrderId.toLowerCase() === orderId) {
-        return cf.tipeBiaya === 'sublim' || 
-               (cf.kategori || '').toLowerCase().includes('sublim') || 
-               (cf.keterangan || '').toLowerCase().includes('sublim');
-      }
-      return false;
-    }
-
-    // 2. Legacy fallback: only match if description explicitly mentions this specific order's ID
-    const desc = (cf.keterangan || '').toLowerCase();
-    const cat = (cf.kategori || '').toLowerCase();
-    const isSublimTx = cat.includes('sublim') || desc.includes('sublim');
-    if (!isSublimTx) return false;
-
-    return desc.includes(orderId);
-  });
-}
-
-export function checkHasPaidJahit(order: Pesanan, cashFlowList?: CashFlowTransaction[]): boolean {
-  if (!cashFlowList || cashFlowList.length === 0 || !order.id) return false;
-  const orderId = order.id.toLowerCase();
-
-  return cashFlowList.some(cf => {
-    if (cf.jenis !== 'keluar') return false;
-
-    // 1. Direct ID match (most accurate)
-    if (cf.relatedOrderId) {
-      if (cf.relatedOrderId.toLowerCase() === orderId) {
-        return cf.tipeBiaya === 'jahit' || 
-               (cf.kategori || '').toLowerCase().includes('jahit') || 
-               (cf.keterangan || '').toLowerCase().includes('jahit');
-      }
-      return false;
-    }
-
-    // 2. Legacy fallback: only match if description explicitly mentions this specific order's ID
-    const desc = (cf.keterangan || '').toLowerCase();
-    const cat = (cf.kategori || '').toLowerCase();
-    const isJahitTx = cat.includes('jahit') || desc.includes('jahit');
-    if (!isJahitTx) return false;
-
-    return desc.includes(orderId);
-  });
-}
-
-export function checkHasPaidKomisi(order: Pesanan, cashFlowList?: CashFlowTransaction[]): boolean {
-  if (!cashFlowList || cashFlowList.length === 0 || !order.id) return false;
-  const orderId = order.id.toLowerCase();
-
-  return cashFlowList.some(cf => {
-    if (cf.jenis !== 'keluar') return false;
-
-    // 1. Direct ID match (most accurate)
-    if (cf.relatedOrderId) {
-      if (cf.relatedOrderId.toLowerCase() === orderId) {
-        return cf.tipeBiaya === 'komisi' || 
-               (cf.kategori || '').toLowerCase().includes('komisi') || 
-               (cf.keterangan || '').toLowerCase().includes('komisi');
-      }
-      return false;
-    }
-
-    // 2. Legacy fallback: only match if description explicitly mentions this specific order's ID
-    const desc = (cf.keterangan || '').toLowerCase();
-    const cat = (cf.kategori || '').toLowerCase();
-    const isKomisiTx = cat.includes('komisi') || desc.includes('komisi');
-    if (!isKomisiTx) return false;
-
-    return desc.includes(orderId);
-  });
-}
-
-export function checkHasTakenProfit(order: Pesanan, cashFlowList?: CashFlowTransaction[]): boolean {
-  if (!cashFlowList || cashFlowList.length === 0 || !order.id) return false;
-  const orderId = order.id.toLowerCase();
-
-  return cashFlowList.some(cf => {
-    if (cf.jenis !== 'keluar') return false;
-
-    // 1. Direct ID match (most accurate)
-    if (cf.relatedOrderId) {
-      if (cf.relatedOrderId.toLowerCase() === orderId) {
-        return cf.tipeBiaya === 'profit' || 
-               (cf.kategori || '').toLowerCase().includes('keuntungan') || 
-               (cf.keterangan || '').toLowerCase().includes('ambil keuntungan') ||
-               (cf.keterangan || '').toLowerCase().includes('ambil untung');
-      }
-      return false;
-    }
-
-    // 2. Legacy fallback: only match if description explicitly mentions this specific order's ID
-    const desc = (cf.keterangan || '').toLowerCase();
-    const cat = (cf.kategori || '').toLowerCase();
-    const isProfitTx = cat.includes('keuntungan') || desc.includes('ambil keuntungan') || desc.includes('ambil untung');
-    if (!isProfitTx) return false;
-
-    return desc.includes(orderId);
-  });
 }
 
 const curYear = new Date().getFullYear();

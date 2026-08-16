@@ -73,8 +73,6 @@ export interface CashFlowTransaction {
   keterangan: string;
   jenis: 'masuk' | 'keluar';
   nominal: number;
-  relatedOrderId?: string; // ID PO pesanan yang spesifik
-  tipeBiaya?: 'jahit' | 'sublim' | 'komisi' | 'profit' | 'pelunasan' | 'dp' | 'operasional';
 }
 
 export interface AuditorDismissedAlert {

@@ -10,9 +10,7 @@ import {
   DEFAULT_SETTINGS, 
   generateId, 
   formatRupiah,
-  calculateCashFlowAkhir,
-  checkHasPaidSublim,
-  checkHasPaidJahit
+  calculateCashFlowAkhir 
 } from './utils';
 
 // Import Modular Components
@@ -154,13 +152,10 @@ function normalizePesananList(list: any[]): Pesanan[] {
 
     // Calculate dynamic profit: total harga - total modal - total broker commission
     const baseKomisi = typeof item.komisiPerPcs === 'number' ? item.komisiPerPcs : 0;
-    const hasPenerimaKomisi = !!(item.penerimaKomisi && item.penerimaKomisi.trim()) || items.some((it: any) => !!(it.penerimaKomisi && it.penerimaKomisi.trim()));
-    const totalKomisi = hasPenerimaKomisi ? items.reduce((sum: number, it: any) => {
-      const itemHasBroker = !!(it.penerimaKomisi?.trim() || item.penerimaKomisi?.trim());
-      if (!itemHasBroker) return sum;
+    const totalKomisi = items.reduce((sum: number, it: any) => {
       const itemKomisi = typeof it.komisiPerPcs === 'number' ? it.komisiPerPcs : baseKomisi;
       return sum + ((it.qty || 0) * itemKomisi);
-    }, 0) : 0;
+    }, 0);
     const profit = totalHarga - totalModal - totalKomisi;
 
     return {
@@ -541,16 +536,23 @@ export default function App() {
       }
 
       // 3. Vendor Payment Alerts (Sublim & Jahit)
+      const appCleanPoName = (item.namaPo || '').toLowerCase().trim();
       const sublimCost = item.items && item.items.length > 0
         ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
         : (item.qty * (item.printPerPcs || 0));
-      const hasPaidSublim = checkHasPaidSublim(item, cfList);
+      const hasPaidSublim = cfList.some(cf => {
+        const desc = (cf.keterangan || '').toLowerCase();
+        return desc.includes('sublim') && desc.includes(appCleanPoName);
+      });
       const isSublimUnpaid = sublimCost > 0 && !hasPaidSublim;
 
       const jahitCost = item.items && item.items.length > 0
         ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
         : (item.qty * (item.jahitPerPcs || 0));
-      const hasPaidJahit = checkHasPaidJahit(item, cfList);
+      const hasPaidJahit = cfList.some(cf => {
+        const desc = (cf.keterangan || '').toLowerCase();
+        return desc.includes('jahit') && desc.includes(appCleanPoName);
+      });
       const isJahitUnpaid = jahitCost > 0 && !hasPaidJahit;
 
       if (isSublimUnpaid || isJahitUnpaid) {
@@ -605,14 +607,7 @@ export default function App() {
     setActiveTab('transaksi');
   };
 
-  const handleLogToCashFlow = (
-    kategori: string, 
-    jenis: 'masuk'|'keluar', 
-    nominal: number, 
-    keterangan: string,
-    relatedOrderId?: string,
-    tipeBiaya?: 'jahit' | 'sublim' | 'komisi' | 'profit' | 'pelunasan' | 'dp' | 'operasional'
-  ) => {
+  const handleLogToCashFlow = (kategori: string, jenis: 'masuk'|'keluar', nominal: number, keterangan: string) => {
     setSettings(prev => {
       const newLogs = [...(prev.cashFlowList || [])];
       newLogs.push({
@@ -621,9 +616,7 @@ export default function App() {
         kategori,
         keterangan,
         jenis,
-        nominal,
-        relatedOrderId,
-        tipeBiaya
+        nominal
       });
       return { ...prev, cashFlowList: newLogs };
     });
