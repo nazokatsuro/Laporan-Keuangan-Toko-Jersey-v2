@@ -286,34 +286,34 @@ export default function FinancialReports({
         {/* Aggregated visual cards for the compiled month */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           
-          <div className="bg-[#111827] p-4 rounded-xl border border-slate-800">
-            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Sisa Omset</span>
-            <p className="text-lg font-black text-indigo-400 mt-1">{formatRupiah(reportStats.omset)}</p>
-            <span className="text-[10px] text-slate-400 block mt-1">Bruto jersey dipesan</span>
+          <div className="bg-[#111827] p-4 rounded-xl border border-slate-800 min-w-0">
+            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">Total Sisa Omset</span>
+            <p className="text-lg font-black text-indigo-400 mt-1 truncate" title={formatRupiah(reportStats.omset)}>{formatRupiah(reportStats.omset)}</p>
+            <span className="text-[10px] text-slate-400 block mt-1 truncate">Bruto jersey dipesan</span>
           </div>
 
-          <div className="bg-[#111827] p-4 rounded-xl border border-slate-800">
-            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Biaya Modal (HPP)</span>
-            <p className="text-lg font-black text-rose-400 mt-1">{formatRupiah(reportStats.modal)}</p>
-            <span className="text-[10px] text-slate-400 block mt-1">Total pengeluaran tim</span>
+          <div className="bg-[#111827] p-4 rounded-xl border border-slate-800 min-w-0">
+            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">Biaya Modal (HPP)</span>
+            <p className="text-lg font-black text-rose-400 mt-1 truncate" title={formatRupiah(reportStats.modal)}>{formatRupiah(reportStats.modal)}</p>
+            <span className="text-[10px] text-slate-400 block mt-1 truncate">Total pengeluaran tim</span>
           </div>
 
-          <div className="bg-[#111827] p-4 rounded-xl border border-emerald-500/30 ring-2 ring-emerald-500/10">
-            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Hasil Untung Bersih</span>
-            <p className="text-lg font-black text-emerald-400 mt-1">{formatRupiah(reportStats.profit)}</p>
-            <span className="text-[10px] text-emerald-500 block mt-1 font-semibold">Estimasi profit bersih</span>
+          <div className="bg-[#111827] p-4 rounded-xl border border-emerald-500/30 ring-2 ring-emerald-500/10 min-w-0">
+            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">Hasil Untung Bersih</span>
+            <p className="text-lg font-black text-emerald-400 mt-1 truncate" title={formatRupiah(reportStats.profit)}>{formatRupiah(reportStats.profit)}</p>
+            <span className="text-[10px] text-emerald-500 block mt-1 font-semibold truncate">Estimasi profit bersih</span>
           </div>
 
-          <div className="bg-[#111827] p-4 rounded-xl border border-slate-800">
-            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Kuantitas Produksi</span>
-            <p className="text-lg font-black text-slate-100 mt-1">{reportStats.totalProduksi} Pcs</p>
-            <span className="text-[10px] text-slate-400 block mt-1">Banyak jersey terbuat</span>
+          <div className="bg-[#111827] p-4 rounded-xl border border-slate-800 min-w-0">
+            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">Kuantitas Produksi</span>
+            <p className="text-lg font-black text-slate-100 mt-1 truncate">{reportStats.totalProduksi} Pcs</p>
+            <span className="text-[10px] text-slate-400 block mt-1 truncate">Banyak jersey terbuat</span>
           </div>
 
-          <div className="bg-[#111827] p-4 rounded-xl border border-slate-800">
-            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Transaksi</span>
-            <p className="text-lg font-black text-slate-100 mt-1">{reportStats.totalPesanan} Pesanan</p>
-            <span className="text-[10px] text-slate-400 block mt-1">Frekuensi pesanan</span>
+          <div className="bg-[#111827] p-4 rounded-xl border border-slate-800 min-w-0">
+            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">Total Transaksi</span>
+            <p className="text-lg font-black text-slate-100 mt-1 truncate">{reportStats.totalPesanan} Pesanan</p>
+            <span className="text-[10px] text-slate-400 block mt-1 truncate">Frekuensi pesanan</span>
           </div>
 
         </div>

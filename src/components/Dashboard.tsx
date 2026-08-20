@@ -13,6 +13,7 @@ import {
   Activity, 
   Wallet, 
   AlertTriangle,
+  AlertCircle,
   Clock, 
   CheckCircle2,
   Calendar,
@@ -223,6 +224,20 @@ export default function Dashboard({
       tagihan: listTagihan
     };
   }, [pesananList, settings.cashFlowList, showAllChecklistPeriods, selectedMonth, selectedYear, checklistSearch, hidePaidChecklist]);
+
+  const checklistUnpaidSums = useMemo(() => {
+    const jahit = paymentChecklists.jahit.filter(x => !x.isPaid).reduce((sum, x) => sum + x.cost, 0);
+    const sublim = paymentChecklists.sublim.filter(x => !x.isPaid).reduce((sum, x) => sum + x.cost, 0);
+    const komisi = paymentChecklists.komisi.filter(x => !x.isPaid).reduce((sum, x) => sum + x.cost, 0);
+    const tagihan = paymentChecklists.tagihan.filter(x => !x.isPaid).reduce((sum, x) => sum + x.cost, 0);
+    return {
+      jahit,
+      sublim,
+      komisi,
+      tagihan,
+      totalHutangVendor: jahit + sublim + komisi
+    };
+  }, [paymentChecklists]);
 
   const handleToggleChecked = (type: 'jahit' | 'sublim' | 'komisi' | 'tagihan', data: any) => {
     const item = data.order;
@@ -435,6 +450,17 @@ export default function Dashboard({
     let pesananBelumLunasCount = 0;
     let filteredOrdersCount = 0;
 
+    let hutangSublimThisMonth = 0;
+    let hutangJahitThisMonth = 0;
+    let hutangKomisiThisMonth = 0;
+    let countHutangSublim = 0;
+    let countHutangJahit = 0;
+    let countHutangKomisi = 0;
+
+    let totalHutangSublimAll = 0;
+    let totalHutangJahitAll = 0;
+    let totalHutangKomisiAll = 0;
+
     pesananList.forEach(item => {
       const dtStr = item.createdAt || new Date().toISOString();
       const itemYear = dtStr.substring(0, 4);
@@ -443,13 +469,34 @@ export default function Dashboard({
       const yearMatches = selectedYear === 'Semua' || itemYear === selectedYear;
       const monthMatches = selectedMonth === 'Semua' || itemMonth === selectedMonth;
 
+      const sublimCost = item.items && item.items.length > 0
+        ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
+        : (item.qty * (item.printPerPcs || 0));
+
+      const jahitCost = item.items && item.items.length > 0
+        ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
+        : (item.qty * (item.jahitPerPcs || 0));
+
       const baseKomisi = item.komisiPerPcs || 0;
-      const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
+      const hasPenerimaKomisi = !!item.penerimaKomisi?.trim() || (item.items?.some(it => !!it.penerimaKomisi?.trim()) ?? false);
       const komisiCost = hasPenerimaKomisi
         ? (item.items && item.items.length > 0
             ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
             : item.qty * baseKomisi)
         : 0;
+
+      const paymentStatus = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList);
+
+      // All-time debt tracking across whole dataset
+      if (sublimCost > 0 && !paymentStatus.isSublimPaid) {
+        totalHutangSublimAll += sublimCost;
+      }
+      if (jahitCost > 0 && !paymentStatus.isJahitPaid) {
+        totalHutangJahitAll += jahitCost;
+      }
+      if (komisiCost > 0 && !paymentStatus.isKomisiPaid) {
+        totalHutangKomisiAll += komisiCost;
+      }
 
       if (yearMatches && monthMatches) {
         rawOmsetThisMonth += item.totalHarga;
@@ -464,8 +511,25 @@ export default function Dashboard({
           pesananBelumLunasCount++;
         }
         filteredOrdersCount++;
+
+        // Filtered period debts
+        if (sublimCost > 0 && !paymentStatus.isSublimPaid) {
+          hutangSublimThisMonth += sublimCost;
+          countHutangSublim++;
+        }
+        if (jahitCost > 0 && !paymentStatus.isJahitPaid) {
+          hutangJahitThisMonth += jahitCost;
+          countHutangJahit++;
+        }
+        if (komisiCost > 0 && !paymentStatus.isKomisiPaid) {
+          hutangKomisiThisMonth += komisiCost;
+          countHutangKomisi++;
+        }
       }
     });
+
+    const totalHutangSayaThisMonth = hutangSublimThisMonth + hutangJahitThisMonth + hutangKomisiThisMonth;
+    const totalHutangSayaAll = totalHutangSublimAll + totalHutangJahitAll + totalHutangKomisiAll;
 
     return {
       omsetBulanIni: rawOmsetThisMonth,
@@ -477,8 +541,19 @@ export default function Dashboard({
       totalUangMasuk,
       totalSisaTagihan,
       pesananBelumLunas: pesananBelumLunasCount,
+      hutangSublim: hutangSublimThisMonth,
+      hutangJahit: hutangJahitThisMonth,
+      hutangKomisi: hutangKomisiThisMonth,
+      totalHutangSaya: totalHutangSayaThisMonth,
+      countHutangSublim,
+      countHutangJahit,
+      countHutangKomisi,
+      totalHutangSayaAll,
+      totalHutangSublimAll,
+      totalHutangJahitAll,
+      totalHutangKomisiAll
     };
-  }, [pesananList, selectedMonth, selectedYear]);
+  }, [pesananList, selectedMonth, selectedYear, settings.cashFlowList]);
 
   // Production Status Distribution stats
   const statusStats = useMemo(() => {
@@ -721,89 +796,142 @@ export default function Dashboard({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Card 1: Omset Bulan Terpilih */}
-        <div className="bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
-          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300">
+        <div className="bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-w-0">
+          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300 pointer-events-none">
             <TrendingUp className="h-28 w-28" />
           </div>
-          <div className="flex justify-between items-start">
-            <span className="text-indigo-100 text-[10px] sm:text-xs font-bold uppercase tracking-wider">Omset {selectedMonthName}</span>
-            <span className="p-1.5 bg-indigo-400/30 rounded-lg">
-              <TrendingUp className="h-4 w-4 text-white" />
+          <div className="flex justify-between items-center gap-2 min-w-0 z-10">
+            <span className="text-indigo-100 text-xs sm:text-sm font-bold uppercase tracking-wider truncate" title={`Omset ${selectedMonthName}`}>
+              Omset {selectedMonthName}
+            </span>
+            <span className="p-2 bg-indigo-400/30 rounded-xl shrink-0">
+              <TrendingUp className="h-5 w-5 text-white" />
             </span>
           </div>
-          <div className="mt-4">
-            <h3 className="text-lg sm:text-xl lg:text-lg xl:text-lg 2xl:text-xl font-black tracking-tight leading-none break-all">{formatRupiah(stats.omsetBulanIni)}</h3>
-            <p className="text-indigo-50 text-[10px] sm:text-[11px] opacity-75 mt-1">Bruto periode {selectedMonthName} '{selectedYear.substring(2)}</p>
+          <div className="mt-4 min-w-0 z-10">
+            <h3 className="text-xl sm:text-2xl font-black tracking-tight leading-tight" title={formatRupiah(stats.omsetBulanIni)}>
+              {formatRupiah(stats.omsetBulanIni)}
+            </h3>
+            <p className="text-indigo-100 text-xs opacity-85 mt-1 truncate" title={`Bruto periode ${selectedMonthName} '${selectedYear.substring(2)}`}>
+              Bruto periode {selectedMonthName} '{selectedYear.substring(2)}
+            </p>
           </div>
         </div>
 
         {/* Card 2: Modal Bulan Terpilih */}
-        <div className="bg-gradient-to-br from-rose-500 to-pink-600 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
-          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300">
+        <div className="bg-gradient-to-br from-rose-500 to-pink-600 rounded-2xl p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-w-0">
+          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300 pointer-events-none">
             <Wallet className="h-28 w-28" />
           </div>
-          <div className="flex justify-between items-start">
-            <span className="text-rose-100 text-[10px] sm:text-xs font-bold uppercase tracking-wider">Modal {selectedMonthName}</span>
-            <span className="p-1.5 bg-rose-400/30 rounded-lg">
-              <Wallet className="h-4 w-4 text-white" />
+          <div className="flex justify-between items-center gap-2 min-w-0 z-10">
+            <span className="text-rose-100 text-xs sm:text-sm font-bold uppercase tracking-wider truncate" title={`Modal ${selectedMonthName}`}>
+              Modal (HPP) {selectedMonthName}
+            </span>
+            <span className="p-2 bg-rose-400/30 rounded-xl shrink-0">
+              <Wallet className="h-5 w-5 text-white" />
             </span>
           </div>
-          <div className="mt-4">
-            <h3 className="text-lg sm:text-xl lg:text-lg xl:text-lg 2xl:text-xl font-black tracking-tight leading-none break-all">{formatRupiah(stats.modalBulanIni)}</h3>
-            <p className="text-rose-50 text-[10px] sm:text-[11px] opacity-75 mt-1">Estimasi modal {selectedMonthName} '{selectedYear.substring(2)}</p>
+          <div className="mt-4 min-w-0 z-10">
+            <h3 className="text-xl sm:text-2xl font-black tracking-tight leading-tight" title={formatRupiah(stats.modalBulanIni)}>
+              {formatRupiah(stats.modalBulanIni)}
+            </h3>
+            <p className="text-rose-100 text-xs opacity-85 mt-1 truncate" title={`Estimasi modal ${selectedMonthName} '${selectedYear.substring(2)}`}>
+              Estimasi modal {selectedMonthName} '{selectedYear.substring(2)}
+            </p>
           </div>
         </div>
 
         {/* Card 3: Keuntungan Bulan Terpilih */}
-        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
-          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300">
+        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-w-0">
+          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300 pointer-events-none">
             <DollarSign className="h-28 w-28" />
           </div>
-          <div className="flex justify-between items-start">
-            <span className="text-emerald-100 text-[10px] sm:text-xs font-bold uppercase tracking-wider">Profit {selectedMonthName}</span>
-            <span className="p-1.5 bg-emerald-400/30 rounded-lg">
-              <DollarSign className="h-4 w-4 text-white" />
+          <div className="flex justify-between items-center gap-2 min-w-0 z-10">
+            <span className="text-emerald-100 text-xs sm:text-sm font-bold uppercase tracking-wider truncate" title={`Profit ${selectedMonthName}`}>
+              Profit Bersih {selectedMonthName}
+            </span>
+            <span className="p-2 bg-emerald-400/30 rounded-xl shrink-0">
+              <DollarSign className="h-5 w-5 text-white" />
             </span>
           </div>
-          <div className="mt-4">
-            <h3 className="text-lg sm:text-xl lg:text-lg xl:text-lg 2xl:text-xl font-black tracking-tight leading-none break-all">{formatRupiah(stats.profitBulanIni)}</h3>
-            <p className="text-emerald-50 text-[10px] sm:text-[11px] opacity-75 mt-1">Nett profit {selectedMonthName} '{selectedYear.substring(2)}</p>
+          <div className="mt-4 min-w-0 z-10">
+            <h3 className="text-xl sm:text-2xl font-black tracking-tight leading-tight" title={formatRupiah(stats.profitBulanIni)}>
+              {formatRupiah(stats.profitBulanIni)}
+            </h3>
+            <p className="text-emerald-100 text-xs opacity-85 mt-1 truncate" title={`Nett profit ${selectedMonthName} '${selectedYear.substring(2)}`}>
+              Nett profit {selectedMonthName} '{selectedYear.substring(2)}
+            </p>
           </div>
         </div>
 
-        {/* Card 4: Komisi Broker Terbayar */}
-        <div className="bg-gradient-to-br from-fuchsia-600 to-purple-700 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
-          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300">
-            <DollarSign className="h-28 w-28" />
+        {/* Card 4: Hutang Saya (Sublim + Jahit + Broker) */}
+        <div className="bg-gradient-to-br from-red-600 via-rose-600 to-pink-700 rounded-2xl p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-w-0">
+          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300 pointer-events-none">
+            <AlertCircle className="h-28 w-28" />
           </div>
-          <div className="flex justify-between items-start">
-            <span className="text-fuchsia-100 text-[10px] sm:text-xs font-bold uppercase tracking-wider">Komisi Broker</span>
-            <span className="p-1.5 bg-fuchsia-500/30 rounded-lg">
-              <DollarSign className="h-4 w-4 text-white" />
+          <div className="flex justify-between items-center gap-2 min-w-0 z-10">
+            <span className="text-rose-100 text-xs sm:text-sm font-bold uppercase tracking-wider truncate" title="Total Hutang Saya">
+              Hutang Saya (Vendor &amp; Broker)
+            </span>
+            <span className="p-2 bg-red-400/30 rounded-xl shrink-0">
+              <AlertCircle className="h-5 w-5 text-white" />
             </span>
           </div>
-          <div className="mt-4">
-            <h3 className="text-lg sm:text-xl lg:text-lg xl:text-lg 2xl:text-xl font-black tracking-tight leading-none break-all">{formatRupiah(stats.totalKomisiBulanIni)}</h3>
-            <p className="text-fuchsia-50 text-[10px] sm:text-[11px] opacity-75 mt-1">Total komisi {selectedMonthName} '{selectedYear.substring(2)}</p>
+          <div className="mt-4 min-w-0 z-10">
+            <h3 className="text-xl sm:text-2xl font-black tracking-tight leading-tight" title={formatRupiah(stats.totalHutangSaya)}>
+              {formatRupiah(stats.totalHutangSaya)}
+            </h3>
+            <p className="text-rose-100 text-xs opacity-90 mt-1 truncate" title={`Sublim: ${formatRupiah(stats.hutangSublim)} | Jahit: ${formatRupiah(stats.hutangJahit)} | Broker: ${formatRupiah(stats.hutangKomisi)}`}>
+              Sublim: {formatRupiah(stats.hutangSublim)} • Jahit: {formatRupiah(stats.hutangJahit)} • Broker: {formatRupiah(stats.hutangKomisi)}
+            </p>
           </div>
         </div>
 
-        {/* Card 5: Total Produksi */}
-        <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300">
-          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300">
+        {/* Card 5: Komisi Broker Terbayar / Total */}
+        <div className="bg-gradient-to-br from-fuchsia-600 to-purple-700 rounded-2xl p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-w-0">
+          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300 pointer-events-none">
+            <DollarSign className="h-28 w-28" />
+          </div>
+          <div className="flex justify-between items-center gap-2 min-w-0 z-10">
+            <span className="text-fuchsia-100 text-xs sm:text-sm font-bold uppercase tracking-wider truncate" title="Komisi Broker">
+              Komisi Broker {selectedMonthName}
+            </span>
+            <span className="p-2 bg-fuchsia-500/30 rounded-xl shrink-0">
+              <DollarSign className="h-5 w-5 text-white" />
+            </span>
+          </div>
+          <div className="mt-4 min-w-0 z-10">
+            <h3 className="text-xl sm:text-2xl font-black tracking-tight leading-tight" title={formatRupiah(stats.totalKomisiBulanIni)}>
+              {formatRupiah(stats.totalKomisiBulanIni)}
+            </h3>
+            <p className="text-fuchsia-100 text-xs opacity-85 mt-1 truncate" title={`Total komisi ${selectedMonthName} '${selectedYear.substring(2)}`}>
+              Total komisi broker periode {selectedMonthName} '{selectedYear.substring(2)}
+            </p>
+          </div>
+        </div>
+
+        {/* Card 6: Total Produksi */}
+        <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-5 text-white shadow-md relative overflow-hidden group hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-w-0">
+          <div className="absolute right-[-10px] bottom-[-10px] opacity-15 group-hover:scale-110 transition-transform duration-300 pointer-events-none">
             <ShoppingBag className="h-28 w-28" />
           </div>
-          <div className="flex justify-between items-start">
-            <span className="text-amber-100 text-[10px] sm:text-xs font-bold uppercase tracking-wider">Total Produksi</span>
-            <span className="p-1.5 bg-amber-400/30 rounded-lg">
-              <ShoppingBag className="h-4 w-4 text-white" />
+          <div className="flex justify-between items-center gap-2 min-w-0 z-10">
+            <span className="text-amber-100 text-xs sm:text-sm font-bold uppercase tracking-wider truncate" title="Total Produksi">
+              Total Produksi Jersey
+            </span>
+            <span className="p-2 bg-amber-400/30 rounded-xl shrink-0">
+              <ShoppingBag className="h-5 w-5 text-white" />
             </span>
           </div>
-          <div className="mt-4">
-            <h3 className="text-lg sm:text-xl lg:text-lg xl:text-lg 2xl:text-xl font-black tracking-tight leading-none break-all">{stats.totalProduksi} Pcs</h3>
-            <p className="text-amber-50 text-[10px] sm:text-[11px] opacity-75 mt-1">Akumulasi {stats.totalPesanan} Pesanan</p>
+          <div className="mt-4 min-w-0 z-10">
+            <h3 className="text-xl sm:text-2xl font-black tracking-tight leading-tight" title={`${stats.totalProduksi} Pcs`}>
+              {stats.totalProduksi} Pcs
+            </h3>
+            <p className="text-amber-100 text-xs opacity-85 mt-1 truncate" title={`Akumulasi ${stats.totalPesanan} Pesanan`}>
+              Akumulasi dari {stats.totalPesanan} pesanan
+            </p>
           </div>
         </div>
       </div>
@@ -973,45 +1101,74 @@ export default function Dashboard({
 
       </div>
 
-      {/* Secondary Row Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/80 p-4 rounded-xl shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl">
-            <Layers className="h-5 w-5 text-indigo-500" />
+      {/* Secondary Row Stats (2 Baris) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+        {/* Row 1 - Card 1: Total Pesanan */}
+        <div className="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/80 p-4 sm:p-5 rounded-2xl shadow-sm flex items-center gap-4 min-w-0 hover:shadow-md transition-shadow">
+          <div className="p-3 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl shrink-0">
+            <Layers className="h-6 w-6 text-indigo-500" />
           </div>
-          <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Total Pesanan</p>
-            <p className="text-lg font-bold text-slate-800 dark:text-white">{stats.totalPesanan}</p>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/80 p-4 rounded-xl shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/50 rounded-xl">
-            <TrendingUp className="h-5 w-5 text-emerald-500" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Total Uang Masuk</p>
-            <p className="text-lg font-bold text-slate-800 dark:text-white">{formatRupiah(stats.totalUangMasuk)}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Total Pesanan</p>
+            <p className="text-lg sm:text-xl font-black text-slate-800 dark:text-white mt-0.5">{stats.totalPesanan} Pesanan</p>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/80 p-4 rounded-xl shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-rose-50 dark:bg-rose-950/50 rounded-xl">
-            <Wallet className="h-5 w-5 text-rose-500" />
+        {/* Row 1 - Card 2: Total Uang Masuk */}
+        <div className="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/80 p-4 sm:p-5 rounded-2xl shadow-sm flex items-center gap-4 min-w-0 hover:shadow-md transition-shadow">
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/50 rounded-xl shrink-0">
+            <TrendingUp className="h-6 w-6 text-emerald-500" />
           </div>
-          <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Total Sisa Tagihan</p>
-            <p className="text-lg font-bold text-slate-800 dark:text-white">{formatRupiah(stats.totalSisaTagihan)}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Total Uang Masuk</p>
+            <p className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 truncate" title={formatRupiah(stats.totalUangMasuk)}>
+              {formatRupiah(stats.totalUangMasuk)}
+            </p>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/80 p-4 rounded-xl shadow-sm flex items-center gap-3">
-          <div className="p-3 bg-amber-50 dark:bg-amber-950/50 rounded-xl">
-            <AlertTriangle className="h-5 w-5 text-amber-500" />
+        {/* Row 1 - Card 3: Piutang Pelanggan */}
+        <div className="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/80 p-4 sm:p-5 rounded-2xl shadow-sm flex items-center gap-4 min-w-0 hover:shadow-md transition-shadow">
+          <div className="p-3 bg-amber-50 dark:bg-amber-950/50 rounded-xl shrink-0">
+            <Wallet className="h-6 w-6 text-amber-500" />
           </div>
-          <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Belum Lunas</p>
-            <p className="text-lg font-bold text-slate-800 dark:text-white">{stats.pesananBelumLunas} Pesanan</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Piutang Pelanggan</p>
+            <p className="text-lg sm:text-xl font-black text-amber-600 dark:text-amber-400 mt-0.5 truncate" title={formatRupiah(stats.totalSisaTagihan)}>
+              {formatRupiah(stats.totalSisaTagihan)}
+            </p>
+          </div>
+        </div>
+
+        {/* Row 2 - Card 4: Hutang Saya (Vendor & Broker) */}
+        <div className="sm:col-span-1 lg:col-span-3 bg-white dark:bg-slate-800 border border-rose-100 dark:border-rose-900/40 p-4 sm:p-5 rounded-2xl shadow-sm flex items-center gap-4 bg-rose-50/10 min-w-0 hover:shadow-md transition-shadow">
+          <div className="p-3 bg-rose-100/70 dark:bg-rose-950/70 rounded-xl shrink-0">
+            <AlertCircle className="h-6 w-6 text-rose-600 dark:text-rose-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <p className="text-xs sm:text-sm text-rose-600 dark:text-rose-400 font-bold">Hutang Saya (Vendor &amp; Broker)</p>
+              <span className="text-[10px] bg-rose-500/15 text-rose-600 dark:text-rose-400 font-extrabold px-2 py-0.5 rounded-full shrink-0">
+                {stats.countHutangSublim + stats.countHutangJahit + stats.countHutangKomisi} Item Tertunda
+              </span>
+            </div>
+            <p className="text-lg sm:text-xl font-black text-rose-600 dark:text-rose-400 mt-0.5 truncate" title={formatRupiah(stats.totalHutangSaya)}>
+              {formatRupiah(stats.totalHutangSaya)}
+            </p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate" title={`Sublim: ${formatRupiah(stats.hutangSublim)} • Jahit: ${formatRupiah(stats.hutangJahit)} • Broker: ${formatRupiah(stats.hutangKomisi)}`}>
+              Sublim: {formatRupiah(stats.hutangSublim)} • Jahit: {formatRupiah(stats.hutangJahit)} • Broker: {formatRupiah(stats.hutangKomisi)}
+            </p>
+          </div>
+        </div>
+
+        {/* Row 2 - Card 5: Order Belum Lunas */}
+        <div className="sm:col-span-1 lg:col-span-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/80 p-4 sm:p-5 rounded-2xl shadow-sm flex items-center gap-4 min-w-0 hover:shadow-md transition-shadow">
+          <div className="p-3 bg-slate-100 dark:bg-slate-700/50 rounded-xl shrink-0">
+            <AlertTriangle className="h-6 w-6 text-slate-500 dark:text-slate-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Order Belum Lunas</p>
+            <p className="text-lg sm:text-xl font-black text-slate-800 dark:text-white mt-0.5">{stats.pesananBelumLunas} Pesanan Menunggu Pelunasan</p>
           </div>
         </div>
       </div>
@@ -1035,6 +1192,12 @@ export default function Dashboard({
           
           {/* Controls bar */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* Total Unpaid Hutang Badge */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-400 text-xs font-bold shrink-0" title={`Sublim: ${formatRupiah(checklistUnpaidSums.sublim)} | Jahit: ${formatRupiah(checklistUnpaidSums.jahit)} | Broker: ${formatRupiah(checklistUnpaidSums.komisi)}`}>
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>Hutang Vendor &amp; Broker: <b className="font-extrabold">{formatRupiah(checklistUnpaidSums.totalHutangVendor)}</b></span>
+            </div>
+
             {/* Search filter */}
             <div className="relative w-full sm:w-auto">
               <input
@@ -1084,21 +1247,21 @@ export default function Dashboard({
         </div>
 
         {/* 4 columns grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
           
           {/* TAB COLUMN 1: JAHIT */}
-          <div className="border border-slate-100 dark:border-slate-700/60 rounded-xl p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px]">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-amber-500" />
-                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white">Ongkos Jahit</h4>
+          <div className="border border-slate-100 dark:border-slate-700/60 rounded-xl p-3.5 sm:p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px] min-w-0">
+            <div className="flex justify-between items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
+                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white truncate">Ongkos Jahit</h4>
               </div>
-              <span className="text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-440 font-extrabold px-2 py-0.5 rounded-md">
-                {paymentChecklists.jahit.filter(x => !x.isPaid).length} Belum Bayar
+              <span className="text-[9.5px] sm:text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-440 font-extrabold px-1.5 py-0.5 rounded-md shrink-0 truncate max-w-[55%]" title={`Total belum bayar: ${formatRupiah(checklistUnpaidSums.jahit)}`}>
+                {paymentChecklists.jahit.filter(x => !x.isPaid).length} Belum ({formatRupiah(checklistUnpaidSums.jahit)})
               </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar min-w-0">
               {paymentChecklists.jahit.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center opacity-70 py-10">
                   <span className="text-2xl">✓</span>
@@ -1108,7 +1271,7 @@ export default function Dashboard({
                 paymentChecklists.jahit.map(item => (
                   <div 
                     key={`clk-jahit-${item.id}`}
-                    className={`flex items-start gap-2.5 p-3 rounded-xl border transition-all ${
+                    className={`flex items-start gap-2.5 p-2.5 sm:p-3 rounded-xl border transition-all min-w-0 ${
                       item.isPaid
                         ? 'bg-emerald-500/5 border-emerald-500/20 dark:bg-emerald-950/10 dark:border-emerald-900/20 opacity-75'
                         : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80 hover:border-slate-200 dark:hover:border-slate-750'
@@ -1127,11 +1290,11 @@ export default function Dashboard({
                     </button>
                     
                     <div className="flex-1 min-w-0 space-y-0.5">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+                      <div className="flex items-center justify-between gap-1.5 min-w-0">
+                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white flex-1 min-w-0 ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-500' : ''}`} title={item.order.namaPo}>
                           {item.order.namaPo}
                         </h5>
-                        <span className={`text-[8.5px] font-black px-1.5 py-0.2 rounded-md ${
+                        <span className={`text-[8px] sm:text-[8.5px] font-black px-1.5 py-0.2 rounded-md shrink-0 ${
                           item.order.statusProduksi === 'Beres' 
                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-440'
                             : 'bg-amber-500/10 text-amber-600 dark:text-amber-440'
@@ -1139,15 +1302,15 @@ export default function Dashboard({
                           {item.order.statusProduksi}
                         </span>
                       </div>
-                      <p className={`font-black text-xs text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-505' : ''}`}>
+                      <p className={`font-black text-xs truncate text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-505' : ''}`} title={formatRupiah(item.cost)}>
                         {formatRupiah(item.cost)}
                       </p>
-                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5">
-                        <span className="truncate max-w-[120px]">{item.order.qty} Pcs • {item.order.namaPemesan}</span>
+                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5 min-w-0 gap-1">
+                        <span className="truncate flex-1 min-w-0" title={`${item.order.qty} Pcs • ${item.order.namaPemesan}`}>{item.order.qty} Pcs • {item.order.namaPemesan}</span>
                         {item.isPaid ? (
-                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px]">LUNAS ✓</span>
+                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px] shrink-0">LUNAS ✓</span>
                         ) : (
-                          <span className="text-amber-600 dark:text-amber-450 font-black text-[8.5px]">BELUM</span>
+                          <span className="text-amber-600 dark:text-amber-450 font-black text-[8.5px] shrink-0">BELUM</span>
                         )}
                       </div>
                     </div>
@@ -1158,18 +1321,18 @@ export default function Dashboard({
           </div>
 
           {/* TAB COLUMN 2: SUBLIM */}
-          <div className="border border-slate-100 dark:border-slate-700/60 rounded-xl p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px]">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-pink-500" />
-                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white">Biaya Sublim / Print</h4>
+          <div className="border border-slate-100 dark:border-slate-700/60 rounded-xl p-3.5 sm:p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px] min-w-0">
+            <div className="flex justify-between items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="h-2 w-2 rounded-full bg-pink-500 shrink-0" />
+                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white truncate">Biaya Sublim / Print</h4>
               </div>
-              <span className="text-[10px] bg-pink-500/15 text-pink-600 dark:text-pink-400 font-extrabold px-2 py-0.5 rounded-md">
-                {paymentChecklists.sublim.filter(x => !x.isPaid).length} Belum Bayar
+              <span className="text-[9.5px] sm:text-[10px] bg-pink-500/15 text-pink-600 dark:text-pink-400 font-extrabold px-1.5 py-0.5 rounded-md shrink-0 truncate max-w-[55%]" title={`Total belum bayar: ${formatRupiah(checklistUnpaidSums.sublim)}`}>
+                {paymentChecklists.sublim.filter(x => !x.isPaid).length} Belum ({formatRupiah(checklistUnpaidSums.sublim)})
               </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar min-w-0">
               {paymentChecklists.sublim.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center opacity-70 py-10">
                   <span className="text-2xl">✓</span>
@@ -1179,7 +1342,7 @@ export default function Dashboard({
                 paymentChecklists.sublim.map(item => (
                   <div 
                     key={`clk-sublim-${item.id}`}
-                    className={`flex items-start gap-2.5 p-3 rounded-xl border transition-all ${
+                    className={`flex items-start gap-2.5 p-2.5 sm:p-3 rounded-xl border transition-all min-w-0 ${
                       item.isPaid
                         ? 'bg-emerald-500/5 border-emerald-500/20 dark:bg-emerald-950/10 dark:border-emerald-900/20 opacity-75'
                         : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80 hover:border-slate-200 dark:hover:border-slate-750'
@@ -1198,11 +1361,11 @@ export default function Dashboard({
                     </button>
                     
                     <div className="flex-1 min-w-0 space-y-0.5">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+                      <div className="flex items-center justify-between gap-1.5 min-w-0">
+                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white flex-1 min-w-0 ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-500' : ''}`} title={item.order.namaPo}>
                           {item.order.namaPo}
                         </h5>
-                        <span className={`text-[8.5px] font-black px-1.5 py-0.2 rounded-md ${
+                        <span className={`text-[8px] sm:text-[8.5px] font-black px-1.5 py-0.2 rounded-md shrink-0 ${
                           item.order.statusProduksi === 'Beres' 
                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-440'
                             : 'bg-pink-500/10 text-pink-600 dark:text-pink-440'
@@ -1210,15 +1373,15 @@ export default function Dashboard({
                           {item.order.statusProduksi}
                         </span>
                       </div>
-                      <p className={`font-black text-xs text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-505' : ''}`}>
+                      <p className={`font-black text-xs truncate text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-505' : ''}`} title={formatRupiah(item.cost)}>
                         {formatRupiah(item.cost)}
                       </p>
-                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5">
-                        <span className="truncate max-w-[120px]">{item.order.qty} Pcs • {item.order.namaPemesan}</span>
+                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5 min-w-0 gap-1">
+                        <span className="truncate flex-1 min-w-0" title={`${item.order.qty} Pcs • ${item.order.namaPemesan}`}>{item.order.qty} Pcs • {item.order.namaPemesan}</span>
                         {item.isPaid ? (
-                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px]">LUNAS ✓</span>
+                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px] shrink-0">LUNAS ✓</span>
                         ) : (
-                          <span className="text-amber-600 dark:text-amber-450 font-black text-[8.5px]">BELUM</span>
+                          <span className="text-amber-600 dark:text-amber-450 font-black text-[8.5px] shrink-0">BELUM</span>
                         )}
                       </div>
                     </div>
@@ -1229,18 +1392,18 @@ export default function Dashboard({
           </div>
 
           {/* TAB COLUMN 3: KOMISI BROKER */}
-          <div className="border border-slate-100 dark:border-slate-705/60 rounded-xl p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px]">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-fuchsia-500" />
-                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white">Komisi Broker</h4>
+          <div className="border border-slate-100 dark:border-slate-705/60 rounded-xl p-3.5 sm:p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px] min-w-0">
+            <div className="flex justify-between items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="h-2 w-2 rounded-full bg-fuchsia-500 shrink-0" />
+                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white truncate">Komisi Broker</h4>
               </div>
-              <span className="text-[10px] bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 font-extrabold px-2 py-0.5 rounded-md">
-                {paymentChecklists.komisi.filter(x => !x.isPaid).length} Belum Bayar
+              <span className="text-[9.5px] sm:text-[10px] bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 font-extrabold px-1.5 py-0.5 rounded-md shrink-0 truncate max-w-[55%]" title={`Total belum bayar: ${formatRupiah(checklistUnpaidSums.komisi)}`}>
+                {paymentChecklists.komisi.filter(x => !x.isPaid).length} Belum ({formatRupiah(checklistUnpaidSums.komisi)})
               </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar min-w-0">
               {paymentChecklists.komisi.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center opacity-70 py-10">
                   <span className="text-2xl">✓</span>
@@ -1250,7 +1413,7 @@ export default function Dashboard({
                 paymentChecklists.komisi.map(item => (
                   <div 
                     key={`clk-komisi-${item.id}`}
-                    className={`flex items-start gap-2.5 p-3 rounded-xl border transition-all ${
+                    className={`flex items-start gap-2.5 p-2.5 sm:p-3 rounded-xl border transition-all min-w-0 ${
                       item.isPaid
                         ? 'bg-emerald-500/5 border-emerald-500/20 dark:bg-emerald-950/10 dark:border-emerald-900/20 opacity-75'
                         : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80 hover:border-slate-200 dark:hover:border-slate-750'
@@ -1269,23 +1432,23 @@ export default function Dashboard({
                     </button>
                     
                     <div className="flex-1 min-w-0 space-y-0.5">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+                      <div className="flex items-center justify-between gap-1.5 min-w-0">
+                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white flex-1 min-w-0 ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-500' : ''}`} title={item.order.namaPo}>
                           {item.order.namaPo}
                         </h5>
-                        <span className="text-[8.5px] font-black px-1.5 py-0.2 rounded-md bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 truncate max-w-[80px]">
+                        <span className="text-[8px] sm:text-[8.5px] font-black px-1.5 py-0.2 rounded-md bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 truncate max-w-[80px] shrink-0" title={item.receiver}>
                           {item.receiver}
                         </span>
                       </div>
-                      <p className={`font-black text-xs text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-550' : ''}`}>
+                      <p className={`font-black text-xs truncate text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-550' : ''}`} title={formatRupiah(item.cost)}>
                         {formatRupiah(item.cost)}
                       </p>
-                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5">
-                        <span className="truncate max-w-[120px]">{item.order.qty} Pcs • {item.order.namaPemesan}</span>
+                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5 min-w-0 gap-1">
+                        <span className="truncate flex-1 min-w-0" title={`${item.order.qty} Pcs • ${item.order.namaPemesan}`}>{item.order.qty} Pcs • {item.order.namaPemesan}</span>
                         {item.isPaid ? (
-                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px]">LUNAS ✓</span>
+                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px] shrink-0">LUNAS ✓</span>
                         ) : (
-                          <span className="text-amber-600 dark:text-amber-450 font-black text-[8.5px]">BELUM</span>
+                          <span className="text-amber-600 dark:text-amber-450 font-black text-[8.5px] shrink-0">BELUM</span>
                         )}
                       </div>
                     </div>
@@ -1296,18 +1459,18 @@ export default function Dashboard({
           </div>
 
           {/* TAB COLUMN 4: SISA TAGIHAN PELANGGAN */}
-          <div className="border border-slate-100 dark:border-slate-700/60 rounded-xl p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px]">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-rose-500" />
-                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white">Sisa Tagihan</h4>
+          <div className="border border-slate-100 dark:border-slate-700/60 rounded-xl p-3.5 sm:p-4 bg-slate-50/20 dark:bg-slate-900/10 flex flex-col h-[380px] min-w-0">
+            <div className="flex justify-between items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="h-2 w-2 rounded-full bg-rose-500 shrink-0" />
+                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white truncate">Sisa Tagihan</h4>
               </div>
-              <span className="text-[10px] bg-rose-500/15 text-rose-600 dark:text-rose-450 font-extrabold px-2 py-0.5 rounded-md">
-                {paymentChecklists.tagihan.filter(x => !x.isPaid).length} Belum Pelunasan
+              <span className="text-[9.5px] sm:text-[10px] bg-rose-500/15 text-rose-600 dark:text-rose-450 font-extrabold px-1.5 py-0.5 rounded-md shrink-0 truncate max-w-[55%]" title={`Total belum pelunasan: ${formatRupiah(checklistUnpaidSums.tagihan)}`}>
+                {paymentChecklists.tagihan.filter(x => !x.isPaid).length} Belum ({formatRupiah(checklistUnpaidSums.tagihan)})
               </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar min-w-0">
               {paymentChecklists.tagihan.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center opacity-70 py-10">
                   <span className="text-2xl">✓</span>
@@ -1317,7 +1480,7 @@ export default function Dashboard({
                 paymentChecklists.tagihan.map(item => (
                   <div 
                     key={`clk-tagihan-${item.id}`}
-                    className={`flex items-start gap-2.5 p-3 rounded-xl border transition-all ${
+                    className={`flex items-start gap-2.5 p-2.5 sm:p-3 rounded-xl border transition-all min-w-0 ${
                       item.isPaid
                         ? 'bg-emerald-500/5 border-emerald-500/20 dark:bg-emerald-950/10 dark:border-emerald-900/20 opacity-75'
                         : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80 hover:border-slate-200 dark:hover:border-slate-750'
@@ -1336,27 +1499,27 @@ export default function Dashboard({
                     </button>
                     
                     <div className="flex-1 min-w-0 space-y-0.5">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-505' : ''}`}>
+                      <div className="flex items-center justify-between gap-1.5 min-w-0">
+                        <h5 className={`font-black text-xs truncate text-slate-800 dark:text-white flex-1 min-w-0 ${item.isPaid ? 'line-through text-slate-400 dark:text-slate-500' : ''}`} title={item.order.namaPo}>
                           {item.order.namaPo}
                         </h5>
-                        <span className={`text-[8.5px] font-black px-1.5 py-0.2 rounded-md ${
+                        <span className={`text-[8px] sm:text-[8.5px] font-black px-1.5 py-0.2 rounded-md shrink-0 ${
                           item.order.statusProduksi === 'Beres' 
                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-440'
-                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-450'
+                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-440'
                         }`}>
                           {item.order.statusProduksi}
                         </span>
                       </div>
-                      <p className={`font-black text-xs text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-550' : ''}`}>
+                      <p className={`font-black text-xs truncate text-slate-900 dark:text-white ${item.isPaid ? 'text-slate-400 dark:text-slate-505' : ''}`} title={formatRupiah(item.cost)}>
                         {formatRupiah(item.cost)}
                       </p>
-                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5">
-                        <span className="truncate max-w-[124px]">{item.order.qty} Pcs • {item.order.namaPemesan}</span>
+                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-0.5 min-w-0 gap-1">
+                        <span className="truncate flex-1 min-w-0" title={`${item.order.qty} Pcs • ${item.order.namaPemesan}`}>{item.order.qty} Pcs • {item.order.namaPemesan}</span>
                         {item.isPaid ? (
-                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px]">LUNAS ✓</span>
+                          <span className="text-emerald-600 dark:text-emerald-440 font-black text-[8.5px] shrink-0">LUNAS ✓</span>
                         ) : (
-                          <span className="text-rose-600 dark:text-rose-455 font-black text-[8.5px]">BELUM</span>
+                          <span className="text-rose-600 dark:text-rose-450 font-black text-[8.5px] shrink-0">BELUM</span>
                         )}
                       </div>
                     </div>
@@ -1365,9 +1528,7 @@ export default function Dashboard({
               )}
             </div>
           </div>
-
         </div>
-
       </div>
 
       {/* Charts & Interactive Section */}

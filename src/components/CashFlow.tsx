@@ -528,49 +528,49 @@ export default function CashFlow({
       {/* KPI Cards Section */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Saldo Awal */}
-        <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-750/70 bg-white dark:bg-slate-800 relative overflow-hidden shadow-3xs">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Saldo Awal</span>
-          <h3 className="text-lg md:text-xl font-extrabold text-slate-700 dark:text-slate-300 mt-2">
+        <div className="p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-slate-750/70 bg-white dark:bg-slate-800 relative overflow-hidden shadow-3xs min-w-0">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 truncate block">Saldo Awal</span>
+          <h3 className="text-lg md:text-xl font-extrabold text-slate-700 dark:text-slate-300 mt-2 truncate" title={formatRupiah(financialSummary.saldoAwal)}>
             {formatRupiah(financialSummary.saldoAwal)}
           </h3>
-          <p className="text-[9.5px] font-semibold text-slate-400 dark:text-slate-500 mt-1">Saldo kumulatif sebelum periode ini</p>
-          <div className="absolute right-4 bottom-4 text-slate-200 dark:text-slate-700/50">
+          <p className="text-[9.5px] font-semibold text-slate-400 dark:text-slate-500 mt-1 truncate">Saldo kumulatif sebelum periode ini</p>
+          <div className="absolute right-4 bottom-4 text-slate-200 dark:text-slate-700/50 pointer-events-none">
             <Wallet className="h-6 w-6 stroke-[1.5]" />
           </div>
         </div>
 
         {/* Card 2: Total Uang Masuk */}
-        <div className="p-5 rounded-2xl border border-emerald-100 dark:border-emerald-950/40 bg-emerald-50/15 dark:bg-emerald-950/10 relative overflow-hidden shadow-3xs">
-          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">T. UANG MASUK (INFLOW)</span>
-          <h3 className="text-xl md:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2">
+        <div className="p-4 sm:p-5 rounded-2xl border border-emerald-100 dark:border-emerald-950/40 bg-emerald-50/15 dark:bg-emerald-950/10 relative overflow-hidden shadow-3xs min-w-0">
+          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 truncate block">T. UANG MASUK (INFLOW)</span>
+          <h3 className="text-xl md:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2 truncate" title={formatRupiah(financialSummary.totalMasuk)}>
             {formatRupiah(financialSummary.totalMasuk)}
           </h3>
-          <p className="text-[9.5px] font-semibold text-emerald-600/70 dark:text-emerald-500 mt-1">Selesai dihimpun selama periode</p>
-          <div className="absolute right-4 bottom-4 text-emerald-500/20">
+          <p className="text-[9.5px] font-semibold text-emerald-600/70 dark:text-emerald-500 mt-1 truncate">Selesai dihimpun selama periode</p>
+          <div className="absolute right-4 bottom-4 text-emerald-500/20 pointer-events-none">
             <ArrowDownLeft className="h-7 w-7" />
           </div>
         </div>
 
         {/* Card 3: Total Uang Keluar */}
-        <div className="p-5 rounded-2xl border border-rose-100 dark:border-rose-950/40 bg-rose-50/15 dark:bg-rose-950/10 relative overflow-hidden shadow-3xs">
-          <span className="text-[10px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400">T. UANG KELUAR (OUTFLOW)</span>
-          <h3 className="text-xl md:text-2xl font-black text-rose-600 dark:text-rose-400 mt-2">
+        <div className="p-4 sm:p-5 rounded-2xl border border-rose-100 dark:border-rose-950/40 bg-rose-50/15 dark:bg-rose-950/10 relative overflow-hidden shadow-3xs min-w-0">
+          <span className="text-[10px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400 truncate block">T. UANG KELUAR (OUTFLOW)</span>
+          <h3 className="text-xl md:text-2xl font-black text-rose-600 dark:text-rose-400 mt-2 truncate" title={formatRupiah(financialSummary.totalKeluar)}>
             {formatRupiah(financialSummary.totalKeluar)}
           </h3>
-          <p className="text-[9.5px] font-semibold text-rose-600/70 dark:text-rose-500 mt-1">Total pengeluaran & operasional</p>
-          <div className="absolute right-4 bottom-4 text-rose-500/20">
+          <p className="text-[9.5px] font-semibold text-rose-600/70 dark:text-rose-500 mt-1 truncate">Total pengeluaran & operasional</p>
+          <div className="absolute right-4 bottom-4 text-rose-500/20 pointer-events-none">
             <ArrowUpRight className="h-7 w-7" />
           </div>
         </div>
 
         {/* Card 4: Saldo Akhir */}
-        <div className="p-5 rounded-2xl border border-indigo-150 dark:border-indigo-950/50 bg-indigo-50/15 dark:bg-indigo-950/10 relative overflow-hidden shadow-3xs">
-          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">SALDO AKHIR</span>
-          <h3 className="text-xl md:text-2xl font-black text-indigo-650 dark:text-indigo-300 mt-2">
+        <div className="p-4 sm:p-5 rounded-2xl border border-indigo-150 dark:border-indigo-950/50 bg-indigo-50/15 dark:bg-indigo-950/10 relative overflow-hidden shadow-3xs min-w-0">
+          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 truncate block">SALDO AKHIR</span>
+          <h3 className="text-xl md:text-2xl font-black text-indigo-650 dark:text-indigo-300 mt-2 truncate" title={formatRupiah(financialSummary.saldoAkhir)}>
             {formatRupiah(financialSummary.saldoAkhir)}
           </h3>
-          <p className="text-[9.5px] font-semibold text-indigo-500 dark:text-indigo-500/90 mt-1">Sisa kas yang tersedia sekarang</p>
-          <div className="absolute right-4 bottom-4 text-indigo-500/20">
+          <p className="text-[9.5px] font-semibold text-indigo-500 dark:text-indigo-500/90 mt-1 truncate">Sisa kas yang tersedia sekarang</p>
+          <div className="absolute right-4 bottom-4 text-indigo-500/20 pointer-events-none">
             <DollarSign className="h-7 w-7" />
           </div>
         </div>
