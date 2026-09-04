@@ -326,19 +326,77 @@ export function VendorPayablesModal({
     }[category];
 
     const lines = activeOrders.map((o, idx) => {
-      const q = o.qty || 0;
-      let costDetail = '';
-      if (category === 'jahit') {
-        costDetail = `${q} Pcs @ ${formatRupiah(o.jahitPerPcs)} = ${formatRupiah(q * o.jahitPerPcs)}`;
-      } else if (category === 'sublim') {
-        costDetail = `${q} Pcs @ ${formatRupiah(o.printPerPcs)} = ${formatRupiah(q * o.printPerPcs)}`;
-      } else if (category === 'komisi') {
-        costDetail = `${q} Pcs @ ${formatRupiah(o.komisiPerPcs || 0)} = ${formatRupiah(q * (o.komisiPerPcs || 0))}`;
+      const poNum = idx + 1;
+      const orderItems = o.items && o.items.length > 0 ? o.items : [
+        {
+          namaProduk: o.namaProduk || 'Jersey Custom',
+          bahan: o.bahan || 'Polyester Dryfit',
+          modelKerah: o.modelKerah || 'O-Neck (Standar)',
+          qty: o.qty || 0,
+          jahitPerPcs: o.jahitPerPcs || 0,
+          printPerPcs: o.printPerPcs || 0,
+          komisiPerPcs: o.komisiPerPcs || 0,
+          catatanJahit: o.catatanJahit || '-'
+        }
+      ];
+
+      if (orderItems.length === 1) {
+        const item = orderItems[0];
+        const q = Number(item.qty) || 0;
+        const jahitCost = Number(item.jahitPerPcs ?? o.jahitPerPcs ?? 0);
+        const printCost = Number(item.printPerPcs ?? o.printPerPcs ?? 0);
+        const komisiCost = Number(item.komisiPerPcs ?? o.komisiPerPcs ?? 0);
+
+        let costDetail = '';
+        if (category === 'jahit') {
+          costDetail = `${q} Pcs @ ${formatRupiah(jahitCost)} = ${formatRupiah(q * jahitCost)}`;
+        } else if (category === 'sublim') {
+          costDetail = `${q} Pcs @ ${formatRupiah(printCost)} = ${formatRupiah(q * printCost)}`;
+        } else if (category === 'komisi') {
+          costDetail = `${q} Pcs @ ${formatRupiah(komisiCost)} = ${formatRupiah(q * komisiCost)}`;
+        } else {
+          const tot = (q * jahitCost) + (q * printCost) + (q * komisiCost);
+          costDetail = `${q} Pcs = Total ${formatRupiah(tot)}`;
+        }
+        const cleanProd = (item.namaProduk || 'Jersey Custom').replace(/\[Item\s*\d+\]:?\s*/gi, '').trim();
+        return `${poNum}. PO *${o.namaPo}* (#${o.id}) • Pemesan: ${o.namaPemesan}\n   Produk: ${cleanProd} (${item.bahan || o.bahan || '-'})\n   Rincian: ${costDetail}`;
       } else {
-        const tot = (q * o.jahitPerPcs) + (q * o.printPerPcs) + (q * (o.komisiPerPcs || 0));
-        costDetail = `${q} Pcs = Total ${formatRupiah(tot)}`;
+        // Multi-item grouped under 1 PO number
+        let poSubtotal = 0;
+        let poTotalQty = 0;
+
+        const itemLines = orderItems.map((item) => {
+          const q = Number(item.qty) || 0;
+          const jahitCost = Number(item.jahitPerPcs ?? o.jahitPerPcs ?? 0);
+          const printCost = Number(item.printPerPcs ?? o.printPerPcs ?? 0);
+          const komisiCost = Number(item.komisiPerPcs ?? o.komisiPerPcs ?? 0);
+
+          poTotalQty += q;
+          let costDetail = '';
+          if (category === 'jahit') {
+            const sub = q * jahitCost;
+            poSubtotal += sub;
+            costDetail = `${q} Pcs @ ${formatRupiah(jahitCost)} = ${formatRupiah(sub)}`;
+          } else if (category === 'sublim') {
+            const sub = q * printCost;
+            poSubtotal += sub;
+            costDetail = `${q} Pcs @ ${formatRupiah(printCost)} = ${formatRupiah(sub)}`;
+          } else if (category === 'komisi') {
+            const sub = q * komisiCost;
+            poSubtotal += sub;
+            costDetail = `${q} Pcs @ ${formatRupiah(komisiCost)} = ${formatRupiah(sub)}`;
+          } else {
+            const tot = (q * jahitCost) + (q * printCost) + (q * komisiCost);
+            poSubtotal += tot;
+            costDetail = `${q} Pcs = Total ${formatRupiah(tot)}`;
+          }
+
+          const cleanProd = (item.namaProduk || 'Jersey Custom').replace(/\[Item\s*\d+\]:?\s*/gi, '').trim();
+          return `   • ${cleanProd} (${item.bahan || '-'}): ${costDetail}`;
+        }).join('\n');
+
+        return `${poNum}. PO *${o.namaPo}* (#${o.id}) • Pemesan: ${o.namaPemesan}\n   [${orderItems.length} Item Produk - Total ${poTotalQty} Pcs - Subtotal: ${formatRupiah(poSubtotal)}]\n${itemLines}`;
       }
-      return `${idx + 1}. PO *${o.namaPo}* (#${o.id})\n   Produk: ${o.namaProduk} (${o.bahan})\n   Rincian: ${costDetail}`;
     }).join('\n\n');
 
     return `*${categoryTitle}*\n*${settings.namaToko || 'Nomaden Apparel'}*\nTanggal: ${new Date().toLocaleDateString('id-ID')}\n\n` +

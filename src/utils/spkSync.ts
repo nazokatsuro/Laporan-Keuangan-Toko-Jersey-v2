@@ -54,6 +54,7 @@ export function orderToSpkData(
       collarModel: order.spkData.collarModel || order.items?.[0]?.modelKerah || order.modelKerah || 'O-Neck (Standar)',
       collarCaption: order.spkData.collarCaption || order.spkData.collarModel || order.items?.[0]?.modelKerah || order.modelKerah || 'O-Neck (Standar)',
       collarImage: order.spkData.collarImage || order.fotoKerahUrl || DEFAULT_COLLAR_SVG,
+      vendorJahit: order.spkData.vendorJahit || order.vendorJahit || order.items?.[0]?.vendorJahit || '',
       companySettings: mergedCompany,
       updatedAt: order.spkData.updatedAt || new Date().toISOString()
     };
@@ -144,6 +145,8 @@ export function orderToSpkData(
     material: primaryBahan,
     sleeveModel: 'PENDEK',
     sewingModel: 'FULL STIK',
+    vendorJahit: order.vendorJahit || order.items?.[0]?.vendorJahit || '',
+    mitraJahit: order.vendorJahit || order.items?.[0]?.vendorJahit || '',
     status: spkStatus,
     productionDate: order.createdAt ? order.createdAt.substring(0, 10) : new Date().toISOString().substring(0, 10),
     deadline: order.deadline || new Date().toISOString().substring(0, 10),
@@ -234,6 +237,11 @@ export function syncSpkToOrder(spk: SPKData, order: Pesanan): Pesanan {
     bahan: spk.material || order.bahan,
     modelKerah: spk.collarModel || order.modelKerah,
     catatanJahit: spk.notes?.jahit || order.catatanJahit,
+    vendorJahit: spk.vendorJahit || spk.mitraJahit || order.vendorJahit,
+    items: order.items?.map(it => ({
+      ...it,
+      vendorJahit: it.vendorJahit || spk.vendorJahit || spk.mitraJahit || order.vendorJahit
+    })),
     keterangan: spk.notes?.mainNote || order.keterangan,
     detailSizeNama: detailSizeNama || order.detailSizeNama,
     statusProduksi: newStatusProduksi,

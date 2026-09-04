@@ -373,6 +373,12 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = ({
                       <span className="w-28 font-bold text-slate-600">BAHAN</span>
                       <span className="font-bold text-slate-900">: {material || 'WAFFLE'}</span>
                     </div>
+                    {(data.vendorJahit || data.mitraJahit) && (
+                      <div className="flex items-center">
+                        <span className="w-28 font-bold text-slate-600">MITRA JAHIT</span>
+                        <span className="font-black text-indigo-700">: {data.vendorJahit || data.mitraJahit}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Right Column */}

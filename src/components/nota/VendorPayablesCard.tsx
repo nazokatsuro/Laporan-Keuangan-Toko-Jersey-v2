@@ -48,11 +48,52 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
     },
     ref
   ) {
-    // Process items and calculate totals according to selected category
-    const rows = orders.flatMap((order, oIdx) => {
-      // If order has multi-items, decompose to sub-items, otherwise use order itself
+    // Process and group orders by PO
+    interface GroupedPayableItem {
+      itemId: string;
+      namaProduk: string;
+      bahan: string;
+      modelKerah: string;
+      catatanJahit: string;
+      keterangan: string;
+      qty: number;
+      jahitPerPcs: number;
+      printPerPcs: number;
+      komisiPerPcs: number;
+      totalJahit: number;
+      totalSublim: number;
+      totalKomisi: number;
+      vendorJahit: string;
+      vendorSublim: string;
+      penerimaKomisi: string;
+      isJahitLunas: boolean;
+      isSublimLunas: boolean;
+      isKomisiLunas: boolean;
+      totalBiaya: number;
+    }
+
+    interface GroupedPayableOrder {
+      orderId: string;
+      namaPo: string;
+      namaPemesan: string;
+      noTelepon: string;
+      deadline: string;
+      createdAt: string;
+      items: GroupedPayableItem[];
+      totalQty: number;
+      sumJahit: number;
+      sumSublim: number;
+      sumKomisi: number;
+      sumBiaya: number;
+    }
+
+    const groupedOrders: GroupedPayableOrder[] = [];
+
+    orders.forEach((order, oIdx) => {
+      let rawItems: GroupedPayableItem[] = [];
+
       if (order.items && order.items.length > 0) {
-        return order.items.map((item, iIdx) => {
+        rawItems = order.items.map((item, iIdx) => {
           const qty = Number(item.qty) || 0;
           const jahitPerPcs = Number(item.jahitPerPcs ?? order.jahitPerPcs ?? 0);
           const printPerPcs = Number(item.printPerPcs ?? order.printPerPcs ?? 0);
@@ -71,18 +112,12 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
           const isKomisiLunas = item.statusBayarKomisi === 'Lunas' || order.statusBayarKomisi === 'Lunas';
 
           return {
-            orderId: order.id,
             itemId: item.id || `item-${oIdx}-${iIdx}`,
-            namaPo: order.namaPo,
-            namaPemesan: order.namaPemesan,
-            noTelepon: order.noTelepon,
-            deadline: order.deadline,
-            createdAt: order.createdAt,
-            namaProduk: item.namaProduk || order.namaProduk || 'Jersey Custom',
+            namaProduk: (item.namaProduk || order.namaProduk || 'Jersey Custom').replace(/\[Item\s*\d+\]:?\s*/gi, '').trim(),
             bahan: item.bahan || order.bahan || 'Polyester Dryfit',
             modelKerah: item.modelKerah || order.modelKerah || 'O-Neck (Standar)',
-            catatanJahit: item.catatanJahit || order.catatanJahit || '-',
-            keterangan: item.keterangan || order.keterangan || '-',
+            catatanJahit: (item.catatanJahit || (order.items && order.items.length === 1 ? order.catatanJahit : '') || '-').replace(/\[Item\s*\d+\]:?\s*/gi, '').trim(),
+            keterangan: (item.keterangan || (order.items && order.items.length === 1 ? order.keterangan : '') || '-').replace(/\[Item\s*\d+\]:?\s*/gi, '').trim(),
             qty,
             jahitPerPcs,
             printPerPcs,
@@ -99,93 +134,110 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
             totalBiaya: totalJahit + totalSublim + totalKomisi
           };
         });
+      } else {
+        const qty = Number(order.qty) || 0;
+        const jahitPerPcs = Number(order.jahitPerPcs) || 0;
+        const printPerPcs = Number(order.printPerPcs) || 0;
+        const komisiPerPcs = Number(order.komisiPerPcs) || 0;
+
+        const totalJahit = qty * jahitPerPcs;
+        const totalSublim = qty * printPerPcs;
+        const totalKomisi = qty * komisiPerPcs;
+
+        const vendorJahit = order.vendorJahit || 'Penjahit / Konveksi';
+        const vendorSublim = order.vendorSublim || 'Vendor Print Sublim';
+        const penerimaKomisi = order.penerimaKomisi || 'Penerima Komisi';
+
+        const isJahitLunas = order.statusBayarJahit === 'Lunas';
+        const isSublimLunas = order.statusBayarSublim === 'Lunas';
+        const isKomisiLunas = order.statusBayarKomisi === 'Lunas';
+
+        rawItems = [{
+          itemId: `order-${order.id}`,
+          namaProduk: (order.namaProduk || 'Jersey Custom').replace(/\[Item\s*\d+\]:?\s*/gi, '').trim(),
+          bahan: order.bahan || 'Polyester Dryfit',
+          modelKerah: order.modelKerah || 'O-Neck (Standar)',
+          catatanJahit: (order.catatanJahit || '-').replace(/\[Item\s*\d+\]:?\s*/gi, '').trim(),
+          keterangan: (order.keterangan || '-').replace(/\[Item\s*\d+\]:?\s*/gi, '').trim(),
+          qty,
+          jahitPerPcs,
+          printPerPcs,
+          komisiPerPcs,
+          totalJahit,
+          totalSublim,
+          totalKomisi,
+          vendorJahit,
+          vendorSublim,
+          penerimaKomisi,
+          isJahitLunas,
+          isSublimLunas,
+          isKomisiLunas,
+          totalBiaya: totalJahit + totalSublim + totalKomisi
+        }];
       }
 
-      const qty = Number(order.qty) || 0;
-      const jahitPerPcs = Number(order.jahitPerPcs) || 0;
-      const printPerPcs = Number(order.printPerPcs) || 0;
-      const komisiPerPcs = Number(order.komisiPerPcs) || 0;
+      // Filter matching items per category
+      const matchingItems = rawItems.filter(row => {
+        if (category === 'jahit') {
+          if (row.isJahitLunas) return false;
+          if (row.totalJahit <= 0) return false;
+          if (vendorNameFilter && !row.vendorJahit.toLowerCase().includes(vendorNameFilter.toLowerCase())) {
+            return false;
+          }
+          return true;
+        }
+        if (category === 'sublim') {
+          if (row.isSublimLunas) return false;
+          if (row.totalSublim <= 0) return false;
+          if (vendorNameFilter && !row.vendorSublim.toLowerCase().includes(vendorNameFilter.toLowerCase())) {
+            return false;
+          }
+          return true;
+        }
+        if (category === 'komisi') {
+          if (row.isKomisiLunas) return false;
+          if (row.totalKomisi <= 0) return false;
+          if (vendorNameFilter && !row.penerimaKomisi.toLowerCase().includes(vendorNameFilter.toLowerCase())) {
+            return false;
+          }
+          return true;
+        }
+        // 'semua'
+        const hasUnpaid = (!row.isJahitLunas && row.totalJahit > 0) ||
+                          (!row.isSublimLunas && row.totalSublim > 0) ||
+                          (!row.isKomisiLunas && row.totalKomisi > 0);
+        return hasUnpaid;
+      });
 
-      const totalJahit = qty * jahitPerPcs;
-      const totalSublim = qty * printPerPcs;
-      const totalKomisi = qty * komisiPerPcs;
+      if (matchingItems.length > 0) {
+        const totalQty = matchingItems.reduce((sum, it) => sum + it.qty, 0);
+        const sumJahit = matchingItems.reduce((sum, it) => sum + (it.isJahitLunas ? 0 : it.totalJahit), 0);
+        const sumSublim = matchingItems.reduce((sum, it) => sum + (it.isSublimLunas ? 0 : it.totalSublim), 0);
+        const sumKomisi = matchingItems.reduce((sum, it) => sum + (it.isKomisiLunas ? 0 : it.totalKomisi), 0);
+        const sumBiaya = sumJahit + sumSublim + sumKomisi;
 
-      const vendorJahit = order.vendorJahit || 'Penjahit / Konveksi';
-      const vendorSublim = order.vendorSublim || 'Vendor Print Sublim';
-      const penerimaKomisi = order.penerimaKomisi || 'Penerima Komisi';
-
-      const isJahitLunas = order.statusBayarJahit === 'Lunas';
-      const isSublimLunas = order.statusBayarSublim === 'Lunas';
-      const isKomisiLunas = order.statusBayarKomisi === 'Lunas';
-
-      return [{
-        orderId: order.id,
-        itemId: `order-${order.id}`,
-        namaPo: order.namaPo,
-        namaPemesan: order.namaPemesan,
-        noTelepon: order.noTelepon,
-        deadline: order.deadline,
-        createdAt: order.createdAt,
-        namaProduk: order.namaProduk || 'Jersey Custom',
-        bahan: order.bahan || 'Polyester Dryfit',
-        modelKerah: order.modelKerah || 'O-Neck (Standar)',
-        catatanJahit: order.catatanJahit || '-',
-        keterangan: order.keterangan || '-',
-        qty,
-        jahitPerPcs,
-        printPerPcs,
-        komisiPerPcs,
-        totalJahit,
-        totalSublim,
-        totalKomisi,
-        vendorJahit,
-        vendorSublim,
-        penerimaKomisi,
-        isJahitLunas,
-        isSublimLunas,
-        isKomisiLunas,
-        totalBiaya: totalJahit + totalSublim + totalKomisi
-      }];
+        groupedOrders.push({
+          orderId: order.id,
+          namaPo: order.namaPo,
+          namaPemesan: order.namaPemesan,
+          noTelepon: order.noTelepon,
+          deadline: order.deadline,
+          createdAt: order.createdAt,
+          items: matchingItems,
+          totalQty,
+          sumJahit,
+          sumSublim,
+          sumKomisi,
+          sumBiaya
+        });
+      }
     });
 
-    // Filter by category and vendor if supplied
-    const filteredRows = rows.filter(row => {
-      if (category === 'jahit') {
-        if (row.isJahitLunas) return false;
-        if (row.totalJahit <= 0) return false;
-        if (vendorNameFilter && !row.vendorJahit.toLowerCase().includes(vendorNameFilter.toLowerCase())) {
-          return false;
-        }
-        return true;
-      }
-      if (category === 'sublim') {
-        if (row.isSublimLunas) return false;
-        if (row.totalSublim <= 0) return false;
-        if (vendorNameFilter && !row.vendorSublim.toLowerCase().includes(vendorNameFilter.toLowerCase())) {
-          return false;
-        }
-        return true;
-      }
-      if (category === 'komisi') {
-        if (row.isKomisiLunas) return false;
-        if (row.totalKomisi <= 0) return false;
-        if (vendorNameFilter && !row.penerimaKomisi.toLowerCase().includes(vendorNameFilter.toLowerCase())) {
-          return false;
-        }
-        return true;
-      }
-      // 'semua'
-      const hasUnpaid = (!row.isJahitLunas && row.totalJahit > 0) ||
-                        (!row.isSublimLunas && row.totalSublim > 0) ||
-                        (!row.isKomisiLunas && row.totalKomisi > 0);
-      return hasUnpaid;
-    });
-
-    // Aggregates for filtered rows
-    const totalPcs = filteredRows.reduce((sum, r) => sum + r.qty, 0);
-    const sumJahit = filteredRows.reduce((sum, r) => sum + (r.isJahitLunas ? 0 : r.totalJahit), 0);
-    const sumSublim = filteredRows.reduce((sum, r) => sum + (r.isSublimLunas ? 0 : r.totalSublim), 0);
-    const sumKomisi = filteredRows.reduce((sum, r) => sum + (r.isKomisiLunas ? 0 : r.totalKomisi), 0);
+    // Aggregates for grouped rows
+    const totalPcs = groupedOrders.reduce((sum, g) => sum + g.totalQty, 0);
+    const sumJahit = groupedOrders.reduce((sum, g) => sum + g.sumJahit, 0);
+    const sumSublim = groupedOrders.reduce((sum, g) => sum + g.sumSublim, 0);
+    const sumKomisi = groupedOrders.reduce((sum, g) => sum + g.sumKomisi, 0);
 
     const grandTotal = category === 'jahit'
       ? sumJahit
@@ -377,113 +429,160 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 font-medium">
-              {filteredRows.length > 0 ? (
-                filteredRows.map((row, idx) => (
-                  <tr key={`${row.orderId}-${row.itemId}-${idx}`} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-2.5 px-2.5 text-center font-bold text-slate-500 border-r border-slate-200">
-                      {idx + 1}
-                    </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 break-words">
-                      <p className="font-extrabold text-slate-900 text-[11.5px] leading-tight">
-                        {row.namaPo}
-                      </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        #{row.orderId} • {row.namaPemesan}
-                      </p>
-                      <p className="text-[9.5px] text-slate-400">
-                        Deadline: {row.deadline}
-                      </p>
-                    </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 break-words">
-                      <p className="font-bold text-slate-800 text-[11px]">
-                        {row.namaProduk}
-                      </p>
-                      <p className="text-[10px] text-slate-500">
-                        Bahan: <span className="font-semibold text-slate-700">{row.bahan}</span>
-                      </p>
-                      <p className="text-[10px] text-slate-500">
-                        Kerah: <span className="font-semibold text-slate-700">{row.modelKerah}</span>
-                      </p>
-                    </td>
-                    <td className="py-2.5 px-2.5 text-center font-black text-slate-900 border-r border-slate-200">
-                      {row.qty} <span className="text-[9px] font-normal text-slate-500">Pcs</span>
-                    </td>
+              {groupedOrders.length > 0 ? (
+                groupedOrders.map((group, poIdx) => {
+                  const itemCount = group.items.length;
+                  const poNumber = poIdx + 1;
 
-                    {category === 'jahit' && (
-                      <>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
-                          {formatRupiah(row.jahitPerPcs)}
-                        </td>
-                        <td className="py-2.5 px-3 border-r border-slate-200 text-[10.5px]">
-                          <p className="font-medium text-slate-700">
-                            {row.catatanJahit && row.catatanJahit !== '-' ? row.catatanJahit : `Kerah ${row.modelKerah}`}
-                          </p>
-                          <p className="text-[9.5px] text-slate-400 mt-0.5">
-                            Mitra: {row.vendorJahit}
-                          </p>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-black text-amber-950 bg-amber-50/40">
-                          {formatRupiah(row.totalJahit)}
-                        </td>
-                      </>
-                    )}
+                  return (
+                    <React.Fragment key={group.orderId}>
+                      {group.items.map((item, itemIdx) => {
+                        const isFirstItem = itemIdx === 0;
+                        const isLastItem = itemIdx === itemCount - 1;
 
-                    {category === 'sublim' && (
-                      <>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
-                          {formatRupiah(row.printPerPcs)}
-                        </td>
-                        <td className="py-2.5 px-3 border-r border-slate-200 text-[10.5px]">
-                          <p className="font-medium text-slate-700">
-                            {row.bahan}
-                          </p>
-                          <p className="text-[9.5px] text-slate-400 mt-0.5">
-                            Vendor: {row.vendorSublim}
-                          </p>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-black text-sky-950 bg-sky-50/40">
-                          {formatRupiah(row.totalSublim)}
-                        </td>
-                      </>
-                    )}
+                        return (
+                          <tr 
+                            key={`${group.orderId}-${item.itemId}-${itemIdx}`} 
+                            className={`hover:bg-slate-50/70 transition-colors ${
+                              isLastItem ? 'border-b-2 border-slate-300' : 'border-b border-slate-100'
+                            }`}
+                          >
+                            {/* Column 1: No PO (Rowspanned per PO) */}
+                            {isFirstItem && (
+                              <td 
+                                rowSpan={itemCount} 
+                                className="py-2.5 px-2.5 text-center font-black text-slate-900 border-r border-slate-200 bg-slate-50/40 align-top text-sm"
+                              >
+                                {poNumber}
+                              </td>
+                            )}
 
-                    {category === 'komisi' && (
-                      <>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
-                          {formatRupiah(row.komisiPerPcs)}
-                        </td>
-                        <td className="py-2.5 px-3 border-r border-slate-200 text-[10.5px]">
-                          <p className="font-bold text-emerald-900">
-                            {row.penerimaKomisi}
-                          </p>
-                          <p className="text-[9.5px] text-slate-400 mt-0.5">
-                            Mitra Marketing / Desainer
-                          </p>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-black text-emerald-950 bg-emerald-50/40">
-                          {formatRupiah(row.totalKomisi)}
-                        </td>
-                      </>
-                    )}
+                            {/* Column 2: Nama PO / Pemesan (Rowspanned per PO) */}
+                            {isFirstItem && (
+                              <td 
+                                rowSpan={itemCount} 
+                                className="py-2.5 px-3 border-r border-slate-200 break-words bg-slate-50/30 align-top"
+                              >
+                                <p className="font-extrabold text-slate-950 text-[12px] leading-tight">
+                                  {group.namaPo}
+                                </p>
+                                <p className="text-[10px] text-slate-600 font-medium mt-0.5">
+                                  #{group.orderId} • {group.namaPemesan}
+                                </p>
+                                <p className="text-[9.5px] text-slate-500 mt-0.5">
+                                  Deadline: <span className="font-semibold text-rose-600">{group.deadline}</span>
+                                </p>
+                                {itemCount > 1 && (
+                                  <div className="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-[9px] font-bold">
+                                    <span>{itemCount} Produk</span>
+                                    <span>•</span>
+                                    <span>{group.totalQty} Pcs</span>
+                                  </div>
+                                )}
+                              </td>
+                            )}
 
-                    {category === 'semua' && (
-                      <>
-                        <td className="py-2.5 px-2.5 text-right font-mono text-slate-700 border-r border-slate-200">
-                          {formatRupiah(row.totalJahit)}
-                        </td>
-                        <td className="py-2.5 px-2.5 text-right font-mono text-slate-700 border-r border-slate-200">
-                          {formatRupiah(row.totalSublim)}
-                        </td>
-                        <td className="py-2.5 px-2.5 text-right font-mono text-slate-700 border-r border-slate-200">
-                          {formatRupiah(row.totalKomisi)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-black text-indigo-950 bg-indigo-50/40">
-                          {formatRupiah(row.totalBiaya)}
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))
+                            {/* Column 3: Rincian Item Produk */}
+                            <td className="py-2 px-3 border-r border-slate-200 break-words">
+                              <p className="font-bold text-slate-900 text-[11px] flex items-center gap-1.5">
+                                {itemCount > 1 && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block shrink-0"></span>
+                                )}
+                                {item.namaProduk}
+                              </p>
+                              <p className="text-[10px] text-slate-500 mt-0.5">
+                                Bahan: <span className="font-semibold text-slate-700">{item.bahan}</span>
+                              </p>
+                              <p className="text-[10px] text-slate-500">
+                                Kerah: <span className="font-semibold text-slate-700">{item.modelKerah}</span>
+                              </p>
+                            </td>
+
+                            {/* Column 4: Qty */}
+                            <td className="py-2 px-2.5 text-center font-black text-slate-900 border-r border-slate-200">
+                              {item.qty} <span className="text-[9px] font-normal text-slate-500">Pcs</span>
+                            </td>
+
+                            {/* Category Specific Columns */}
+                            {category === 'jahit' && (
+                              <>
+                                <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
+                                  {formatRupiah(item.jahitPerPcs)}
+                                </td>
+                                <td className="py-2 px-3 border-r border-slate-200 text-[10.5px]">
+                                  <p className="font-medium text-slate-700">
+                                    {item.catatanJahit && item.catatanJahit !== '-' ? item.catatanJahit : `Kerah ${item.modelKerah}`}
+                                  </p>
+                                  <p className="text-[9.5px] text-slate-500 mt-0.5 font-medium">
+                                    Mitra: <span className="font-bold text-slate-700">{item.vendorJahit}</span>
+                                  </p>
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono font-black text-amber-950 bg-amber-50/40">
+                                  {formatRupiah(item.totalJahit)}
+                                </td>
+                              </>
+                            )}
+
+                            {category === 'sublim' && (
+                              <>
+                                <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
+                                  {formatRupiah(item.printPerPcs)}
+                                </td>
+                                <td className="py-2 px-3 border-r border-slate-200 text-[10.5px]">
+                                  <p className="font-medium text-slate-700">
+                                    {item.bahan}
+                                  </p>
+                                  <p className="text-[9.5px] text-slate-500 mt-0.5 font-medium">
+                                    Vendor: <span className="font-bold text-slate-700">{item.vendorSublim}</span>
+                                  </p>
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono font-black text-sky-950 bg-sky-50/40">
+                                  {formatRupiah(item.totalSublim)}
+                                </td>
+                              </>
+                            )}
+
+                            {category === 'komisi' && (
+                              <>
+                                <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
+                                  {formatRupiah(item.komisiPerPcs)}
+                                </td>
+                                <td className="py-2 px-3 border-r border-slate-200 text-[10.5px]">
+                                  <p className="font-bold text-emerald-900">
+                                    {item.penerimaKomisi}
+                                  </p>
+                                  <p className="text-[9.5px] text-slate-400 mt-0.5">
+                                    Broker
+                                  </p>
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono font-black text-emerald-950 bg-emerald-50/40">
+                                  {formatRupiah(item.totalKomisi)}
+                                </td>
+                              </>
+                            )}
+
+                            {category === 'semua' && (
+                              <>
+                                <td className="py-2 px-2.5 text-right font-mono text-slate-700 border-r border-slate-200">
+                                  {formatRupiah(item.totalJahit)}
+                                </td>
+                                <td className="py-2 px-2.5 text-right font-mono text-slate-700 border-r border-slate-200">
+                                  {formatRupiah(item.totalSublim)}
+                                </td>
+                                <td className="py-2 px-2.5 text-right font-mono text-slate-700 border-r border-slate-200">
+                                  {formatRupiah(item.totalKomisi)}
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono font-black text-indigo-950 bg-indigo-50/40">
+                                  {formatRupiah(item.totalBiaya)}
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan={category === 'semua' ? 8 : 7} className="py-8 text-center text-slate-400 italic">
@@ -505,7 +604,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                 {category === 'jahit' && (
                   <>
                     <td colSpan={2} className="py-2.5 px-3 text-right uppercase text-[10px] text-slate-500 border-r border-slate-200">
-                      Total Ongkos Jahit ({filteredRows.length} PO):
+                      Total Ongkos Jahit ({groupedOrders.length} PO):
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono font-black text-sm text-amber-950 bg-amber-100/80">
                       {formatRupiah(sumJahit)}
@@ -516,7 +615,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                 {category === 'sublim' && (
                   <>
                     <td colSpan={2} className="py-2.5 px-3 text-right uppercase text-[10px] text-slate-500 border-r border-slate-200">
-                      Total Ongkos Sublim ({filteredRows.length} PO):
+                      Total Ongkos Sublim ({groupedOrders.length} PO):
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono font-black text-sm text-sky-950 bg-sky-100/80">
                       {formatRupiah(sumSublim)}
@@ -527,7 +626,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                 {category === 'komisi' && (
                   <>
                     <td colSpan={2} className="py-2.5 px-3 text-right uppercase text-[10px] text-slate-500 border-r border-slate-200">
-                      Total Komisi ({filteredRows.length} PO):
+                      Total Komisi ({groupedOrders.length} PO):
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono font-black text-sm text-emerald-950 bg-emerald-100/80">
                       {formatRupiah(sumKomisi)}

@@ -85,6 +85,8 @@ export interface SPKData {
   material: string; // e.g. "WAFFLE"
   sleeveModel: string; // e.g. "PENDEK"
   sewingModel: string; // e.g. "FULL STIK"
+  vendorJahit?: string; // e.g. "Konveksi Mas Joko"
+  mitraJahit?: string; // alias for vendorJahit
   status: SPKStatus;
   productionStatus?: string; // "Setting" | "Print Press" | "Jahit" | "Tinggal Kirim" | "Beres"
   productionDate: string; // e.g. "2026-08-28" or "-"

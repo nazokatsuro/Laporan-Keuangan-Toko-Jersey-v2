@@ -109,6 +109,8 @@ export interface ShopSettings {
   cashFlowList?: CashFlowTransaction[];
   dismissedAuditorAlerts?: AuditorDismissedAlert[];
   customCollars?: string[];
+  mitraJahitList?: string[];
+  customVendors?: string[];
   alamatToko?: string;
   noWaToko?: string;
   igToko?: string;

@@ -122,6 +122,12 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
   // Commission fields
   const [penerimaKomisi, setPenerimaKomisi] = useState('');
   const [komisiPerPcs, setKomisiPerPcs] = useState(0);
+
+  // Vendor / Mitra Jahit & Sublim fields
+  const [vendorJahit, setVendorJahit] = useState('');
+  const [vendorSublim, setVendorSublim] = useState('');
+  const [statusBayarJahit, setStatusBayarJahit] = useState<'Belum Lunas' | 'Lunas'>('Belum Lunas');
+  const [statusBayarSublim, setStatusBayarSublim] = useState<'Belum Lunas' | 'Lunas'>('Belum Lunas');
   
   // Date selection states
   const [dateMode, setDateMode] = useState<'today' | 'manual'>('today');
@@ -161,6 +167,14 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
     return [...BASELINE_COLLARS, ...uniqueCustom];
   }, [settings?.customCollars]);
 
+  // Memoized lists of mitra jahit combining baseline and custom ones
+  const availableMitraJahit = useMemo(() => {
+    const defaultList = ['Konveksi Mandiri', 'Jahit Express', 'Mitra Jahit Berkah', 'Penjahit Mas Joko', 'Konveksi Juara'];
+    const customList = settings?.mitraJahitList || [];
+    const combined = Array.from(new Set([...customList.filter(Boolean), ...defaultList]));
+    return combined;
+  }, [settings?.mitraJahitList]);
+
   // Load existing pesanan details if editing
   useEffect(() => {
     if (pesananToEdit) {
@@ -169,6 +183,12 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setNoTelepon(pesananToEdit.noTelepon);
       setNamaPo(pesananToEdit.namaPo);
       
+      // Mitra Jahit & Vendor Sublim
+      setVendorJahit(pesananToEdit.vendorJahit || pesananToEdit.items?.[0]?.vendorJahit || '');
+      setVendorSublim(pesananToEdit.vendorSublim || pesananToEdit.items?.[0]?.vendorSublim || '');
+      setStatusBayarJahit(pesananToEdit.statusBayarJahit || 'Belum Lunas');
+      setStatusBayarSublim(pesananToEdit.statusBayarSublim || 'Belum Lunas');
+
       if (pesananToEdit.pembayaranList && pesananToEdit.pembayaranList.length > 0) {
         setPembayaranList(pesananToEdit.pembayaranList);
       } else {
@@ -210,6 +230,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
         setItems(pesananToEdit.items.map(it => ({
           ...it,
           catatanJahit: it.catatanJahit || '',
+          vendorJahit: it.vendorJahit || pesananToEdit.vendorJahit || '',
+          vendorSublim: it.vendorSublim || pesananToEdit.vendorSublim || '',
           modelKerah: getCanonicalCollar(it.modelKerah || pesananToEdit.modelKerah)
         })));
       } else {
@@ -221,6 +243,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
             bahan: pesananToEdit.bahan || 'Dryfit Jarum',
             keterangan: pesananToEdit.keterangan || '',
             catatanJahit: pesananToEdit.catatanJahit || '',
+            vendorJahit: pesananToEdit.vendorJahit || '',
+            vendorSublim: pesananToEdit.vendorSublim || '',
             qty: pesananToEdit.qty || 12,
             hargaPerPcs: pesananToEdit.hargaPerPcs || 110000,
             printPerPcs: pesananToEdit.printPerPcs ?? 35000,
@@ -239,6 +263,10 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setNamaPemesan('');
       setNoTelepon('');
       setNamaPo('');
+      setVendorJahit('');
+      setVendorSublim('');
+      setStatusBayarJahit('Belum Lunas');
+      setStatusBayarSublim('Belum Lunas');
       setPembayaranList([
         {
           id: `pm-new-${Date.now()}`,
@@ -264,6 +292,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
           bahan: 'Dryfit Jarum',
           keterangan: '',
           catatanJahit: '',
+          vendorJahit: '',
+          vendorSublim: '',
           qty: 12,
           hargaPerPcs: 110000,
           printPerPcs: 35000,
@@ -292,6 +322,8 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
         bahan: 'Dryfit Jarum',
         keterangan: '',
         catatanJahit: '',
+        vendorJahit: vendorJahit || '',
+        vendorSublim: vendorSublim || '',
         qty: 12,
         hargaPerPcs: 110000,
         printPerPcs: 35000,
@@ -299,6 +331,11 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
         modelKerah: 'O-Neck (Standar)',
       }
     ]);
+  };
+
+  const applyVendorJahitToAll = (vName: string) => {
+    setVendorJahit(vName);
+    setItems(prev => prev.map(it => ({ ...it, vendorJahit: vName })));
   };
 
   const removeItem = (index: number) => {
@@ -395,11 +432,11 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
 
     const summaryKeterangan = items.length === 1 
       ? items[0].keterangan 
-      : items.map((item, idx) => `[Item ${idx + 1}] ${item.namaProduk}: ${item.keterangan || '-'}`).join('; ');
+      : items.map(item => item.keterangan ? `${item.namaProduk}: ${item.keterangan}` : '').filter(Boolean).join('; ');
 
     const summaryCatatanJahit = items.length === 1
       ? (items[0].catatanJahit || '')
-      : items.map((item, idx) => item.catatanJahit ? `[Item ${idx + 1}] ${item.namaProduk}: ${item.catatanJahit}` : '').filter(Boolean).join('; ');
+      : items.map(item => item.catatanJahit ? `${item.namaProduk}: ${item.catatanJahit}` : '').filter(Boolean).join('; ');
 
     const summaryModelKerah = items.length === 1
       ? (items[0].modelKerah || 'O-Neck (Standar)')
@@ -458,7 +495,15 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       profit,
       penerimaKomisi: penerimaKomisi.trim(),
       komisiPerPcs: Number(komisiPerPcs) || 0,
-      items,
+      vendorJahit: vendorJahit.trim() || items[0]?.vendorJahit?.trim() || '',
+      vendorSublim: vendorSublim.trim() || items[0]?.vendorSublim?.trim() || '',
+      statusBayarJahit,
+      statusBayarSublim,
+      items: items.map(it => ({
+        ...it,
+        vendorJahit: it.vendorJahit?.trim() || vendorJahit.trim() || '',
+        vendorSublim: it.vendorSublim?.trim() || vendorSublim.trim() || ''
+      })),
       mockupUrl,
       fotoKerahUrl,
       pembayaranList,
@@ -466,7 +511,7 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       detailSizeNamaGambarUrl
     };
 
-    // Automatically register any newly entered custom collar models in the shop settings for next transactions
+    // Automatically register any newly entered custom collar models or mitra jahit in the shop settings for next transactions
     if (onUpdateSettings && settings) {
       const existingCustom = settings.customCollars || [];
       const newCustomsToRegister: string[] = [];
@@ -483,11 +528,25 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
           }
         }
       });
+
+      // Check new Mitra Jahit to register
+      const existingMitra = settings.mitraJahitList || [];
+      const newMitraToRegister: string[] = [];
+      const candidateMitras = [vendorJahit.trim(), ...items.map(it => (it.vendorJahit || '').trim())].filter(Boolean);
       
-      if (newCustomsToRegister.length > 0) {
+      candidateMitras.forEach(m => {
+        const isInExisting = existingMitra.some(em => em.toLowerCase() === m.toLowerCase());
+        const isInWorking = newMitraToRegister.some(nm => nm.toLowerCase() === m.toLowerCase());
+        if (!isInExisting && !isInWorking) {
+          newMitraToRegister.push(m);
+        }
+      });
+      
+      if (newCustomsToRegister.length > 0 || newMitraToRegister.length > 0) {
         onUpdateSettings({
           ...settings,
-          customCollars: [...existingCustom, ...newCustomsToRegister]
+          ...(newCustomsToRegister.length > 0 ? { customCollars: [...existingCustom, ...newCustomsToRegister] } : {}),
+          ...(newMitraToRegister.length > 0 ? { mitraJahitList: [...existingMitra, ...newMitraToRegister] } : {})
         });
       }
     }
@@ -856,6 +915,36 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                   </div>
                 </div>
 
+                {/* Mitra Jahit for this item */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-1">
+                  <div className="flex-1 w-full flex items-center gap-2">
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider shrink-0">
+                      Mitra Jahit Item:
+                    </label>
+                    <input
+                      type="text"
+                      list="mitra-jahit-list"
+                      placeholder="E.g. Konveksi Mandiri, Mas Joko..."
+                      value={item.vendorJahit || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateItemField(index, 'vendorJahit', val);
+                        if (!vendorJahit) setVendorJahit(val);
+                      }}
+                      className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                  {items.length > 1 && item.vendorJahit && (
+                    <button
+                      type="button"
+                      onClick={() => applyVendorJahitToAll(item.vendorJahit || '')}
+                      className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+                    >
+                      Samakan ke semua item
+                    </button>
+                  )}
+                </div>
+
                 {/* Subtotal of this jersey line */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80 text-[11px] text-slate-500 mt-1 gap-1.5">
                   <p>
@@ -1026,6 +1115,133 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                     {sisaTagihan > 0 ? formatRupiah(sisaTagihan) : 'Lunas ✓'}
                   </span>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sub-section: Rekanan Mitra Jahit & Vendor Produksi */}
+          <div className="border-t border-slate-100 dark:border-slate-700/60 pt-4 mt-2">
+            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center justify-between uppercase tracking-wider">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-3 bg-amber-500 rounded-xs block"></span>
+                Rekanan Mitra Jahit & Vendor Produksi
+              </span>
+              {vendorJahit && (
+                <button
+                  type="button"
+                  onClick={() => applyVendorJahitToAll(vendorJahit)}
+                  className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline capitalize"
+                >
+                  Terapkan "{vendorJahit}" ke semua item produk
+                </button>
+              )}
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Mitra Jahit */}
+              <div className="space-y-2 bg-amber-50/20 dark:bg-amber-950/10 p-3.5 rounded-xl border border-amber-100/50 dark:border-amber-900/30">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    Nama Mitra Jahit / Penjahit
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] text-slate-400">Status Bayar:</span>
+                    <div className="inline-flex rounded-lg p-0.5 bg-slate-200/70 dark:bg-slate-700 text-[9px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setStatusBayarJahit('Belum Lunas')}
+                        className={`px-2 py-0.5 rounded-md transition ${statusBayarJahit === 'Belum Lunas' ? 'bg-amber-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}`}
+                      >
+                        Belum Lunas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatusBayarJahit('Lunas')}
+                        className={`px-2 py-0.5 rounded-md transition ${statusBayarJahit === 'Lunas' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}`}
+                      >
+                        Lunas ✓
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <input
+                  type="text"
+                  list="mitra-jahit-list"
+                  placeholder="Ketik atau pilih mitra jahit (Contoh: Konveksi Mandiri, Mas Joko)..."
+                  value={vendorJahit}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setVendorJahit(val);
+                  }}
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500 font-semibold"
+                />
+
+                {/* Quick Selection Pills */}
+                {availableMitraJahit.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <span className="text-[9px] text-slate-400 self-center">Pilihan Cepat:</span>
+                    {availableMitraJahit.slice(0, 5).map((mitra) => (
+                      <button
+                        key={mitra}
+                        type="button"
+                        onClick={() => {
+                          setVendorJahit(mitra);
+                          if (items.some(it => !it.vendorJahit)) {
+                            applyVendorJahitToAll(mitra);
+                          }
+                        }}
+                        className={`text-[9px] px-2 py-0.5 rounded-full border transition ${
+                          vendorJahit.toLowerCase() === mitra.toLowerCase()
+                            ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/50 dark:text-amber-200 dark:border-amber-700 font-bold'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-amber-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                        }`}
+                      >
+                        {mitra}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Vendor Sublim / Print */}
+              <div className="space-y-2 bg-indigo-50/20 dark:bg-indigo-950/10 p-3.5 rounded-xl border border-indigo-100/50 dark:border-indigo-900/30">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    Vendor Print Sublim (Opsional)
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] text-slate-400">Status Bayar:</span>
+                    <div className="inline-flex rounded-lg p-0.5 bg-slate-200/70 dark:bg-slate-700 text-[9px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setStatusBayarSublim('Belum Lunas')}
+                        className={`px-2 py-0.5 rounded-md transition ${statusBayarSublim === 'Belum Lunas' ? 'bg-indigo-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}`}
+                      >
+                        Belum Lunas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStatusBayarSublim('Lunas')}
+                        className={`px-2 py-0.5 rounded-md transition ${statusBayarSublim === 'Lunas' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}`}
+                      >
+                        Lunas ✓
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="Nama vendor sublim / tempat cetak kain..."
+                  value={vendorSublim}
+                  onChange={(e) => setVendorSublim(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                />
+
+                <p className="text-[9px] text-slate-400 leading-tight pt-1">
+                  Pencatatan mitra jahit dan vendor sublim ini akan langsung terhubung ke SPK Kerja, Rekap Hutang Vendor, dan Laporan Ongkos Jahit.
+                </p>
               </div>
             </div>
           </div>
@@ -1579,6 +1795,13 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
             {pesananToEdit ? 'Simpan Perubahan PO' : 'Catat Pesanan Jersey (PO)'}
           </button>
         </div>
+
+        {/* Global Datalist for Mitra Jahit Suggestions */}
+        <datalist id="mitra-jahit-list">
+          {availableMitraJahit.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
 
       </form>
     </div>
