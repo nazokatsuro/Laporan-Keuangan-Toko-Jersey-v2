@@ -28,15 +28,44 @@ let isSigningIn = false;
 let cachedAccessToken: string | null = null;
 let cachedUserProfile: any = null;
 
-// Immediately clear all tokens on module evaluation to enforce "refresh auto logout"
 if (typeof window !== 'undefined') {
-  localStorage.removeItem('gdrive_access_token');
-  localStorage.removeItem('gdrive_user_profile');
-  signOut(auth).catch(err => console.debug('Initial signout:', err));
+  const tokenTimestampStr = localStorage.getItem('gdrive_token_timestamp');
+  const storedToken = localStorage.getItem('gdrive_access_token');
+  if (storedToken && tokenTimestampStr) {
+    const tokenTimestamp = parseInt(tokenTimestampStr, 10);
+    // Google OAuth access tokens expire after 3600 seconds. If older than 55 minutes, treat as expired.
+    if (Date.now() - tokenTimestamp > 55 * 60 * 1000) {
+      localStorage.removeItem('gdrive_access_token');
+      localStorage.removeItem('gdrive_token_timestamp');
+      cachedAccessToken = null;
+    } else {
+      cachedAccessToken = storedToken;
+    }
+  } else {
+    cachedAccessToken = storedToken;
+  }
+
+  const storedProfile = localStorage.getItem('gdrive_user_profile');
+  if (storedProfile) {
+    try {
+      cachedUserProfile = JSON.parse(storedProfile);
+    } catch (e) {
+      cachedUserProfile = null;
+    }
+  }
 }
 
 // Track listener callbacks
 const authCallbacks = new Set<(user: User | null, token: string | null) => void>();
+
+export const clearExpiredToken = () => {
+  cachedAccessToken = null;
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('gdrive_access_token');
+    localStorage.removeItem('gdrive_token_timestamp');
+  }
+  authCallbacks.forEach(cb => cb(auth.currentUser || cachedUserProfile, null));
+};
 
 // Handle Firebase Auth changes and fetch the token
 onAuthStateChanged(auth, async (user: User | null) => {
@@ -101,6 +130,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('gdrive_access_token', cachedAccessToken);
+      localStorage.setItem('gdrive_token_timestamp', Date.now().toString());
       localStorage.setItem('gdrive_user_profile', JSON.stringify(profile));
     }
     // Trigger callbacks with the newly logged in user & token
@@ -115,11 +145,16 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const googleSignOut = async () => {
-  await signOut(auth);
+  try {
+    await signOut(auth);
+  } catch (e) {
+    console.warn('Firebase signOut notice:', e);
+  }
   cachedAccessToken = null;
   cachedUserProfile = null;
   if (typeof window !== 'undefined') {
     localStorage.removeItem('gdrive_access_token');
+    localStorage.removeItem('gdrive_token_timestamp');
     localStorage.removeItem('gdrive_user_profile');
   }
   authCallbacks.forEach(cb => cb(null, null));
@@ -133,21 +168,24 @@ export const getAccessToken = (): string | null => {
 
 const DRAFT_FILE_NAME = 'laporan_jersey_draft.json';
 
-interface DriveFileMetadata {
+export interface DriveFileMetadata {
   id: string;
   name: string;
   mimeType: string;
   modifiedTime: string;
+  size?: string;
 }
 
 /**
- * Search for the draft file in Google Drive.
- * Returns metadata of the draft if found, otherwise null.
+ * List all backup/draft JSON files found in user's Google Drive.
  */
-export const searchDraftInDrive = async (token: string): Promise<DriveFileMetadata | null> => {
+export const listDraftsInDrive = async (token: string): Promise<DriveFileMetadata[]> => {
+  if (!token) {
+    throw new Error('UNAUTHORIZED');
+  }
   try {
-    const q = encodeURIComponent(`name = '${DRAFT_FILE_NAME}' and trashed = false`);
-    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType,modifiedTime)`;
+    const q = encodeURIComponent(`(name = '${DRAFT_FILE_NAME}' or name contains 'DRAFT_LAPORAN_JERSEY' or name contains 'laporan_jersey' or (name contains 'jersey' and name contains '.json') or mimeType = 'application/json') and trashed = false`);
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&fields=files(id,name,mimeType,modifiedTime,size)&pageSize=25`;
     
     const response = await fetch(url, {
       headers: {
@@ -157,16 +195,39 @@ export const searchDraftInDrive = async (token: string): Promise<DriveFileMetada
 
     if (!response.ok) {
       if (response.status === 401) {
+        clearExpiredToken();
         throw new Error('UNAUTHORIZED');
       }
       throw new Error(`Google Drive API error (${response.status})`);
     }
 
     const data = await response.json();
-    if (data.files && data.files.length > 0) {
-      return data.files[0] as DriveFileMetadata;
+    return (data.files || []) as DriveFileMetadata[];
+  } catch (err) {
+    console.warn('Silent notice: Draft file list not loaded or offline.', err);
+    throw err;
+  }
+};
+
+/**
+ * Search for the latest draft file in Google Drive.
+ * Returns metadata of the draft if found, otherwise null.
+ */
+export const searchDraftInDrive = async (token: string): Promise<DriveFileMetadata | null> => {
+  try {
+    const files = await listDraftsInDrive(token);
+    if (!files || files.length === 0) return null;
+
+    // Look for exact DRAFT_FILE_NAME first, or compare with newest file
+    const exactMatch = files.find(f => f.name === DRAFT_FILE_NAME);
+    if (exactMatch) {
+      const newestFile = files[0];
+      if (new Date(newestFile.modifiedTime).getTime() > new Date(exactMatch.modifiedTime).getTime()) {
+        return newestFile;
+      }
+      return exactMatch;
     }
-    return null;
+    return files[0];
   } catch (err) {
     console.warn('Silent notice: Draft file check not loaded or offline.', err);
     throw err;
@@ -194,14 +255,33 @@ export const downloadDraftFromDrive = async (token: string, fileId: string): Pro
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        clearExpiredToken();
+        throw new Error('UNAUTHORIZED');
+      }
       throw new Error(`Gagal mendownload file dari Drive (${response.status})`);
     }
 
     const payload = await response.json();
-    if (payload.appId !== 'laporan-jersey-app') {
-      throw new Error('Format berkas di Google Drive bukan Laporan Jersey App.');
+    let pesananList: Pesanan[] = [];
+    let settings: ShopSettings | undefined = undefined;
+    let shopName = '';
+
+    if (Array.isArray(payload)) {
+      pesananList = payload;
+    } else if (payload && typeof payload === 'object') {
+      pesananList = payload.pesananList || payload.pesanan || payload.orders || payload.data || [];
+      settings = payload.settings;
+      shopName = payload.shopName || payload.namaToko || (payload.settings?.namaToko) || '';
     }
-    return payload as DraftPayload;
+
+    return {
+      appId: 'laporan-jersey-app',
+      exportedAt: payload?.exportedAt || new Date().toISOString(),
+      shopName: shopName || 'Jersey Store',
+      pesananList,
+      settings: (settings || {}) as ShopSettings
+    };
   } catch (err) {
     console.warn('Silent notice: Downloading of cloud draft offline or rejected.', err);
     throw err;
@@ -249,6 +329,10 @@ export const uploadDraftToDrive = async (
       });
 
       if (!createRes.ok) {
+        if (createRes.status === 401) {
+          clearExpiredToken();
+          throw new Error('UNAUTHORIZED');
+        }
         throw new Error(`Gagal membuat berkas draft di Google Drive (${createRes.status})`);
       }
 
@@ -268,6 +352,10 @@ export const uploadDraftToDrive = async (
     });
 
     if (!uploadRes.ok) {
+      if (uploadRes.status === 401) {
+        clearExpiredToken();
+        throw new Error('UNAUTHORIZED');
+      }
       throw new Error(`Gagal mengupload konten draft ke Google Drive (${uploadRes.status})`);
     }
 

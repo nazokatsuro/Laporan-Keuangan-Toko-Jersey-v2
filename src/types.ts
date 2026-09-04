@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { SPKData } from './spkTypes';
+
 export type StatusProduksi = 'Setting' | 'Print Press' | 'Jahit' | 'Tinggal Kirim' | 'Beres';
 
 export interface PembayaranMasuk {
@@ -25,6 +27,11 @@ export interface PesananItem {
   modelKerah?: string;
   penerimaKomisi?: string;
   komisiPerPcs?: number;
+  vendorJahit?: string;
+  vendorSublim?: string;
+  statusBayarJahit?: 'Belum Lunas' | 'Lunas';
+  statusBayarSublim?: 'Belum Lunas' | 'Lunas';
+  statusBayarKomisi?: 'Belum Lunas' | 'Lunas';
 }
 
 export interface Pesanan {
@@ -55,6 +62,11 @@ export interface Pesanan {
 
   penerimaKomisi?: string; // main/overall commission receiver if any
   komisiPerPcs?: number; // main/overall commission quantity per pcs if any
+  vendorJahit?: string; // specific tailor name/partner
+  vendorSublim?: string; // specific sublimation printing partner
+  statusBayarJahit?: 'Belum Lunas' | 'Lunas';
+  statusBayarSublim?: 'Belum Lunas' | 'Lunas';
+  statusBayarKomisi?: 'Belum Lunas' | 'Lunas';
 
   // List of multiple products inside 1 PO
   items?: PesananItem[];
@@ -64,6 +76,7 @@ export interface Pesanan {
   pembayaranList?: PembayaranMasuk[];
   detailSizeNama?: string; // Sizing details and name lists for tailoring
   detailSizeNamaGambarUrl?: string; // Base64 string of sizing list image from user
+  spkData?: SPKData; // Synchronized full SPK document
 }
 
 export interface CashFlowTransaction {
@@ -104,6 +117,11 @@ export interface ShopSettings {
   stempelTokoSubtext?: string;
   roleSignToko?: string;
   hormatKamiToko?: string;
+  namaBankToko?: string;
+  nomorRekeningToko?: string;
+  atasNamaRekeningToko?: string;
+  qrisImageUrl?: string;
+  qrisPayloadToko?: string;
 }
 
 export interface FinancialStats {

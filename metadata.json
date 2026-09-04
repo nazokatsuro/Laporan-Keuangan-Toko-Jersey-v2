@@ -1,6 +1,6 @@
 {
   "name": "Laporan Keuangan Toko Jersey v2",
-  "description": "Aplikasi pencatatan pesanan jersey, hitung modal, omset, keuntungan, status produksi, laporan bulanan, dan generator nota otomatis.",
+  "description": "Aplikasi manajemen konveksi lengkap: Pencatatan pesanan jersey, arus kas, laporan laba rugi, dan Generator Surat Perintah Kerja (SPK) A4 otomatis Nomaden Apparel.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

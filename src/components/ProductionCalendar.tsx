@@ -14,17 +14,16 @@ import {
   Send, 
   User, 
   FileText,
-  Tag,
-  AlertTriangle,
-  Info
+  Tag, 
+  AlertTriangle, 
+  Info 
 } from 'lucide-react';
 
 interface ProductionCalendarProps {
   pesananList: Pesanan[];
-  onSelectOrder: (order: Pesanan) => void;
 }
 
-export default function ProductionCalendar({ pesananList, onSelectOrder }: ProductionCalendarProps) {
+export default function ProductionCalendar({ pesananList }: ProductionCalendarProps) {
   const [currentDate, setCurrentDate] = useState(() => {
     const saved = localStorage.getItem('laporan_jersey_cal_date');
     return saved ? new Date(saved) : new Date();
@@ -490,17 +489,6 @@ export default function ProductionCalendar({ pesananList, onSelectOrder }: Produ
                       Remind Deadline
                     </a>
                   </div>
-
-                  <button
-                    onClick={() => {
-                      onSelectOrder(selectedOrder);
-                      setSelectedOrder(null);
-                    }}
-                    className="mt-1 flex items-center justify-center gap-1.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-2xs rounded-xl shadow-xs cursor-pointer text-center select-none w-full"
-                  >
-                    <FileText className="h-3.5 w-3.5" />
-                    Lihat & Cetak Nota Invoice
-                  </button>
                 </div>
               )}
 

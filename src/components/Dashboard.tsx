@@ -48,7 +48,6 @@ import FraudScanner from './FraudScanner';
 interface DashboardProps {
   pesananList: Pesanan[];
   onNavigate: (tab: string) => void;
-  onSelectOrder: (pesanan: Pesanan) => void;
   selectedMonth: string;
   setSelectedMonth: (month: string) => void;
   selectedYear: string;
@@ -61,7 +60,6 @@ interface DashboardProps {
 export default function Dashboard({ 
   pesananList, 
   onNavigate, 
-  onSelectOrder,
   selectedMonth,
   setSelectedMonth,
   selectedYear,
@@ -1759,7 +1757,7 @@ export default function Dashboard({
               warningList.map((alert) => (
                 <div 
                   key={alert.id}
-                  onClick={() => onSelectOrder(alert.order)}
+                  onClick={() => onNavigate('transaksi')}
                   className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl border cursor-pointer hover:scale-[1.01] hover:shadow-sm transition-all duration-200 ${
                     alert.severity === 'high' 
                       ? 'bg-rose-50/70 border-rose-100 dark:bg-rose-950/20 dark:border-rose-900/40 text-slate-800 dark:text-slate-200' 
@@ -1881,8 +1879,7 @@ export default function Dashboard({
           pesananList={pesananList}
           settings={settings}
           onUpdateSettings={onUpdateSettings}
-          onSelectOrder={(order) => {
-            onSelectOrder(order);
+          onSelectOrder={(_order) => {
             onNavigate('transaksi'); // Switch to order view
           }}
         />

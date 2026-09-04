@@ -19,11 +19,11 @@ import Dashboard from './components/Dashboard';
 import ActiveOrders from './components/ActiveOrders';
 import OrderForm from './components/OrderForm';
 import FinancialReports from './components/FinancialReports';
-import ReceiptGenerator from './components/ReceiptGenerator';
 import Settings from './components/Settings';
 import CashFlow from './components/CashFlow';
 import ProductionCalendar from './components/ProductionCalendar';
 import BusinessAnalysis from './components/BusinessAnalysis';
+import { SpkApp } from './components/spk/SpkApp';
 
 // Lucide Icons
 import { 
@@ -50,7 +50,10 @@ import {
   Wallet,
   Calendar,
   BarChart4,
-  ShieldCheck
+  ShieldCheck,
+  Printer,
+  Sparkles,
+  FileCheck
 } from 'lucide-react';
 
 import { 
@@ -58,8 +61,17 @@ import {
   searchDraftInDrive, 
   downloadDraftFromDrive, 
   uploadDraftToDrive,
-  googleSignIn
+  googleSignIn,
+  googleSignOut,
+  clearExpiredToken
 } from './driveService';
+import {
+  persistOrders,
+  persistSettings,
+  loadOrdersFromStorage,
+  loadSettingsFromStorage,
+  safeLocalStorageSet
+} from './storageService';
 import { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -189,7 +201,8 @@ function normalizePesananList(list: any[]): Pesanan[] {
       fotoKerahUrl: item.fotoKerahUrl || '',
       detailSizeNama: item.detailSizeNama || '',
       detailSizeNamaGambarUrl: item.detailSizeNamaGambarUrl || '',
-      pembayaranList
+      pembayaranList,
+      spkData: item.spkData || undefined
     };
   });
 }
@@ -234,12 +247,78 @@ export default function App() {
   // Navigation system tabs: 'dashboard' | 'transaksi' | 'formulir' | 'laporan' | 'pengaturan'
   const [activeTab, setActiveTab] = useState<string>('dashboard');
 
+  // Tab scroll position memory storage (remembers last scroll position of each tab)
+  const tabScrollPositionsRef = useRef<Record<string, number>>({
+    dashboard: 0,
+    transaksi: 0,
+    spk: 0,
+    formulir: 0,
+    laporan: 0,
+    pengaturan: 0,
+    cashflow: 0,
+    kalender: 0,
+    analisa: 0
+  });
+
+  // Track and continuously record scroll position of the currently active tab
+  useEffect(() => {
+    const handleScroll = () => {
+      if (activeTab) {
+        const scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+        tabScrollPositionsRef.current[activeTab] = scrollY;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [activeTab]);
+
+  // Navigate to a new tab while preserving previous tab scroll position
+  const navigateToTab = (newTab: string, resetScroll = false) => {
+    // 1. Instantly capture current tab's scroll position before unmounting
+    const currentY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    tabScrollPositionsRef.current[activeTab] = currentY;
+
+    // 2. If explicitly requested (e.g. creating/editing an order), reset the target tab's position to 0
+    if (resetScroll) {
+      tabScrollPositionsRef.current[newTab] = 0;
+    }
+
+    // 3. Switch active tab
+    setActiveTab(newTab);
+  };
+
+  // Restore the target tab's previous scroll position upon entering/returning to it
+  useEffect(() => {
+    const targetY = tabScrollPositionsRef.current[activeTab] ?? 0;
+
+    // Immediate scroll restore
+    window.scrollTo({ top: targetY, left: 0, behavior: 'instant' });
+
+    // RequestAnimationFrame & timers to ensure layout settling / rendering preserves position
+    const rafId = requestAnimationFrame(() => {
+      window.scrollTo({ top: targetY, left: 0, behavior: 'instant' });
+    });
+
+    const timer1 = setTimeout(() => {
+      window.scrollTo({ top: targetY, left: 0, behavior: 'instant' });
+    }, 40);
+
+    const timer2 = setTimeout(() => {
+      window.scrollTo({ top: targetY, left: 0, behavior: 'instant' });
+    }, 120);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [activeTab]);
+
   // Active editing order placeholder pointer
   const [pesananToEdit, setPesananToEdit] = useState<Pesanan | null>(null);
-
-  // Active invoice being active previewed or batch invoices
-  const [pesananForNota, setPesananForNota] = useState<Pesanan | Pesanan[] | null>(null);
-  const [notaType, setNotaType] = useState<'pelanggan' | 'sublim' | 'jahit' | 'komisi' | 'spk_jahit'>('pelanggan');
 
   // Active state for Warning center modal
   const [showAlertsModal, setShowAlertsModal] = useState<boolean>(false);
@@ -262,25 +341,52 @@ export default function App() {
     localStorage.setItem('laporan_jersey_filter_year', selectedYear);
   }, [selectedYear]);
 
-  // Sync orders to LocalStorage on updates
+  // Persist orders to IndexedDB (virtually unlimited quota) and localStorage cache
   useEffect(() => {
-    try {
-      localStorage.setItem('laporan_jersey_data', JSON.stringify(pesananList));
-    } catch (e) {
-      console.warn("Gagal menyimpan data pesanan ke localStorage (Penyimpanan penuh):", e);
+    if (pesananList) {
+      persistOrders(pesananList).catch(e => {
+        console.warn("Notice persisting orders to storage:", e);
+      });
     }
   }, [pesananList]);
 
-  // Sync settings to LocalStorage on updates
+  // Persist settings to IndexedDB and localStorage cache
   useEffect(() => {
-    try {
-      localStorage.setItem('laporan_jersey_settings', JSON.stringify({ ...settings, darkMode: true }));
-    } catch (e) {
-      console.warn("Gagal menyimpan pengaturan ke localStorage (Penyimpanan penuh):", e);
+    if (settings) {
+      persistSettings(settings).catch(e => {
+        console.warn("Notice persisting settings to storage:", e);
+      });
     }
     // Always apply dark mode class
     document.documentElement.classList.add('dark');
   }, [settings]);
+
+  // Asynchronously hydrate from IndexedDB on startup if IndexedDB has more data (e.g. if localStorage exceeded quota)
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const idbOrders = await loadOrdersFromStorage();
+        if (isMounted && idbOrders && Array.isArray(idbOrders) && idbOrders.length > 0) {
+          setPesananList(prev => {
+            if (!prev || prev.length === 0 || idbOrders.length > prev.length) {
+              return normalizePesananList(idbOrders);
+            }
+            return prev;
+          });
+        }
+        const idbSettings = await loadSettingsFromStorage();
+        if (isMounted && idbSettings) {
+          setSettings(prev => ({ ...prev, ...idbSettings, darkMode: true }));
+        }
+      } catch (err) {
+        console.warn('Notice hydrating from IndexedDB:', err);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Google Drive Sync states
   const [googleUser, setGoogleUser] = useState<User | null>(null);
@@ -366,9 +472,9 @@ export default function App() {
             await new Promise(resolve => setTimeout(resolve, 800));
 
             const payload = await downloadDraftFromDrive(googleToken, meta.id);
-            if (payload && Array.isArray(payload.pesananList)) {
+            if (payload && Array.isArray(payload.pesananList) && payload.pesananList.length > 0) {
               setSyncMessage('Memulihkan draf pesanan & pengaturan toko dari Google Drive...');
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              await new Promise(resolve => setTimeout(resolve, 800));
               
               const cloudOrders = normalizePesananList(payload.pesananList);
               const cloudSettings = payload.settings || settings;
@@ -383,34 +489,33 @@ export default function App() {
               lastSavedDataRef.current = baselineData;
               isFirstRender.current = false;
 
-              console.log('Draft dari Google Drive berhasil dimuat secara otomatis!');
+              console.log(`Draft dari Google Drive berhasil dimuat (${cloudOrders.length} pesanan)!`);
               setSyncMessage('Sinkronisasi selesai! Menyiapkan dokumen workspace...');
-              await new Promise(resolve => setTimeout(resolve, 800));
+              await new Promise(resolve => setTimeout(resolve, 600));
             } else {
-              // Fail-safe if file is corrupted or empty
-              setSyncMessage('Memulai workspace baru...');
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              setPesananList([]);
-              lastSavedDataRef.current = JSON.stringify({ pesananList: [], settings });
+              // Cloud file has 0 orders or is empty - preserve local data if available
+              console.log('Berkas cadangan cloud kosong, mempertahankan data lokal.');
+              setSyncMessage('Memeriksa data lokal...');
+              await new Promise(resolve => setTimeout(resolve, 600));
               isFirstRender.current = false;
-              
-              window.alert('Berkas cadangan di Google Drive kosong atau tidak valid. Workspace Anda dimulai kosong dari awal. Harap segera impor file cadangan JSON Anda dan aktifkan fitur Auto Backup di tab Pengaturan Toko!');
             }
           } else {
-            // No file found in cloud drive - start from scratch and alert to upload JSON/enable auto backup
-            setSyncMessage('Memulai workspace baru...');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            setPesananList([]);
-            lastSavedDataRef.current = JSON.stringify({ pesananList: [], settings });
+            // No file found in cloud drive - keep local data safely
+            console.log('Tidak ditemukan berkas cadangan di Google Drive Cloud, mempertahankan data lokal.');
+            setSyncMessage('Menyiapkan workspace...');
+            await new Promise(resolve => setTimeout(resolve, 600));
             isFirstRender.current = false;
-
-            window.alert('Tidak ditemukan berkas cadangan data di Google Drive Cloud Anda. Workspace dimulai kosong dari awal. Harap segera masuk ke menu Pengaturan Toko untuk mengimpor file draf JSON dan jangan lupa aktifkan fitur Auto Backup (Sinkronisasi Otomatis)!');
           }
         } catch (err: any) {
           console.warn('Gagal sinkronisasi draf cloud (offline atau sesi habis):', err);
-          setSyncMessage('Gagal menyinkronkan data draf dari Penyimpanan Awan.');
-          await new Promise(resolve => setTimeout(resolve, 1200));
+          if (err?.message === 'UNAUTHORIZED' || err?.status === 401 || (err?.message && err.message.includes('401'))) {
+            clearExpiredToken();
+            setSyncMessage('Sesi Google Drive telah kedaluwarsa. Data lokal tetap aman.');
+            await new Promise(resolve => setTimeout(resolve, 800));
+          } else {
+            setSyncMessage('Gagal menyinkronkan data draf dari Penyimpanan Awan.');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         } finally {
           setIsDriveSyncActive(false);
         }
@@ -452,8 +557,11 @@ export default function App() {
           await uploadDraftToDrive(googleToken, pesananList, settings);
           lastSavedDataRef.current = currentDataStr;
           setCloudSyncStatus('synced');
-        } catch (err) {
+        } catch (err: any) {
           console.warn('Failed to auto-backup draft (offline or session expired):', err);
+          if (err?.message === 'UNAUTHORIZED' || (err?.message && err.message.includes('401'))) {
+            clearExpiredToken();
+          }
           setCloudSyncStatus('error');
         }
       }, 4000);
@@ -598,7 +706,7 @@ export default function App() {
 
     // Clear out edit pointers and return back to list
     setPesananToEdit(null);
-    setActiveTab('transaksi');
+    navigateToTab('transaksi', false);
   };
 
   const handleLogToCashFlow = (
@@ -640,14 +748,7 @@ export default function App() {
   // Launch order Editor from index lists
   const handleLaunchEdit = (item: Pesanan) => {
     setPesananToEdit(item);
-    setPesananForNota(null);
-    setActiveTab('formulir');
-  };
-
-  // Launch Invoice Generator View
-  const handleLaunchNota = (item: Pesanan | Pesanan[], type: 'pelanggan' | 'sublim' | 'jahit' | 'komisi' | 'spk_jahit' = 'pelanggan') => {
-    setNotaType(type);
-    setPesananForNota(item);
+    navigateToTab('formulir', true);
   };
 
   // Update specific setting values
@@ -658,6 +759,7 @@ export default function App() {
   // Import draft backups fully
   const handleImportData = (importedOrders: Pesanan[], importedShopName?: string, importedSettings?: ShopSettings) => {
     const normalizedOrders = importedOrders && Array.isArray(importedOrders) ? normalizePesananList(importedOrders) : [];
+    const newSettings = importedSettings || (importedShopName ? { ...settings, namaToko: importedShopName } : settings);
 
     setPesananList(normalizedOrders);
     if (importedSettings) {
@@ -666,16 +768,47 @@ export default function App() {
       setSettings(prev => ({ ...prev, namaToko: importedShopName }));
     }
 
+    // Persist to high-quota IndexedDB storage (unlimited) and sync to localStorage cache safely
+    persistOrders(normalizedOrders).catch(err => {
+      console.warn('Gagal menyimpan hasil restore ke IndexedDB:', err);
+    });
+    persistSettings(newSettings).catch(err => {
+      console.warn('Gagal menyimpan pengaturan ke IndexedDB:', err);
+    });
+
+    // Reset filter preferences so all restored transactions are immediately visible
+    safeLocalStorageSet('laporan_jersey_tx_month', 'Semua');
+    safeLocalStorageSet('laporan_jersey_tx_year', 'Semua');
+    safeLocalStorageSet('laporan_jersey_tx_progress', 'Semua');
+    safeLocalStorageSet('laporan_jersey_tx_payment', 'Semua');
+    safeLocalStorageSet('laporan_jersey_tx_deadline', 'Semua');
+    safeLocalStorageSet('laporan_jersey_tx_customer', 'Semua');
+    safeLocalStorageSet('laporan_jersey_tx_search', '');
+
     // Reset draft change tracking state
     const currentDataStr = JSON.stringify({
       pesananList: normalizedOrders,
-      settings: importedSettings || (importedShopName ? { ...settings, namaToko: importedShopName } : settings)
+      settings: newSettings
     });
     lastSavedDataRef.current = currentDataStr;
     isFirstRender.current = false;
 
-    // Switch to Dashboard tab so the user sees results instantly
-    setActiveTab('dashboard');
+    // If Google Drive token is present, immediately enable auto-sync & upload current state to Drive
+    if (googleToken) {
+      localStorage.setItem('laporan_jersey_gdrive_autosync', 'true');
+      setCloudSyncStatus('saving');
+      uploadDraftToDrive(googleToken, normalizedOrders, newSettings)
+        .then(() => {
+          setCloudSyncStatus('synced');
+        })
+        .catch(err => {
+          console.warn('Auto upload to drive after import failed:', err);
+          setCloudSyncStatus('error');
+        });
+    }
+
+    // Switch directly to Transaksi tab so the user sees all imported transactions & actions
+    setActiveTab('transaksi');
   };
 
 
@@ -685,7 +818,6 @@ export default function App() {
     setPesananList([]);
     setSettings(DEFAULT_SETTINGS);
     setPesananToEdit(null);
-    setPesananForNota(null);
     setActiveTab('dashboard');
   };
 
@@ -896,7 +1028,7 @@ export default function App() {
       
       {/* Upper Navigation Header bar */}
       <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800/60 transition-colors duration-300 no-print">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="w-full max-w-none px-6 sm:px-8 lg:px-10 h-16 flex items-center justify-between">
           
           <div className="flex items-center gap-2.5">
             {settings.logoUrl ? (
@@ -996,10 +1128,10 @@ export default function App() {
       </header>
 
       {/* Primary responsive Full width flex structural container */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 sm:pb-8 flex flex-col md:flex-row gap-6">
+      <div className="w-full max-w-none px-6 sm:px-8 lg:px-10 py-6 pb-24 sm:pb-8 flex flex-col md:flex-row gap-6">
         
         {/* Responsive Desktop Left Sidebar Menu */}
-        <aside className="w-full md:w-64 shrink-0 no-print hidden md:block">
+        <aside className="w-full md:w-[240px] shrink-0 no-print hidden md:block">
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-4 shadow-3xs sticky top-24 space-y-6">
             
             <p className="text-[10px] font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase px-3">
@@ -1010,12 +1142,9 @@ export default function App() {
               
               {/* Dashboard Tab */}
               <button
-                onClick={() => {
-                  setActiveTab('dashboard');
-                  setPesananForNota(null);
-                }}
+                onClick={() => navigateToTab('dashboard')}
                 className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-                  activeTab === 'dashboard' && !pesananForNota
+                  activeTab === 'dashboard'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
                 }`}
@@ -1028,12 +1157,9 @@ export default function App() {
 
               {/* Active Orders List */}
               <button
-                onClick={() => {
-                  setActiveTab('transaksi');
-                  setPesananForNota(null);
-                }}
+                onClick={() => navigateToTab('transaksi')}
                 className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-                  activeTab === 'transaksi' && !pesananForNota
+                  activeTab === 'transaksi'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
                 }`}
@@ -1049,15 +1175,16 @@ export default function App() {
                 </span>
               </button>
 
+
+
               {/* Order form drafting */}
               <button
                 onClick={() => {
                   setPesananToEdit(null);
-                  setPesananForNota(null);
-                  setActiveTab('formulir');
+                  navigateToTab('formulir', true);
                 }}
                 className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-                  activeTab === 'formulir' && !pesananForNota
+                  activeTab === 'formulir'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
                 }`}
@@ -1070,12 +1197,9 @@ export default function App() {
 
               {/* Financial calculations and downloadable summaries */}
               <button
-                onClick={() => {
-                  setPesananForNota(null);
-                  setActiveTab('laporan');
-                }}
+                onClick={() => navigateToTab('laporan')}
                 className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-                  activeTab === 'laporan' && !pesananForNota
+                  activeTab === 'laporan'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
                 }`}
@@ -1094,12 +1218,9 @@ export default function App() {
                 <div className="space-y-1">
                   {/* Cash Flow Tab */}
                   <button
-                    onClick={() => {
-                      setPesananForNota(null);
-                      setActiveTab('cashflow');
-                    }}
+                    onClick={() => navigateToTab('cashflow')}
                     className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-                      activeTab === 'cashflow' && !pesananForNota
+                      activeTab === 'cashflow'
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
                     }`}
@@ -1112,12 +1233,9 @@ export default function App() {
 
                   {/* Production Calendar Tab */}
                   <button
-                    onClick={() => {
-                      setPesananForNota(null);
-                      setActiveTab('kalender');
-                    }}
+                    onClick={() => navigateToTab('kalender')}
                     className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-                      activeTab === 'kalender' && !pesananForNota
+                      activeTab === 'kalender'
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
                     }`}
@@ -1130,12 +1248,9 @@ export default function App() {
 
                   {/* Business Analysis Tab */}
                   <button
-                    onClick={() => {
-                      setPesananForNota(null);
-                      setActiveTab('analisa');
-                    }}
+                    onClick={() => navigateToTab('analisa')}
                     className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-                      activeTab === 'analisa' && !pesananForNota
+                      activeTab === 'analisa'
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
                     }`}
@@ -1150,12 +1265,9 @@ export default function App() {
 
               {/* Configuration panel */}
               <button
-                onClick={() => {
-                  setPesananForNota(null);
-                  setActiveTab('pengaturan');
-                }}
+                onClick={() => navigateToTab('pengaturan')}
                 className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
-                  activeTab === 'pengaturan' && !pesananForNota
+                  activeTab === 'pengaturan'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-650'
                 }`}
@@ -1190,118 +1302,104 @@ export default function App() {
 
         {/* Primary Central Content viewport renderer */}
         <main className="flex-1 min-w-0">
-          
-          {/* Override view layer IF we are generating the specific Invoice receipt */}
-          {pesananForNota ? (
-            <ReceiptGenerator
-              pesanan={pesananForNota}
+          {activeTab === 'dashboard' && (
+            <Dashboard 
+              pesananList={pesananList} 
+              onNavigate={(tab) => navigateToTab(tab)}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              selectedYear={selectedYear}
+              setSelectedYear={setSelectedYear}
               settings={settings}
-              notaType={notaType}
-              onCancel={() => setPesananForNota(null)}
+              onUpdateSettings={handleUpdateSettings}
+              onUpdatePesananList={setPesananList}
             />
-          ) : (
-            <>
-              {activeTab === 'dashboard' && (
-                <Dashboard 
-                  pesananList={pesananList} 
-                  onNavigate={(tab) => setActiveTab(tab)}
-                  onSelectOrder={(order) => {
-                    setPesananForNota(order);
-                  }}
-                  selectedMonth={selectedMonth}
-                  setSelectedMonth={setSelectedMonth}
-                  selectedYear={selectedYear}
-                  setSelectedYear={setSelectedYear}
-                  settings={settings}
-                  onUpdateSettings={handleUpdateSettings}
-                  onUpdatePesananList={setPesananList}
-                />
-              )}
-
-              {activeTab === 'transaksi' && (
-                <ActiveOrders 
-                  pesananList={pesananList}
-                  settings={settings}
-                  onLogToCashFlow={handleLogToCashFlow}
-                  onAddNew={() => {
-                    setPesananToEdit(null);
-                    setActiveTab('formulir');
-                  }}
-                  onEdit={handleLaunchEdit}
-                  onDelete={handleDeletePesanan}
-                  onGenerateNota={handleLaunchNota}
-                  onUpdateStatus={handleUpdateStatus}
-                  selectedMonth={selectedMonth}
-                  setSelectedMonth={setSelectedMonth}
-                  selectedYear={selectedYear}
-                  setSelectedYear={setSelectedYear}
-                />
-              )}
-
-              {activeTab === 'formulir' && (
-                <OrderForm 
-                  pesananToEdit={pesananToEdit}
-                  cashFlowList={settings.cashFlowList}
-                  onSave={handleSavePesanan}
-                  onCancel={() => {
-                    setPesananToEdit(null);
-                    setActiveTab('transaksi');
-                  }}
-                  onLogToCashFlow={handleLogToCashFlow}
-                  settings={settings}
-                  onUpdateSettings={setSettings}
-                />
-              )}
-
-              {activeTab === 'laporan' && (
-                <FinancialReports 
-                  pesananList={pesananList} 
-                  selectedMonth={selectedMonth}
-                  setSelectedMonth={setSelectedMonth}
-                  selectedYear={selectedYear}
-                  setSelectedYear={setSelectedYear}
-                />
-              )}
-
-              {activeTab === 'pengaturan' && (
-                <Settings 
-                  settings={settings}
-                  onUpdateSettings={handleUpdateSettings}
-                  pesananList={pesananList}
-                  onImportData={handleImportData}
-                  onResetAll={handleResetAll}
-                />
-              )}
-
-              {activeTab === 'cashflow' && (
-                <CashFlow 
-                  pesananList={pesananList}
-                  settings={settings}
-                  onUpdateSettings={handleUpdateSettings}
-                  selectedMonth={selectedMonth}
-                  setSelectedMonth={setSelectedMonth}
-                  selectedYear={selectedYear}
-                  setSelectedYear={setSelectedYear}
-                />
-              )}
-
-              {activeTab === 'kalender' && (
-                <ProductionCalendar 
-                  pesananList={pesananList}
-                  onSelectOrder={(order) => {
-                    setPesananForNota(order);
-                  }}
-                />
-              )}
-
-              {activeTab === 'analisa' && (
-                <BusinessAnalysis 
-                  pesananList={pesananList}
-                />
-              )}
-            </>
           )}
 
+          {activeTab === 'transaksi' && (
+            <ActiveOrders 
+              pesananList={pesananList}
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              onLogToCashFlow={handleLogToCashFlow}
+              onAddNew={() => {
+                setPesananToEdit(null);
+                navigateToTab('formulir', true);
+              }}
+              onEdit={handleLaunchEdit}
+              onDelete={handleDeletePesanan}
+              onUpdateStatus={handleUpdateStatus}
+              onUpdatePesananList={setPesananList}
+              onSavePesanan={handleSavePesanan}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              selectedYear={selectedYear}
+              setSelectedYear={setSelectedYear}
+            />
+          )}
+
+          {activeTab === 'spk' && (
+            <SpkApp />
+          )}
+
+          {activeTab === 'formulir' && (
+            <OrderForm 
+              pesananToEdit={pesananToEdit}
+              cashFlowList={settings.cashFlowList}
+              onSave={handleSavePesanan}
+              onCancel={() => {
+                setPesananToEdit(null);
+                navigateToTab('transaksi', false);
+              }}
+              onLogToCashFlow={handleLogToCashFlow}
+              settings={settings}
+              onUpdateSettings={setSettings}
+            />
+          )}
+
+          {activeTab === 'laporan' && (
+            <FinancialReports 
+              pesananList={pesananList} 
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              selectedYear={selectedYear}
+              setSelectedYear={setSelectedYear}
+            />
+          )}
+
+          {activeTab === 'pengaturan' && (
+            <Settings 
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              pesananList={pesananList}
+              onImportData={handleImportData}
+              onResetAll={handleResetAll}
+            />
+          )}
+
+          {activeTab === 'cashflow' && (
+            <CashFlow 
+              pesananList={pesananList}
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              selectedYear={selectedYear}
+              setSelectedYear={setSelectedYear}
+            />
+          )}
+
+          {activeTab === 'kalender' && (
+            <ProductionCalendar 
+              pesananList={pesananList}
+            />
+          )}
+
+          {activeTab === 'analisa' && (
+            <BusinessAnalysis 
+              pesananList={pesananList}
+            />
+          )}
         </main>
 
       </div>
@@ -1311,12 +1409,9 @@ export default function App() {
         
         {/* Dashboard trigger */}
         <button
-          onClick={() => {
-            setActiveTab('dashboard');
-            setPesananForNota(null);
-          }}
+          onClick={() => navigateToTab('dashboard')}
           className={`flex flex-col items-center gap-1 ${
-            activeTab === 'dashboard' && !pesananForNota ? 'text-indigo-600' : 'text-slate-400'
+            activeTab === 'dashboard' ? 'text-indigo-600' : 'text-slate-400'
           }`}
         >
           <LayoutDashboard className="h-5 w-5" />
@@ -1325,12 +1420,9 @@ export default function App() {
 
         {/* Transactions trigger */}
         <button
-          onClick={() => {
-            setActiveTab('transaksi');
-            setPesananForNota(null);
-          }}
+          onClick={() => navigateToTab('transaksi')}
           className={`flex flex-col items-center gap-1 relative ${
-            activeTab === 'transaksi' && !pesananForNota ? 'text-indigo-600' : 'text-slate-400'
+            activeTab === 'transaksi' ? 'text-indigo-600' : 'text-slate-400'
           }`}
         >
           <ClipboardList className="h-5 w-5" />
@@ -1346,11 +1438,10 @@ export default function App() {
         <button
           onClick={() => {
             setPesananToEdit(null);
-            setPesananForNota(null);
-            setActiveTab('formulir');
+            navigateToTab('formulir', true);
           }}
           className={`flex flex-col items-center gap-1 ${
-            activeTab === 'formulir' && !pesananForNota ? 'text-indigo-600' : 'text-slate-400'
+            activeTab === 'formulir' ? 'text-indigo-600' : 'text-slate-400'
           }`}
         >
           <PlusCircle className="h-5 w-5" />
@@ -1359,12 +1450,9 @@ export default function App() {
 
         {/* Monthly Profit report tab */}
         <button
-          onClick={() => {
-            setPesananForNota(null);
-            setActiveTab('laporan');
-          }}
+          onClick={() => navigateToTab('laporan')}
           className={`flex flex-col items-center gap-1 ${
-            activeTab === 'laporan' && !pesananForNota ? 'text-indigo-600' : 'text-slate-400'
+            activeTab === 'laporan' ? 'text-indigo-600' : 'text-slate-400'
           }`}
         >
           <TrendingUp className="h-5 w-5" />
@@ -1373,12 +1461,9 @@ export default function App() {
 
         {/* Settings tab trigger */}
         <button
-          onClick={() => {
-            setPesananForNota(null);
-            setActiveTab('pengaturan');
-          }}
+          onClick={() => navigateToTab('pengaturan')}
           className={`flex flex-col items-center gap-1 ${
-            activeTab === 'pengaturan' && !pesananForNota ? 'text-indigo-600' : 'text-slate-400'
+            activeTab === 'pengaturan' ? 'text-indigo-600' : 'text-slate-400'
           }`}
         >
           <SettingsIcon className="h-5 w-5" />
@@ -1503,17 +1588,6 @@ export default function App() {
                                         </select>
                                       </div>
                                     )}
-
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        handleLaunchNota(alert.order);
-                                        setShowAlertsModal(false);
-                                      }}
-                                      className="text-[10px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/60 font-bold rounded-lg text-slate-200 transition-all cursor-pointer"
-                                    >
-                                      Nota
-                                    </button>
 
                                     <button
                                       type="button"

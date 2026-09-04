@@ -168,6 +168,10 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   stempelTokoSubtext: 'Apparel',
   roleSignToko: 'Finance Administration',
   hormatKamiToko: 'Hormat Kami,',
+  namaBankToko: 'BCA',
+  nomorRekeningToko: '8105-9281-33',
+  atasNamaRekeningToko: 'Nomaden Apparel',
+  qrisImageUrl: '',
   cashFlowList: []
 };
 
@@ -441,98 +445,37 @@ export async function safeHtml2canvas(element: HTMLElement, options: any = {}): 
   // Clean oklch in the main document's styles right now to avoid stylesheet read failures
   cleanOklchInDocument(document);
 
-  const isInvoice = element.id && (element.id === 'invoice-paper' || element.id.startsWith('invoice-paper'));
-  const isFinancialReport = element.id === 'financial-report-paper';
-  
-  // Create a clean options object
+  const rect = element.getBoundingClientRect();
+  const actualWidth = element.offsetWidth || rect.width || 760;
+  const actualHeight = element.scrollHeight || element.offsetHeight || rect.height || 1000;
+
+  // Create a clean options object for pixel-perfect screenshotting
   const captureOptions: any = {
-    scale: 3, // HD scaling
+    scale: 2.5, // Crisp HD rendering
     useCORS: true,
     allowTaint: true,
     backgroundColor: options.backgroundColor || '#ffffff',
     scrollX: 0,
     scrollY: 0,
-    x: 0,
-    y: 0,
+    windowWidth: Math.max(document.documentElement.scrollWidth, window.innerWidth, actualWidth + 200),
+    windowHeight: Math.max(document.documentElement.scrollHeight, window.innerHeight, actualHeight + 200),
+    logging: false,
     ...options
   };
-
-  if (isInvoice) {
-    // Force desktop-like window rendering inside html2canvas virtual viewport
-    captureOptions.windowWidth = 750;
-    captureOptions.width = 680;
-    captureOptions.height = element.scrollHeight + 60; // 60px safety buffer to prevent bottom truncating
-    captureOptions.windowHeight = element.scrollHeight + 260;
-  } else if (isFinancialReport) {
-    // For financial report, force exact desktop dimension rendering
-    captureOptions.windowWidth = 1250;
-    captureOptions.width = 1200;
-    captureOptions.height = element.scrollHeight;
-    captureOptions.windowHeight = element.scrollHeight + 200;
-  } else {
-    // Large view for financial report charts
-    captureOptions.windowWidth = 1200;
-    captureOptions.height = element.scrollHeight;
-    captureOptions.windowHeight = element.scrollHeight + 200;
-  }
 
   const originalOnClone = captureOptions.onclone;
   
   captureOptions.onclone = (clonedDoc: Document) => {
     cleanOklchInDocument(clonedDoc);
 
-    const clonedEl = clonedDoc.getElementById(element.id || 'invoice-paper') as HTMLElement;
-    if (clonedEl) {
-      clonedEl.style.contentVisibility = 'visible';
-      clonedEl.style.display = 'block';
-      clonedEl.style.transform = 'none';
-      
-      if (isInvoice || clonedEl.id === 'invoice-paper') {
-        // Ensure light-theme context inside the cloned canvas
-        clonedDoc.documentElement.classList.remove('dark');
-        clonedDoc.body.classList.remove('dark');
+    const isFinancialReport = element.id === 'financial-report-paper';
 
-        // Absolute control on width and layout inside the cloned document
-        clonedEl.style.width = '680px';
-        clonedEl.style.minWidth = '680px';
-        clonedEl.style.maxWidth = '680px';
-        clonedEl.style.boxShadow = 'none';
-        clonedEl.style.margin = '0';
-        clonedEl.style.position = 'absolute';
-        clonedEl.style.top = '0';
-        clonedEl.style.left = '0';
-
-        const parent = clonedEl.parentElement;
-        if (parent) {
-          parent.style.position = 'relative';
-          parent.style.width = '700px';
-          parent.style.height = `${clonedEl.scrollHeight + 80}px`;
-          parent.style.overflow = 'visible';
-        }
-      } else if (isFinancialReport || clonedEl.id === 'financial-report-paper') {
-        // Force Gorgeous Dark Mode inside the cloned document context to ensure 
-        // consistent high-contrast colors match the user's visual reference perfectly
-        clonedDoc.documentElement.classList.add('dark');
-        clonedDoc.body.classList.add('dark');
-
-        // Absolute control on width and layout inside the cloned document to prevent viewport styling responsive conflicts
-        clonedEl.style.width = '1200px';
-        clonedEl.style.minWidth = '1200px';
-        clonedEl.style.maxWidth = '1200px';
-        clonedEl.style.boxShadow = 'none';
-        clonedEl.style.margin = '0';
-        clonedEl.style.position = 'absolute';
-        clonedEl.style.top = '0';
-        clonedEl.style.left = '0';
-
-        const parent = clonedEl.parentElement;
-        if (parent) {
-          parent.style.position = 'relative';
-          parent.style.width = '1220px';
-          parent.style.height = `${clonedEl.scrollHeight + 20}px`;
-          parent.style.overflow = 'visible';
-        }
-      }
+    if (isFinancialReport) {
+      clonedDoc.documentElement.classList.add('dark');
+      clonedDoc.body.classList.add('dark');
+    } else {
+      clonedDoc.documentElement.classList.remove('dark');
+      clonedDoc.body.classList.remove('dark');
     }
 
     if (clonedDoc.defaultView) {

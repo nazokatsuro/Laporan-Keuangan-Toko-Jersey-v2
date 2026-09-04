@@ -23,15 +23,20 @@ import {
   CloudLightning,
   CloudOff,
   LogOut,
-  Loader2
+  Loader2,
+  QrCode,
+  CreditCard
 } from 'lucide-react';
 import { 
   initAuth, 
   googleSignIn, 
   googleSignOut, 
+  clearExpiredToken,
   searchDraftInDrive, 
+  listDraftsInDrive,
   downloadDraftFromDrive, 
-  uploadDraftToDrive 
+  uploadDraftToDrive,
+  DriveFileMetadata
 } from '../driveService';
 import { User } from 'firebase/auth';
 
@@ -51,7 +56,9 @@ export default function Settings({
   onResetAll 
 }: SettingsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const driveFileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const qrisInputRef = useRef<HTMLInputElement>(null);
   const [resetConfirm, setResetConfirm] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -59,24 +66,37 @@ export default function Settings({
   const [googleUser, setGoogleUser] = useState<User | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [isDriveSyncing, setIsDriveSyncing] = useState(false);
-  const [driveDraftMeta, setDriveDraftMeta] = useState<{ id: string; modifiedTime: string } | null>(null);
+  const [driveDraftMeta, setDriveDraftMeta] = useState<{ id: string; name: string; modifiedTime: string } | null>(null);
+  const [driveFiles, setDriveFiles] = useState<DriveFileMetadata[]>([]);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(() => {
     return localStorage.getItem('laporan_jersey_gdrive_autosync') === 'true';
   });
 
   // Helper to check draft existence in Drive
   const checkDriveDraft = async (token: string) => {
+    if (!token) {
+      setDriveDraftMeta(null);
+      setDriveFiles([]);
+      return;
+    }
     try {
+      const files = await listDraftsInDrive(token);
+      setDriveFiles(files);
       const meta = await searchDraftInDrive(token);
       if (meta) {
-        setDriveDraftMeta({ id: meta.id, modifiedTime: meta.modifiedTime });
+        setDriveDraftMeta({ id: meta.id, name: meta.name, modifiedTime: meta.modifiedTime });
       } else {
         setDriveDraftMeta(null);
       }
     } catch (err: any) {
-      console.error('Failed to look up Google Drive draft:', err);
-      if (err?.message === 'UNAUTHORIZED') {
-        await googleSignOut();
+      if (err?.message === 'UNAUTHORIZED' || (err?.message && err.message.includes('401'))) {
+        console.warn('Sesi Google Drive telah kedaluwarsa. Menunggu otorisasi ulang.');
+        clearExpiredToken();
+        setGoogleToken(null);
+        setDriveDraftMeta(null);
+        setDriveFiles([]);
+      } else {
+        console.warn('Pemeriksaan draf Google Drive belum dapat tersambung (mungkin sedang offline):', err);
       }
     }
   };
@@ -108,7 +128,7 @@ export default function Settings({
         alert('Gagal login Google. Jendela pop-up diblokir oleh browser (popup blocker). Harap izinkan jendela pop-up di browser Anda agar dapat login!');
       }
     } catch (err: any) {
-      console.error(err);
+      console.warn('Google login failed:', err);
       if (err.code === 'auth/popup-closed-by-user' || (err.message && err.message.includes('popup-closed-by-user'))) {
         alert('Proses masuk dibatalkan karena jendela login ditutup.');
       } else {
@@ -124,66 +144,138 @@ export default function Settings({
       await googleSignOut();
       triggerSuccess('Berhasil keluar dari akun Google.');
     } catch (err: any) {
-      console.error(err);
+      console.warn('Logout notice:', err);
     }
   };
 
   const syncBackupToDrive = async () => {
-    if (!googleToken) {
-      alert('Harap login Google terlebih dahulu.');
-      return;
+    let activeToken = googleToken;
+    if (!activeToken) {
+      const loginRes = await googleSignIn();
+      if (!loginRes?.accessToken) {
+        alert('Harap hubungkan akun Google Drive terlebih dahulu untuk mencadangkan.');
+        return;
+      }
+      activeToken = loginRes.accessToken;
+      setGoogleUser(loginRes.user);
+      setGoogleToken(loginRes.accessToken);
     }
     setIsDriveSyncing(true);
     try {
-      const result = await uploadDraftToDrive(googleToken, pesananList, settings);
+      const result = await uploadDraftToDrive(activeToken, pesananList, settings);
       if (result.success) {
-        setDriveDraftMeta({ id: result.fileId, modifiedTime: result.modifiedTime });
+        setDriveDraftMeta({ id: result.fileId, name: 'laporan_jersey_draft.json', modifiedTime: result.modifiedTime });
         triggerSuccess('Draft berhasil dicadangkan ke Google Drive Cloud!');
       }
     } catch (err: any) {
-      console.error(err);
-      alert('Gagal menyimpan draft ke Google Drive: ' + err.message);
+      console.warn('Gagal mencadangkan draft ke Google Drive:', err);
+      if (err?.message === 'UNAUTHORIZED') {
+        alert('Sesi Google Drive telah kedaluwarsa. Harap klik "Hubungkan Ulang" untuk login kembali.');
+        setGoogleToken(null);
+      } else {
+        alert('Gagal menyimpan draft ke Google Drive: ' + err.message);
+      }
     } finally {
       setIsDriveSyncing(false);
     }
   };
 
-  const syncRestoreFromDrive = async () => {
-    if (!googleToken || !driveDraftMeta) {
+  const syncRestoreFromDrive = async (fileIdToRestore?: string) => {
+    let activeToken = googleToken;
+    if (!activeToken) {
+      const loginRes = await googleSignIn();
+      if (!loginRes?.accessToken) {
+        alert('Harap hubungkan akun Google Drive terlebih dahulu.');
+        return;
+      }
+      activeToken = loginRes.accessToken;
+      setGoogleUser(loginRes.user);
+      setGoogleToken(loginRes.accessToken);
+    }
+    const targetFileId = fileIdToRestore || driveDraftMeta?.id;
+    if (!targetFileId) {
       alert('Tidak ada draft yang ditemukan di Google Drive untuk dimuat.');
       return;
     }
-    
-    // MANDATORY confirmation dialogue before mutating user cloud/local state
-    const formattedTime = new Date(driveDraftMeta.modifiedTime).toLocaleString('id-ID', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    const confirmMessage = `Apakah Anda yakin ingin MUAT/DOWNLOAD draft dari Google Drive?\n\nDraft ini disimpan pada: ${formattedTime}\n\nTindakan ini AKAN MENUMPUK & MENGGANTIKAN seluruh data jersey dan setelan lokal Anda saat ini. Berkas lokal saat ini akan terhapus total!`;
-    const confirmed = window.confirm(confirmMessage);
-    if (!confirmed) return;
 
     setIsDriveSyncing(true);
     try {
-      const payload = await downloadDraftFromDrive(googleToken, driveDraftMeta.id);
+      const payload = await downloadDraftFromDrive(activeToken, targetFileId);
       if (payload && Array.isArray(payload.pesananList)) {
-        onImportData(payload.pesananList, payload.shopName);
-        if (payload.settings) {
-          onUpdateSettings(payload.settings);
-        }
-        triggerSuccess('Draft berhasil disinkronkan dari Google Drive!');
+        onImportData(payload.pesananList, payload.shopName, payload.settings);
+        toggleAutoSyncSetting(true);
+        triggerSuccess(`Draft berhasil dipulihkan (${payload.pesananList.length} pesanan)! Auto-Restore aktif.`);
       } else {
         alert('Format draft berkas tidak kompatibel.');
       }
     } catch (err: any) {
-      console.error(err);
-      alert('Gagal memuat draft dari Google Drive: ' + err.message);
+      console.warn('Gagal memuat draft dari Google Drive:', err);
+      if (err?.message === 'UNAUTHORIZED') {
+        alert('Sesi Google Drive telah kedaluwarsa. Harap klik "Hubungkan Ulang" untuk login kembali.');
+        setGoogleToken(null);
+      } else {
+        alert('Gagal memuat draft dari Google Drive: ' + err.message);
+      }
     } finally {
       setIsDriveSyncing(false);
     }
+  };
+
+  const handleUploadToDriveAndRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        let list: Pesanan[] | null = null;
+        let shopName = '';
+        let fileSettings: ShopSettings | null = null;
+
+        if (parsed) {
+          if (Array.isArray(parsed)) {
+            list = parsed;
+          } else if (typeof parsed === 'object') {
+            list = parsed.pesananList || parsed.pesanan || parsed.orders || parsed.data || null;
+            shopName = parsed.shopName || parsed.namaToko || '';
+            fileSettings = parsed.settings || null;
+          }
+        }
+
+        if (list && Array.isArray(list)) {
+          // 1. Immediately apply to local state & switch view
+          onImportData(list, shopName, fileSettings || undefined);
+          toggleAutoSyncSetting(true);
+
+          // 2. If Google Drive is logged in, upload directly to Drive
+          if (googleToken) {
+            setIsDriveSyncing(true);
+            try {
+              const res = await uploadDraftToDrive(googleToken, list, fileSettings || settings);
+              if (res.success) {
+                setDriveDraftMeta({ id: res.fileId, name: 'laporan_jersey_draft.json', modifiedTime: res.modifiedTime });
+                triggerSuccess(`Berkas "${file.name}" dipulihkan (${list.length} pesanan) & dicadangkan ke Drive! Auto-Restore aktif.`);
+              }
+            } catch (uploadErr) {
+              console.warn('Gagal upload langsung ke Drive saat import:', uploadErr);
+              triggerSuccess(`Berkas dipulihkan (${list.length} pesanan). Auto-Sync aktif.`);
+            } finally {
+              setIsDriveSyncing(false);
+            }
+          } else {
+            triggerSuccess(`Berkas berhasil dipulihkan secara lokal (${list.length} pesanan)!`);
+          }
+        } else {
+          alert('Format berkas JSON tidak sesuai. Pastikan file berisi data transaksi pesanan.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Gagal membaca file JSON. Berkas corrupt atau rusak.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const toggleAutoSyncSetting = (enabled: boolean) => {
@@ -207,6 +299,25 @@ export default function Settings({
       const base64String = event.target?.result as string;
       onUpdateSettings({ logoUrl: base64String });
       triggerSuccess('Logo Toko berhasil diperbarui!');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handle store QRIS barcode / payment image upload convert to Base64
+  const handleQrisUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 3 * 1024 * 1024) {
+      alert('Ukuran gambar QRIS terlalu besar! Maksimal 3MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64String = event.target?.result as string;
+      onUpdateSettings({ qrisImageUrl: base64String });
+      triggerSuccess('Gambar Barcode QRIS Toko berhasil diperbarui!');
     };
     reader.readAsDataURL(file);
   };
@@ -270,7 +381,15 @@ export default function Settings({
 
         if (list && Array.isArray(list)) {
           onImportData(list, shopName, fileSettings || undefined);
-          alert(`Berhasil! Draft Laporan Jersey berhasil diimport. Memulihkan ${list.length} data transaksi.`);
+          toggleAutoSyncSetting(true);
+          if (googleToken) {
+            uploadDraftToDrive(googleToken, list, fileSettings || settings).then(res => {
+              if (res.success) {
+                setDriveDraftMeta({ id: res.fileId, name: 'laporan_jersey_draft.json', modifiedTime: res.modifiedTime });
+              }
+            }).catch(e => console.warn('Auto drive sync on import error:', e));
+          }
+          triggerSuccess(`Draft berhasil diimpor (${list.length} pesanan)! Auto-Restore aktif.`);
         } else {
           alert('Format berkas JSON tidak sesuai standard Laporan Jersey. Pastikan file berisi daftar pesanan.');
         }
@@ -441,6 +560,46 @@ export default function Settings({
                       className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-semibold"
                     />
                   </div>
+
+                  {/* Bank Account Details for Invoices */}
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Nama Bank Resmi / Rekening Pribadi
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: BCA, Mandiri, BRI, BNI..."
+                      value={settings.namaBankToko || ''}
+                      onChange={(e) => onUpdateSettings({ namaBankToko: e.target.value })}
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Nomor Rekening Bank
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 8105-9281-33"
+                      value={settings.nomorRekeningToko || ''}
+                      onChange={(e) => onUpdateSettings({ nomorRekeningToko: e.target.value })}
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-mono font-semibold"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Atas Nama (A/N) Pemilik Rekening
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Nama Pribadi / Nomaden Apparel"
+                      value={settings.atasNamaRekeningToko || ''}
+                      onChange={(e) => onUpdateSettings({ atasNamaRekeningToko: e.target.value })}
+                      className="w-full px-4 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 transition-all font-semibold"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -492,6 +651,63 @@ export default function Settings({
                       type="file"
                       ref={logoInputRef}
                       onChange={handleLogoUpload}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                  </div>
+
+                </div>
+              </div>
+
+              {/* QRIS Barcode Image Upload sector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                  Gambar Barcode QRIS Toko (Untuk Pembayaran Nota)
+                </label>
+                
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-dotted border-slate-300 dark:border-slate-700">
+                  
+                  {/* Current QRIS previewer slot */}
+                  {settings.qrisImageUrl ? (
+                    <div className="relative group shrink-0">
+                      <img 
+                        src={settings.qrisImageUrl} 
+                        alt="QRIS Toko" 
+                        className="w-16 h-16 object-contain rounded-lg border border-slate-200 bg-white p-1"
+                        referrerPolicy="no-referrer"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettings({ qrisImageUrl: '' })}
+                        className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white rounded-full p-1 shadow-sm hover:scale-105"
+                        title="Hapus gambar QRIS kustom"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 rounded-xl bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-400 shrink-0">
+                      <QrCode className="h-6 w-6" />
+                    </div>
+                  )}
+
+                  <div className="flex-1 space-y-1">
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Unggah Barcode QRIS Resmi Toko</p>
+                    <p className="text-[10px] text-slate-400">Jika dikosongkan, nota akan membuat barcode QRIS standar otomatis.</p>
+                    
+                    <button
+                      type="button"
+                      onClick={() => qrisInputRef.current?.click()}
+                      className="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      Pilih Foto / Barcode QRIS
+                    </button>
+                    
+                    <input
+                      type="file"
+                      ref={qrisInputRef}
+                      onChange={handleQrisUpload}
                       accept="image/*"
                       className="hidden"
                     />
@@ -625,68 +841,126 @@ export default function Settings({
                   </button>
                 </div>
 
+                {!googleToken && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                      <div>
+                        <p className="text-xs text-amber-800 dark:text-amber-200 font-bold">
+                          Sesi Akses Google Drive Kedaluwarsa
+                        </p>
+                        <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-tight">
+                          Data di toko Anda tetap aman tersimpan. Hubungkan ulang akun untuk melanjutkan sinkronisasi Google Drive.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGoogleLogin}
+                      disabled={isDriveSyncing}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                      {isDriveSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Hubungkan Ulang'}
+                    </button>
+                  </div>
+                )}
+
                 {/* Cloud Draft File indicator */}
                 <div className="p-3.5 bg-sky-500/5 border border-sky-500/10 rounded-xl space-y-2">
                   <div className="flex items-start gap-2.5">
                     <CloudLightning className="h-4 w-4 text-sky-500 mt-0.5 shrink-0" />
-                    <div className="text-xs">
+                    <div className="text-xs w-full">
                       <p className="font-extrabold text-slate-800 dark:text-slate-200">
                         Status Backup di Google Drive Cloud:
                       </p>
                       {driveDraftMeta ? (
-                        <p className="text-slate-400 text-[11px] mt-0.5 leading-relaxed">
-                          Terdapat berkas <span className="text-sky-400 font-bold">laporan_jersey_draft.json</span> di Drive Anda.<br />
-                          Diperbarui pada: <span className="font-semibold text-slate-300 dark:text-slate-200">{new Date(driveDraftMeta.modifiedTime).toLocaleString('id-ID')}</span>
-                        </p>
+                        <div className="mt-1 space-y-1">
+                          <p className="text-slate-400 text-[11px] leading-relaxed">
+                            Terdapat berkas <span className="text-sky-400 font-bold">{driveDraftMeta.name}</span> di Drive Anda.<br />
+                            Diperbarui pada: <span className="font-semibold text-slate-300 dark:text-slate-200">{new Date(driveDraftMeta.modifiedTime).toLocaleString('id-ID')}</span>
+                          </p>
+                          {driveFiles.length > 1 && (
+                            <p className="text-[10px] text-indigo-400 font-medium">
+                              (Terdapat {driveFiles.length} berkas cadangan ditemukan di Google Drive)
+                            </p>
+                          )}
+                        </div>
                       ) : (
                         <p className="text-amber-500 text-[11px] font-semibold mt-0.5 leading-relaxed">
-                          Belum ada berkas draft di Google Drive. Klik &ldquo;Cadangkan Sekarang&rdquo; untuk membuat backup awal Anda.
+                          Belum ada berkas draft di Google Drive. Klik &ldquo;Cadangkan ke Drive&rdquo; atau &ldquo;Unggah File JSON ke Drive&rdquo; untuk memulai auto-restore.
                         </p>
                       )}
                     </div>
                   </div>
                 </div>
 
+                {/* Hidden input for direct upload to drive & restore */}
+                <input 
+                  type="file" 
+                  ref={driveFileInputRef} 
+                  onChange={handleUploadToDriveAndRestore} 
+                  accept=".json" 
+                  className="hidden" 
+                />
+
                 {/* Integration control buttons */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  
-                  {/* Backup / Upload button */}
+                <div className="space-y-2.5 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Backup / Upload button */}
+                    <button
+                      type="button"
+                      onClick={syncBackupToDrive}
+                      disabled={isDriveSyncing}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl text-xs font-extrabold text-white transition-all cursor-pointer shadow-xs"
+                    >
+                      {isDriveSyncing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Cloud className="h-4 w-4" />
+                      )}
+                      Cadangkan ke Drive
+                    </button>
+
+                    {/* Restore / Download button */}
+                    <button
+                      type="button"
+                      onClick={() => syncRestoreFromDrive()}
+                      disabled={isDriveSyncing || !driveDraftMeta}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-755 disabled:opacity-40 rounded-xl text-xs font-extrabold text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
+                    >
+                      {isDriveSyncing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      Muat dari Drive
+                    </button>
+                  </div>
+
+                  {/* Direct upload JSON to Drive & Auto-Restore */}
                   <button
                     type="button"
-                    onClick={syncBackupToDrive}
+                    onClick={() => driveFileInputRef.current?.click()}
                     disabled={isDriveSyncing}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl text-xs font-extrabold text-white transition-all cursor-pointer shadow-xs"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-extrabold transition-all cursor-pointer"
                   >
-                    {isDriveSyncing ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Cloud className="h-4 w-4" />
-                    )}
-                    Cadangkan ke Drive
+                    <Upload className="h-4 w-4 text-emerald-500" />
+                    Unggah File JSON ke Drive &amp; Aktifkan Auto-Restore
                   </button>
-
-                  {/* Restore / Download button */}
-                  <button
-                    type="button"
-                    onClick={syncRestoreFromDrive}
-                    disabled={isDriveSyncing || !driveDraftMeta}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-755 disabled:opacity-40 rounded-xl text-xs font-extrabold text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
-                  >
-                    {isDriveSyncing ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4" />
-                    )}
-                    Muat dari Drive
-                  </button>
-
                 </div>
 
                 {/* Auto Cloud Backup Preferences Checkbox Toggle */}
                 <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700/60 rounded-xl">
                   <div className="space-y-0.5">
-                    <p className="text-xs font-bold text-slate-800 dark:text-white">Auto-Backup ke Cloud</p>
-                    <p className="text-[10px] text-slate-400">Simpan cadangan ke Drive otomatis setiap Anda mengubah data.</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-bold text-slate-800 dark:text-white">Auto-Backup ke Cloud</p>
+                      {autoSyncEnabled && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                          Aktif
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-400">Simpan cadangan ke Drive otomatis setiap kali Anda mengubah data.</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer select-none">
                     <input 
