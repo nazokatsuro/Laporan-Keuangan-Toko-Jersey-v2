@@ -25,6 +25,8 @@ export interface PesananItem {
   printPerPcs: number;
   jahitPerPcs: number;
   modelKerah?: string;
+  modelLengan?: string; // PENDEK, LENGAN PANJANG, BUNTONG, etc.
+  modelJahit?: string; // BIASA, FULL STIK, OVERDECK, etc.
   penerimaKomisi?: string;
   komisiPerPcs?: number;
   vendorJahit?: string;
@@ -52,6 +54,18 @@ export interface Pesanan {
   sisaTagihan: number; // totalHarga - uangMasuk
   statusProduksi: StatusProduksi;
   modelKerah?: string; // Model Kerah PO
+  modelLengan?: string; // Model Lengan / Tangan (PENDEK, LENGAN PANJANG, BUNTONG, etc.)
+  modelJahit?: string; // Model Jahitan (BIASA, FULL STIK, OVERDECK, etc.)
+  nomorSpk?: string; // e.g. SPK-2026-LVX0
+  spkStatus?: 'NORMAL' | 'PRIORITAS' | 'URGENT' | 'SELESAI' | 'HOLD';
+  catatanKhususPenjahit?: {
+    mainNote?: string; // Highlight Tebal
+    jahit?: string; // Catatan Jahit
+    bahan?: string; // Catatan Bahan
+    tangan?: string; // Catatan Tangan / Lengan
+    kerah?: string; // Catatan Kerah
+    additionalNotes?: string;
+  };
   
   // Perhitungan Modal
   printPerPcs: number;

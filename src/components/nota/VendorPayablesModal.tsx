@@ -6,7 +6,7 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { Pesanan, ShopSettings } from '../../types';
 import { formatRupiah } from '../../utils';
-import { VendorPayablesCard, VendorPayableCategory } from './VendorPayablesCard';
+import { VendorPayablesCard, VendorPayableCategory, VendorStatusFilter } from './VendorPayablesCard';
 import { 
   Printer, 
   Download, 
@@ -18,22 +18,27 @@ import {
   ZoomIn, 
   ZoomOut, 
   RotateCcw,
-  Scissors,
-  Layers,
-  DollarSign,
-  ReceiptText,
-  Filter,
-  CheckSquare,
-  Square,
-  Copy,
-  Share2,
-  Calendar,
-  Sparkles,
-  Maximize2,
-  Eye,
-  CheckCircle2
+  Scissors, 
+  Layers, 
+  DollarSign, 
+  ReceiptText, 
+  Filter, 
+  CheckSquare, 
+  Square, 
+  Copy, 
+  Share2, 
+  Calendar, 
+  Sparkles, 
+  Maximize2, 
+  Eye, 
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  Edit3,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import { toPng, toJpeg, toCanvas } from 'html-to-image';
+import { toCanvas } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 
 interface VendorPayablesModalProps {
@@ -45,7 +50,7 @@ interface VendorPayablesModalProps {
 }
 
 export function VendorPayablesModal({
-  orders,
+  orders: initialOrders,
   settings,
   initialCategory = 'semua',
   onClose,
@@ -54,13 +59,22 @@ export function VendorPayablesModal({
   const cardRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   
+  // Local state for orders to allow immediate interactive updates
+  const [localOrders, setLocalOrders] = useState<Pesanan[]>(initialOrders);
+  
+  useEffect(() => {
+    setLocalOrders(initialOrders);
+  }, [initialOrders]);
+
   const [category, setCategory] = useState<VendorPayableCategory>(initialCategory);
-  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>(() => orders.map(o => o.id));
+  const [statusFilter, setStatusFilter] = useState<VendorStatusFilter>('semua');
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>(() => initialOrders.map(o => o.id));
   const [vendorNameFilter, setVendorNameFilter] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [customNotes, setCustomNotes] = useState<string>('');
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [isAutoFit, setIsAutoFit] = useState<boolean>(true);
+  const [isQuickManageOpen, setIsQuickManageOpen] = useState<boolean>(false);
   
   const [isExportingPng, setIsExportingPng] = useState<boolean>(false);
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
@@ -70,7 +84,6 @@ export function VendorPayablesModal({
   const calculateFitZoom = useCallback(() => {
     if (previewContainerRef.current) {
       const containerWidth = previewContainerRef.current.clientWidth;
-      // 840px is document width, leave at least 24px margin
       const targetWidth = Math.max(300, containerWidth - 28);
       const computedZoom = Math.min(100, Math.max(35, Math.floor((targetWidth / 840) * 100)));
       return computedZoom;
@@ -86,7 +99,6 @@ export function VendorPayablesModal({
       }
     };
 
-    // Initial calculation with a slight delay for modal transition
     const timer = setTimeout(() => {
       handleResize();
     }, 50);
@@ -112,7 +124,7 @@ export function VendorPayablesModal({
   // Distinct vendors / tailors / partners present in orders
   const vendorOptions = useMemo(() => {
     const names = new Set<string>();
-    orders.forEach(order => {
+    localOrders.forEach(order => {
       if (order.vendorJahit) names.add(order.vendorJahit);
       if (order.vendorSublim) names.add(order.vendorSublim);
       if (order.penerimaKomisi) names.add(order.penerimaKomisi);
@@ -123,11 +135,11 @@ export function VendorPayablesModal({
       });
     });
     return Array.from(names).filter(Boolean);
-  }, [orders]);
+  }, [localOrders]);
 
   // Filtered orders based on user selection & search
   const activeOrders = useMemo(() => {
-    return orders.filter(order => {
+    return localOrders.filter(order => {
       if (!selectedOrderIds.includes(order.id)) return false;
       if (searchTerm) {
         const matchPo = (order.namaPo || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -137,51 +149,147 @@ export function VendorPayablesModal({
       }
       return true;
     });
-  }, [orders, selectedOrderIds, searchTerm]);
+  }, [localOrders, selectedOrderIds, searchTerm]);
 
-  // Calculation of grand totals for the active selection
+  // Calculation of grand totals (Total Transaksi, Sudah Lunas, Sisa Tagihan)
   const totals = useMemo(() => {
-    let sumJahit = 0;
-    let sumSublim = 0;
-    let sumKomisi = 0;
+    let totalBiayaAll = 0;
+    let totalLunasAll = 0;
+    let totalSisaAll = 0;
     let totalPcs = 0;
+    let paidOrdersCount = 0;
+    let unpaidOrdersCount = 0;
 
     activeOrders.forEach(order => {
-      if (order.items && order.items.length > 0) {
-        order.items.forEach(it => {
-          const qty = Number(it.qty) || 0;
-          const isJahitLunas = it.statusBayarJahit === 'Lunas' || order.statusBayarJahit === 'Lunas';
-          const isSublimLunas = it.statusBayarSublim === 'Lunas' || order.statusBayarSublim === 'Lunas';
-          const isKomisiLunas = it.statusBayarKomisi === 'Lunas' || order.statusBayarKomisi === 'Lunas';
+      let orderBiaya = 0;
+      let orderLunas = 0;
 
-          if (!isJahitLunas) sumJahit += qty * (Number(it.jahitPerPcs ?? order.jahitPerPcs) || 0);
-          if (!isSublimLunas) sumSublim += qty * (Number(it.printPerPcs ?? order.printPerPcs) || 0);
-          if (!isKomisiLunas) sumKomisi += qty * (Number(it.komisiPerPcs ?? order.komisiPerPcs) || 0);
-          totalPcs += qty;
-        });
-      } else {
-        const qty = Number(order.qty) || 0;
-        const isJahitLunas = order.statusBayarJahit === 'Lunas';
-        const isSublimLunas = order.statusBayarSublim === 'Lunas';
-        const isKomisiLunas = order.statusBayarKomisi === 'Lunas';
+      const items = order.items && order.items.length > 0 ? order.items : [{
+        qty: order.qty || 0,
+        jahitPerPcs: order.jahitPerPcs || 0,
+        printPerPcs: order.printPerPcs || 0,
+        komisiPerPcs: order.komisiPerPcs || 0,
+        statusBayarJahit: order.statusBayarJahit,
+        statusBayarSublim: order.statusBayarSublim,
+        statusBayarKomisi: order.statusBayarKomisi,
+        vendorJahit: order.vendorJahit,
+        vendorSublim: order.vendorSublim,
+        penerimaKomisi: order.penerimaKomisi
+      }];
 
-        if (!isJahitLunas) sumJahit += qty * (Number(order.jahitPerPcs) || 0);
-        if (!isSublimLunas) sumSublim += qty * (Number(order.printPerPcs) || 0);
-        if (!isKomisiLunas) sumKomisi += qty * (Number(order.komisiPerPcs) || 0);
-        totalPcs += qty;
+      items.forEach(it => {
+        const q = Number(it.qty) || 0;
+        totalPcs += q;
+
+        const jCost = q * (Number(it.jahitPerPcs ?? order.jahitPerPcs) || 0);
+        const sCost = q * (Number(it.printPerPcs ?? order.printPerPcs) || 0);
+        const kCost = q * (Number(it.komisiPerPcs ?? order.komisiPerPcs) || 0);
+
+        const isJLunas = it.statusBayarJahit === 'Lunas' || order.statusBayarJahit === 'Lunas';
+        const isSLunas = it.statusBayarSublim === 'Lunas' || order.statusBayarSublim === 'Lunas';
+        const isKLunas = it.statusBayarKomisi === 'Lunas' || order.statusBayarKomisi === 'Lunas';
+
+        if (category === 'jahit') {
+          orderBiaya += jCost;
+          if (isJLunas) orderLunas += jCost;
+        } else if (category === 'sublim') {
+          orderBiaya += sCost;
+          if (isSLunas) orderLunas += sCost;
+        } else if (category === 'komisi') {
+          orderBiaya += kCost;
+          if (isKLunas) orderLunas += kCost;
+        } else {
+          // 'semua'
+          orderBiaya += (jCost + sCost + kCost);
+          if (isJLunas) orderLunas += jCost;
+          if (isSLunas) orderLunas += sCost;
+          if (isKLunas) orderLunas += kCost;
+        }
+      });
+
+      const orderSisa = orderBiaya - orderLunas;
+      totalBiayaAll += orderBiaya;
+      totalLunasAll += orderLunas;
+      totalSisaAll += orderSisa;
+
+      if (orderSisa <= 0 && orderBiaya > 0) {
+        paidOrdersCount++;
+      } else if (orderSisa > 0) {
+        unpaidOrdersCount++;
       }
     });
 
-    const grand = category === 'jahit'
-      ? sumJahit
-      : category === 'sublim'
-      ? sumSublim
-      : category === 'komisi'
-      ? sumKomisi
-      : (sumJahit + sumSublim + sumKomisi);
-
-    return { sumJahit, sumSublim, sumKomisi, totalPcs, grand };
+    return {
+      totalBiayaAll,
+      totalLunasAll,
+      totalSisaAll,
+      totalPcs,
+      paidOrdersCount,
+      unpaidOrdersCount
+    };
   }, [activeOrders, category]);
+
+  // Quick toggle payment status for an order
+  const handleToggleOrderPayment = (orderId: string, type: 'jahit' | 'sublim' | 'komisi') => {
+    const next = localOrders.map(o => {
+      if (o.id !== orderId) return o;
+
+      if (type === 'jahit') {
+        const newStatus = o.statusBayarJahit === 'Lunas' ? 'Belum Lunas' : 'Lunas';
+        const newItems = o.items?.map(it => ({ ...it, statusBayarJahit: newStatus }));
+        return { ...o, statusBayarJahit: newStatus, items: newItems };
+      }
+      if (type === 'sublim') {
+        const newStatus = o.statusBayarSublim === 'Lunas' ? 'Belum Lunas' : 'Lunas';
+        const newItems = o.items?.map(it => ({ ...it, statusBayarSublim: newStatus }));
+        return { ...o, statusBayarSublim: newStatus, items: newItems };
+      }
+      if (type === 'komisi') {
+        const newStatus = o.statusBayarKomisi === 'Lunas' ? 'Belum Lunas' : 'Lunas';
+        const newItems = o.items?.map(it => ({ ...it, statusBayarKomisi: newStatus }));
+        return { ...o, statusBayarKomisi: newStatus, items: newItems };
+      }
+      return o;
+    });
+
+    setLocalOrders(next);
+    if (onUpdateOrders) {
+      onUpdateOrders(next);
+    }
+  };
+
+  // Bulk mark all active orders as Lunas or Belum Lunas
+  const handleBulkSetStatus = (targetStatus: 'Lunas' | 'Belum Lunas') => {
+    const next = localOrders.map(o => {
+      if (!selectedOrderIds.includes(o.id)) return o;
+
+      let updated = { ...o };
+      if (category === 'jahit' || category === 'semua') {
+        updated.statusBayarJahit = targetStatus;
+        if (updated.items) {
+          updated.items = updated.items.map(it => ({ ...it, statusBayarJahit: targetStatus }));
+        }
+      }
+      if (category === 'sublim' || category === 'semua') {
+        updated.statusBayarSublim = targetStatus;
+        if (updated.items) {
+          updated.items = updated.items.map(it => ({ ...it, statusBayarSublim: targetStatus }));
+        }
+      }
+      if (category === 'komisi' || category === 'semua') {
+        updated.statusBayarKomisi = targetStatus;
+        if (updated.items) {
+          updated.items = updated.items.map(it => ({ ...it, statusBayarKomisi: targetStatus }));
+        }
+      }
+      return updated;
+    });
+
+    setLocalOrders(next);
+    if (onUpdateOrders) {
+      onUpdateOrders(next);
+    }
+  };
 
   const handlePrint = () => {
     window.print();
@@ -209,7 +317,7 @@ export function VendorPayablesModal({
       const dataUrl = canvas.toDataURL('image/png', 1.0);
       const a = document.createElement('a');
       const dateStr = new Date().toISOString().slice(0, 10);
-      a.download = `NOTA_BELUM_LUNAS_${category.toUpperCase()}_${activeOrders.length}_PO_${dateStr}.png`;
+      a.download = `NOTA_TAGIHAN_VENDOR_${category.toUpperCase()}_${statusFilter.toUpperCase()}_${activeOrders.length}_PO_${dateStr}.png`;
       a.href = dataUrl;
       document.body.appendChild(a);
       a.click();
@@ -253,17 +361,15 @@ export function VendorPayablesModal({
       const pageWidth = 210;
       const pageHeight = 297;
       const margin = 8;
-      const contentWidth = pageWidth - (margin * 2); // 194 mm
-      const contentHeightPerPage = pageHeight - (margin * 2); // 281 mm
+      const contentWidth = pageWidth - (margin * 2);
+      const contentHeightPerPage = pageHeight - (margin * 2);
 
       const totalHeightMm = (canvas.height / canvas.width) * contentWidth;
 
       if (totalHeightMm <= contentHeightPerPage) {
-        // Fits in a single page
         const imgData = canvas.toDataURL('image/jpeg', 0.98);
         pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, totalHeightMm, undefined, 'FAST');
       } else {
-        // Multi-page slicing so table rows and signatures are never cut off or squished
         const sliceHeightPx = Math.floor((contentHeightPerPage / contentWidth) * canvas.width);
         let renderedY = 0;
         let pageIndex = 0;
@@ -308,7 +414,7 @@ export function VendorPayablesModal({
       }
 
       const dateStr = new Date().toISOString().slice(0, 10);
-      pdf.save(`NOTA_BELUM_LUNAS_${category.toUpperCase()}_${activeOrders.length}_PO_${dateStr}.pdf`);
+      pdf.save(`NOTA_TAGIHAN_VENDOR_${category.toUpperCase()}_${statusFilter.toUpperCase()}_${activeOrders.length}_PO_${dateStr}.pdf`);
     } catch (e) {
       console.error('Gagal unduh PDF:', e);
       alert('Gagal mengunduh file PDF. Silakan coba lagi.');
@@ -319,10 +425,10 @@ export function VendorPayablesModal({
 
   const generateSummaryText = () => {
     const categoryTitle = {
-      jahit: 'NOTA TAGIHAN ONGKOS JAHIT (BELUM LUNAS)',
-      sublim: 'NOTA TAGIHAN ONGKOS SUBLIM (BELUM LUNAS)',
-      komisi: 'NOTA TAGIHAN KOMISI & FEE (BELUM LUNAS)',
-      semua: 'NOTA REKAP BIAYA PRODUKSI & KOMISI (BELUM LUNAS)'
+      jahit: 'NOTA REKAP ONGKOS JAHIT (STATUS & SISA TAGIHAN)',
+      sublim: 'NOTA REKAP ONGKOS SUBLIM (STATUS & SISA TAGIHAN)',
+      komisi: 'NOTA REKAP KOMISI & MARKETING FEE (STATUS & SISA TAGIHAN)',
+      semua: 'NOTA REKAP BIAYA PRODUKSI & KOMISI VENDOR (STATUS & SISA TAGIHAN)'
     }[category];
 
     const lines = activeOrders.map((o, idx) => {
@@ -336,77 +442,112 @@ export function VendorPayablesModal({
           jahitPerPcs: o.jahitPerPcs || 0,
           printPerPcs: o.printPerPcs || 0,
           komisiPerPcs: o.komisiPerPcs || 0,
-          catatanJahit: o.catatanJahit || '-'
+          statusBayarJahit: o.statusBayarJahit,
+          statusBayarSublim: o.statusBayarSublim,
+          statusBayarKomisi: o.statusBayarKomisi
         }
       ];
 
       if (orderItems.length === 1) {
         const item = orderItems[0];
         const q = Number(item.qty) || 0;
-        const jahitCost = Number(item.jahitPerPcs ?? o.jahitPerPcs ?? 0);
-        const printCost = Number(item.printPerPcs ?? o.printPerPcs ?? 0);
-        const komisiCost = Number(item.komisiPerPcs ?? o.komisiPerPcs ?? 0);
+        const jCost = Number(item.jahitPerPcs ?? o.jahitPerPcs ?? 0) * q;
+        const sCost = Number(item.printPerPcs ?? o.printPerPcs ?? 0) * q;
+        const kCost = Number(item.komisiPerPcs ?? o.komisiPerPcs ?? 0) * q;
+
+        const isJL = item.statusBayarJahit === 'Lunas' || o.statusBayarJahit === 'Lunas';
+        const isSL = item.statusBayarSublim === 'Lunas' || o.statusBayarSublim === 'Lunas';
+        const isKL = item.statusBayarKomisi === 'Lunas' || o.statusBayarKomisi === 'Lunas';
 
         let costDetail = '';
+        let statusBadge = '';
+        let sisaDetail = '';
+
         if (category === 'jahit') {
-          costDetail = `${q} Pcs @ ${formatRupiah(jahitCost)} = ${formatRupiah(q * jahitCost)}`;
+          costDetail = `Biaya: ${formatRupiah(jCost)}`;
+          statusBadge = isJL ? '[LUNAS ✓]' : '[BELUM LUNAS]';
+          sisaDetail = isJL ? 'Sisa: Rp 0' : `Sisa: ${formatRupiah(jCost)}`;
         } else if (category === 'sublim') {
-          costDetail = `${q} Pcs @ ${formatRupiah(printCost)} = ${formatRupiah(q * printCost)}`;
+          costDetail = `Biaya: ${formatRupiah(sCost)}`;
+          statusBadge = isSL ? '[LUNAS ✓]' : '[BELUM LUNAS]';
+          sisaDetail = isSL ? 'Sisa: Rp 0' : `Sisa: ${formatRupiah(sCost)}`;
         } else if (category === 'komisi') {
-          costDetail = `${q} Pcs @ ${formatRupiah(komisiCost)} = ${formatRupiah(q * komisiCost)}`;
+          costDetail = `Biaya: ${formatRupiah(kCost)}`;
+          statusBadge = isKL ? '[LUNAS ✓]' : '[BELUM LUNAS]';
+          sisaDetail = isKL ? 'Sisa: Rp 0' : `Sisa: ${formatRupiah(kCost)}`;
         } else {
-          const tot = (q * jahitCost) + (q * printCost) + (q * komisiCost);
-          costDetail = `${q} Pcs = Total ${formatRupiah(tot)}`;
+          const tot = jCost + sCost + kCost;
+          const paid = (isJL ? jCost : 0) + (isSL ? sCost : 0) + (isKL ? kCost : 0);
+          const sisa = tot - paid;
+          costDetail = `Total: ${formatRupiah(tot)} (Jahit: ${formatRupiah(jCost)} ${isJL ? '✓' : '✗'} | Sublim: ${formatRupiah(sCost)} ${isSL ? '✓' : '✗'} | Komisi: ${formatRupiah(kCost)} ${isKL ? '✓' : '✗'})`;
+          statusBadge = sisa <= 0 ? '[LUNAS ✓]' : (paid > 0 ? '[SEBAGIAN LUNAS]' : '[BELUM LUNAS]');
+          sisaDetail = sisa <= 0 ? 'Sisa: Rp 0' : `Sisa: ${formatRupiah(sisa)}`;
         }
+
         const cleanProd = (item.namaProduk || 'Jersey Custom').replace(/\[Item\s*\d+\]:?\s*/gi, '').trim();
-        return `${poNum}. PO *${o.namaPo}* (#${o.id}) • Pemesan: ${o.namaPemesan}\n   Produk: ${cleanProd} (${item.bahan || o.bahan || '-'})\n   Rincian: ${costDetail}`;
+        return `${poNum}. PO *${o.namaPo}* (#${o.id}) • Pemesan: ${o.namaPemesan}\n   Produk: ${cleanProd} (${q} Pcs)\n   ${costDetail}\n   Status: ${statusBadge} • ${sisaDetail}`;
       } else {
-        // Multi-item grouped under 1 PO number
-        let poSubtotal = 0;
-        let poTotalQty = 0;
+        // Multi-item
+        let poTotal = 0;
+        let poPaid = 0;
+        let poQty = 0;
 
-        const itemLines = orderItems.map((item) => {
+        const itemLines = orderItems.map(item => {
           const q = Number(item.qty) || 0;
-          const jahitCost = Number(item.jahitPerPcs ?? o.jahitPerPcs ?? 0);
-          const printCost = Number(item.printPerPcs ?? o.printPerPcs ?? 0);
-          const komisiCost = Number(item.komisiPerPcs ?? o.komisiPerPcs ?? 0);
+          poQty += q;
+          const jCost = Number(item.jahitPerPcs ?? o.jahitPerPcs ?? 0) * q;
+          const sCost = Number(item.printPerPcs ?? o.printPerPcs ?? 0) * q;
+          const kCost = Number(item.komisiPerPcs ?? o.komisiPerPcs ?? 0) * q;
 
-          poTotalQty += q;
-          let costDetail = '';
+          const isJL = item.statusBayarJahit === 'Lunas' || o.statusBayarJahit === 'Lunas';
+          const isSL = item.statusBayarSublim === 'Lunas' || o.statusBayarSublim === 'Lunas';
+          const isKL = item.statusBayarKomisi === 'Lunas' || o.statusBayarKomisi === 'Lunas';
+
+          let itCost = 0;
+          let itPaid = 0;
+          let itLabel = '';
+
           if (category === 'jahit') {
-            const sub = q * jahitCost;
-            poSubtotal += sub;
-            costDetail = `${q} Pcs @ ${formatRupiah(jahitCost)} = ${formatRupiah(sub)}`;
+            itCost = jCost;
+            itPaid = isJL ? jCost : 0;
+            itLabel = `${formatRupiah(jCost)} [${isJL ? 'LUNAS ✓' : 'BELUM'}]`;
           } else if (category === 'sublim') {
-            const sub = q * printCost;
-            poSubtotal += sub;
-            costDetail = `${q} Pcs @ ${formatRupiah(printCost)} = ${formatRupiah(sub)}`;
+            itCost = sCost;
+            itPaid = isSL ? sCost : 0;
+            itLabel = `${formatRupiah(sCost)} [${isSL ? 'LUNAS ✓' : 'BELUM'}]`;
           } else if (category === 'komisi') {
-            const sub = q * komisiCost;
-            poSubtotal += sub;
-            costDetail = `${q} Pcs @ ${formatRupiah(komisiCost)} = ${formatRupiah(sub)}`;
+            itCost = kCost;
+            itPaid = isKL ? kCost : 0;
+            itLabel = `${formatRupiah(kCost)} [${isKL ? 'LUNAS ✓' : 'BELUM'}]`;
           } else {
-            const tot = (q * jahitCost) + (q * printCost) + (q * komisiCost);
-            poSubtotal += tot;
-            costDetail = `${q} Pcs = Total ${formatRupiah(tot)}`;
+            itCost = jCost + sCost + kCost;
+            itPaid = (isJL ? jCost : 0) + (isSL ? sCost : 0) + (isKL ? kCost : 0);
+            itLabel = `${formatRupiah(itCost)} [${itCost - itPaid <= 0 ? 'LUNAS ✓' : 'BELUM'}]`;
           }
 
+          poTotal += itCost;
+          poPaid += itPaid;
           const cleanProd = (item.namaProduk || 'Jersey Custom').replace(/\[Item\s*\d+\]:?\s*/gi, '').trim();
-          return `   • ${cleanProd} (${item.bahan || '-'}): ${costDetail}`;
+          return `   • ${cleanProd} (${q} Pcs): ${itLabel}`;
         }).join('\n');
 
-        return `${poNum}. PO *${o.namaPo}* (#${o.id}) • Pemesan: ${o.namaPemesan}\n   [${orderItems.length} Item Produk - Total ${poTotalQty} Pcs - Subtotal: ${formatRupiah(poSubtotal)}]\n${itemLines}`;
+        const poSisa = poTotal - poPaid;
+        const poBadge = poSisa <= 0 ? '[LUNAS ✓]' : (poPaid > 0 ? '[SEBAGIAN LUNAS]' : '[BELUM LUNAS]');
+
+        return `${poNum}. PO *${o.namaPo}* (#${o.id}) • Pemesan: ${o.namaPemesan}\n   [${orderItems.length} Item - ${poQty} Pcs] - Total: ${formatRupiah(poTotal)} • Status: ${poBadge} • Sisa: ${formatRupiah(poSisa)}\n${itemLines}`;
       }
     }).join('\n\n');
 
     return `*${categoryTitle}*\n*${settings.namaToko || 'Nomaden Apparel'}*\nTanggal: ${new Date().toLocaleDateString('id-ID')}\n\n` +
-      `*Daftar Pesanan (${activeOrders.length} PO / ${totals.totalPcs} Pcs):*\n\n` +
+      `*DAFTAR TRANSAKSI (${activeOrders.length} PO / ${totals.totalPcs} Pcs):*\n\n` +
       lines + '\n\n' +
       `==============================\n` +
-      `*GRAND TOTAL TAGIHAN: ${formatRupiah(totals.grand)}*\n` +
+      `*RINGKASAN STATUS PEMBAYARAN:*\n` +
+      `• Total Nilai Transaksi: ${formatRupiah(totals.totalBiayaAll)}\n` +
+      `• Sudah Lunas: ${formatRupiah(totals.totalLunasAll)} (${totals.paidOrdersCount} PO)\n` +
+      `• *SISA TAGIHAN (BELUM LUNAS): ${formatRupiah(totals.totalSisaAll)}* (${totals.unpaidOrdersCount} PO)\n` +
       `==============================\n\n` +
-      `_Status: Belum Lunas_\n` +
-      `_Catatan: Dokumen rincian tagihan resmi internal ${settings.namaToko || 'Nomaden Apparel'}._`;
+      `_Catatan: Rekapitulasi resmi pembayaran mitra & vendor konveksi ${settings.namaToko || 'Nomaden Apparel'}._`;
   };
 
   const handleCopyText = async () => {
@@ -427,17 +568,11 @@ export function VendorPayablesModal({
   };
 
   const handleToggleSelectAll = () => {
-    if (selectedOrderIds.length === orders.length) {
+    if (selectedOrderIds.length === localOrders.length) {
       setSelectedOrderIds([]);
     } else {
-      setSelectedOrderIds(orders.map(o => o.id));
+      setSelectedOrderIds(localOrders.map(o => o.id));
     }
-  };
-
-  const handleToggleOrder = (id: string) => {
-    setSelectedOrderIds(prev => 
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
   };
 
   return (
@@ -448,37 +583,53 @@ export function VendorPayablesModal({
         
         <div className="flex flex-col gap-3">
           
-          {/* Row 1: Modal Header & Close Button */}
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+          {/* Row 1: Modal Header & Close Button + Live KPIs */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-2.5">
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+              <div className="h-9 w-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
                 <ReceiptText className="h-5 w-5" />
               </div>
               <div>
                 <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <span>Nota Tagihan Produksi & Komisi</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-md font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                    Belum Lunas
+                  <span>Nota Tagihan Vendor & Mitra Produksi</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-md font-extrabold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                    Lunas & Sisa Tagihan
                   </span>
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Tanpa nomor rekening & tanpa kode barcode/QR (Khusus tagihan vendor & mitra)
+                  Transparan: Memperlihatkan transaksi lunas vs belum lunas beserta total sisa tagihannya
                 </p>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              title="Tutup (Esc)"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            {/* KPI Badges on top bar */}
+            <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+              <div className="bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg text-right">
+                <span className="text-[9px] uppercase font-bold text-slate-500 block">Total Transaksi</span>
+                <span className="text-xs font-mono font-bold text-slate-900 dark:text-slate-100">{formatRupiah(totals.totalBiayaAll)}</span>
+              </div>
+              <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 rounded-lg text-right">
+                <span className="text-[9px] uppercase font-bold text-emerald-600 block">Sudah Lunas</span>
+                <span className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-300">{formatRupiah(totals.totalLunasAll)}</span>
+              </div>
+              <div className="bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 px-2.5 py-1 rounded-lg text-right">
+                <span className="text-[9px] uppercase font-black text-amber-700 dark:text-amber-300 block">Sisa Tagihan</span>
+                <span className="text-xs font-mono font-black text-amber-800 dark:text-amber-200">{formatRupiah(totals.totalSisaAll)}</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-1"
+                title="Tutup (Esc)"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
-          {/* Row 2: Category Selector Tabs */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Row 2: Category Selector & Status Filter Tabs */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
             
             {/* Category Switcher Tabs */}
             <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/90 rounded-xl overflow-x-auto max-w-full">
@@ -505,7 +656,7 @@ export function VendorPayablesModal({
                 }`}
               >
                 <Scissors className="h-3.5 w-3.5" />
-                <span>Belum Lunas Jahit</span>
+                <span>Ongkos Jahit</span>
               </button>
 
               <button
@@ -518,7 +669,7 @@ export function VendorPayablesModal({
                 }`}
               >
                 <Layers className="h-3.5 w-3.5" />
-                <span>Belum Lunas Sublim</span>
+                <span>Ongkos Sublim</span>
               </button>
 
               <button
@@ -531,11 +682,53 @@ export function VendorPayablesModal({
                 }`}
               >
                 <DollarSign className="h-3.5 w-3.5" />
-                <span>Belum Lunas Komisi</span>
+                <span>Komisi Fee</span>
               </button>
             </div>
 
-            {/* Quick Vendor Filter dropdown if available */}
+            {/* Status Filter Tabs (Semua / Belum Lunas / Lunas) */}
+            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/90 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setStatusFilter('semua')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  statusFilter === 'semua'
+                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+                title="Tampilkan semua transaksi baik yang lunas maupun belum lunas"
+              >
+                Semua ({totals.paidOrdersCount + totals.unpaidOrdersCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('belum_lunas')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  statusFilter === 'belum_lunas'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                }`}
+                title="Hanya tampilkan transaksi yang belum lunas (ada sisa tagihan)"
+              >
+                <AlertCircle className="h-3 w-3" />
+                <span>Belum Lunas ({totals.unpaidOrdersCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('lunas')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  statusFilter === 'lunas'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                }`}
+                title="Hanya tampilkan transaksi yang sudah lunas"
+              >
+                <CheckCircle2 className="h-3 w-3" />
+                <span>Lunas ({totals.paidOrdersCount})</span>
+              </button>
+            </div>
+
+            {/* Vendor Filter dropdown */}
             {vendorOptions.length > 0 && (
               <div className="flex items-center gap-1.5">
                 <Filter className="h-3.5 w-3.5 text-slate-400" />
@@ -557,20 +750,35 @@ export function VendorPayablesModal({
           {/* Row 3: Action Buttons Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             
-            {/* Left Actions: Selection Toggle & Zoom */}
-            <div className="flex items-center gap-2">
+            {/* Left Actions: Selection Toggle, Quick Status Manage, & Zoom */}
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={handleToggleSelectAll}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 cursor-pointer"
                 title="Pilih / Batal Semua PO"
               >
-                {selectedOrderIds.length === orders.length ? (
+                {selectedOrderIds.length === localOrders.length ? (
                   <CheckSquare className="h-3.5 w-3.5 text-indigo-600" />
                 ) : (
                   <Square className="h-3.5 w-3.5 text-slate-400" />
                 )}
-                <span>{selectedOrderIds.length}/{orders.length} PO Terpilih</span>
+                <span>{selectedOrderIds.length}/{localOrders.length} PO Terpilih</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsQuickManageOpen(!isQuickManageOpen)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  isQuickManageOpen
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100'
+                }`}
+                title="Buka panel cepat untuk menandai transaksi Lunas / Belum Lunas"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                <span>Ubah Status Cepat</span>
+                {isQuickManageOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
               </button>
 
               {/* Zoom Controls */}
@@ -616,22 +824,6 @@ export function VendorPayablesModal({
                 >
                   <Maximize2 className="h-3 w-3" />
                   <span>Fit</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAutoFit(false);
-                    setZoomLevel(100);
-                  }}
-                  className={`px-2 py-0.5 rounded text-[10.5px] font-bold transition-colors cursor-pointer ${
-                    !isAutoFit && zoomLevel === 100
-                      ? 'bg-slate-700 text-white shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                  }`}
-                  title="Ukuran Asli 100%"
-                >
-                  100%
                 </button>
               </div>
             </div>
@@ -695,6 +887,80 @@ export function VendorPayablesModal({
 
           </div>
 
+          {/* Quick Management Drawer for Payment Status */}
+          {isQuickManageOpen && (
+            <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs animate-in fade-in duration-200">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-200 dark:border-slate-700">
+                <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Edit3 className="h-4 w-4 text-amber-600" />
+                  <span>Kelola Status Bayar Transaksi ({activeOrders.length} PO)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleBulkSetStatus('Lunas')}
+                    className="px-2.5 py-1 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold text-[11px] hover:bg-emerald-200 cursor-pointer"
+                  >
+                    Tandai Semua Lunas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkSetStatus('Belum Lunas')}
+                    className="px-2.5 py-1 rounded bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 font-bold text-[11px] hover:bg-rose-200 cursor-pointer"
+                  >
+                    Tandai Semua Belum Lunas
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                {activeOrders.map(order => {
+                  const isJL = order.statusBayarJahit === 'Lunas';
+                  const isSL = order.statusBayarSublim === 'Lunas';
+                  const isKL = order.statusBayarKomisi === 'Lunas';
+
+                  return (
+                    <div key={order.id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                      <div>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">{order.namaPo}</span>
+                        <span className="text-[10px] text-slate-500 ml-1.5">#{order.id} • {order.namaPemesan}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleOrderPayment(order.id, 'jahit')}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${
+                            isJL ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-600 hover:bg-amber-100'
+                          }`}
+                        >
+                          Jahit: {isJL ? 'Lunas ✓' : 'Belum'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleOrderPayment(order.id, 'sublim')}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${
+                            isSL ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-600 hover:bg-sky-100'
+                          }`}
+                        >
+                          Sublim: {isSL ? 'Lunas ✓' : 'Belum'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleOrderPayment(order.id, 'komisi')}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${
+                            isKL ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-600 hover:bg-emerald-100'
+                          }`}
+                        >
+                          Komisi: {isKL ? 'Lunas ✓' : 'Belum'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
         </div>
 
       </div>
@@ -734,6 +1000,7 @@ export function VendorPayablesModal({
               orders={activeOrders}
               settings={settings}
               category={category}
+              statusFilter={statusFilter}
               vendorNameFilter={vendorNameFilter}
               customNotes={customNotes}
             />

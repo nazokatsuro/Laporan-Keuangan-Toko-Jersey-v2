@@ -1,16 +1,5 @@
-import express from 'express';
-import path from 'path';
 import { GoogleGenAI, Type } from '@google/genai';
-import dotenv from 'dotenv';
 
-dotenv.config();
-
-const app = express();
-const PORT = 3000;
-
-app.use(express.json({ limit: '10mb' }));
-
-// Lazy initializer for Gemini SDK client
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -30,10 +19,26 @@ function getGeminiClient(): GoogleGenAI | null {
   return aiClient;
 }
 
-// Gemini Smart SPK Parser API Endpoint
-app.post('/api/gemini/parse-spk', async (req, res) => {
+export default async function handler(req: any, res: any) {
+  // CORS & Preflight handling
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Method not allowed. Only POST is accepted.' });
+  }
+
   try {
-    const { rawText, sortBy = 'size_asc', defaultModel = 'PENDEK' } = req.body;
+    const { rawText, sortBy = 'size_asc', defaultModel = 'PENDEK' } = req.body || {};
 
     if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
       return res.status(400).json({ success: false, error: 'Teks input kosong. Masukkan teks pesanan atau roster.' });
@@ -44,51 +49,32 @@ app.post('/api/gemini/parse-spk', async (req, res) => {
     const systemPrompt = `Anda adalah asisten AI parser ahli konveksi jersey olahraga profesional (Nomaden Apparel).
 Tugas Anda adalah membaca, menganalisis, membersihkan, dan mengekstrak data pesanan SPK jersey serta daftar pemain (roster) dari teks mentah (chat WhatsApp, catatan admin, copy-paste Excel/tabel, atau format bebas).
 
-ATURAN UTAMA PRESERVASI TEKS (SANGAT KRUSIAL - MUTLAK DIIKUTI):
-1. PRESERVASI BESAR/KECIL HURUF (STRICT CASE-SENSITIVE):
-   - JANGAN MENGUBAH HURUF BESAR ATAU HURUF KECIL (Kapitalisasi)! Pertahankan persis huruf besar dan huruf kecil sesuai input teks yang diketik pengguna.
-   - DILARANG MENGUBAH SEMUA MENJADI HURUF BESAR/KAPITAL (ALL CAPS).
-   - Contoh: Jika pengguna mengetik "De Jong", simpan PERSIS "De Jong" (JANGAN diubah jadi "DE JONG").
-   - Contoh: Jika pengguna mengetik "van Dijk", simpan "van Dijk". Jika "Budi Santoso", simpan "Budi Santoso". Jika "AL-FATH", simpan "AL-FATH".
-   - Jika pengguna mengetik nama dengan kombinasi huruf besar dan kecil, pertahankan bentuk aslinya tanpa diubah sedikit pun.
-
-2. PRESERVASI SIMBOL & TANDA BACA (JANGAN DIHAPUS / JANGAN DIUBAH):
-   - JANGAN MENGUBAH ATAU MENGHAPUS SIMBOL tanda baca yang menjadi bagian dari teks, nama, atau catatan (seperti titik '.', tanda hubung '-', apostrof ''', slash '/', underscore '_', &, #, kutip, tanda kurung, dsb.).
-   - Contoh: "M. Irfan" -> tetap "M. Irfan" (JANGAN hapus titik atau spasi).
-   - Contoh: "Al-Fatih" -> tetap "Al-Fatih" (JANGAN hapus tanda hubung).
-   - Contoh: "D'Angelo" / "O'Connor" -> tetap pertahankan apostrof.
-   - Contoh: "PT. MAJU & JAYA" -> tetap pertahankan titik dan &.
-   - Contoh: "SMK 1/TKJ" -> tetap pertahankan slash '/'.
-   - Contoh: "Budi_07" -> tetap pertahankan underscore '_'.
-
 ATURAN EKSTRAKSI SETIAP KOLOM:
 
 1. HEADER / SPESIFIKASI SPK (Jika ada):
-   - customer: Nama konsumen / instansi (pertahankan persis huruf besar/kecil dan semua simbol aslinya).
-   - poName: Nama tim / judul PO jersey (pertahankan persis huruf besar/kecil dan semua simbol aslinya).
-   - collarModel: Model kerah (contoh: "V Datar + Lidah", "O-Neck Standar", "Kerah Polo", dll.).
-   - material: Bahan kain (contoh: "Waffle", "Milano", "Dryfit Bilabong", "Serena", "Benzema", dll.).
-   - productModel: Model produk (contoh: "Setelan", "Atasan Saja", "Celana Saja").
+   - customer: Nama konsumen / instansi (huruf kapital).
+   - poName: Nama tim / judul PO jersey (huruf kapital).
+   - collarModel: Model kerah (contoh: "V DATAR + LIDAH", "O-NECK STANDAR", "KERAH POLO", "V-NECK RIB", "KERAH SHANGHAI").
+   - material: Bahan kain (contoh: "WAFFLE", "MILANO", "DRYFIT BILABONG", "SERENA", "BENZEMA", "EMBOS").
+   - productModel: Model produk (contoh: "SETELAN", "ATASAN SAJA", "CELANA SAJA").
    - sleeveModel: Model lengan bawaan ("PENDEK", "LENGAN PANJANG", "BUNTONG").
-   - sewingModel: Model jahitan (contoh: "Full Stik", "Overdeck 3 Jarum", "Biasa", "Rantai Standar").
+   - sewingModel: Model jahitan (contoh: "FULL STIK", "OVERDECK 3 JARUM", "RANTAI STANDAR").
    - deadline: Tanggal deadline YYYY-MM-DD jika ada, atau string kosong "".
-   - mainNote: Catatan khusus penjahit / instruksi produksi (pertahankan persis huruf dan simbol aslinya).
+   - mainNote: Catatan khusus penjahit / instruksi produksi.
 
-2. ROSTER PEMAIN (Setiap baris dipetakan ke 5 kolom):
-   - name: Nama punggung pemain. PERTAHANKAN PERSIS HURUF BESAR/KECIL DAN SEMUA SIMBOL ASLINYA.
-     Hanya bersihkan nomor urut baris di awal (seperti "1.", "2)") dan token ukuran/nomor jika berdiri sendiri sebagai token terpisah.
-     Simbol titik inisial ("M. Irfan"), tanda hubung ("Al-Fath"), petik/apostrof ("D'Artagnan"), slash, underscore, dll. WAJIB TETAP DIPERTAHANKAN PERSIS ASLINYA.
-   - size: Ukuran standar konveksi (XS, S, M, L, XL, 2XL, 3XL, 4XL, 5XL, ALL SIZE).
-   - number: Nomor punggung (NOP). Pertahankan angka asli termasuk angka nol di depan ("01", "07", "09", "10", "81", "99") atau simbol bawaan nomor jika ada. Jika pemain tidak pakai nomor / polos / "-", isi "-".
-   - model: Model lengan jersey untuk pemain tersebut. Salah satu dari:
+2. ROSTER PEMAIN (Setiap baris wajib dipetakan dengan rapi ke 5 kolom):
+   - name: Nama punggung pemain. BERSIHKAN TOTAL dari nomor urut baris (1., 2.), tanda hubung, kata ukuran (L, XL), kata nomor (NO 10, #81), kata model (PJG, PANJANG), dan kata role (KIPER, GK, KAPTEN). Format: HURUF KAPITAL (contoh: "GAZER", "W. LADJUPA", "M. IRFAN", "BUDI SANTOSO").
+   - size: Ukuran standar konveksi. Normalisasi mutlak ke: "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL", atau "ALL SIZE". (Ubah XXL -> 2XL, XXXL -> 3XL, 4XL, 5XL).
+   - number: Nomor punggung (NOP). Pertahankan angka asli termasuk angka nol di depan ("01", "07", "09", "10", "81", "99"). Jika pemain tidak pakai nomor / polos / "-", isi "-".
+   - model: Model lengan jersey untuk pemain tersebut. Hanya salah satu dari:
      * "LENGAN PANJANG" (jika ada kata: panjang, pjg, ls, long sleeve, tangan panjang)
      * "BUNTONG" (jika ada kata: buntong, singlet, sleeveless, kutung)
      * "PENDEK" (default atau jika tidak disebutkan khusus)
-   - notes: Keterangan khusus (pertahankan huruf besar/kecil dan simbol aslinya).
-     * "Kiper" / "KIPER" jika pemain penjaga gawang (kiper, gk, keeper, goalie).
-     * "Kapten" / "KAPTEN" jika kapten tim (c, captain, kapten).
-     * Catatan spesifik (misal: "Celana L", "Size khusus", "Nama dada").
-     * Jika tidak ada keterangan khusus, isi "-".
+   - notes: Keterangan khusus.
+     * "KIPER" jika pemain penjaga gawang (kiper, gk, keeper, goalie).
+     * "KAPTEN" jika kapten tim (c, captain, kapten).
+     * Catatan khusus (misal: "CELANA L", "SIZE KHUSUS", "TAMBAH NAMA DADA").
+     * Jika tidak ada keterangan khusus, isi persis "-".
 
 3. ATURAN PENYORTIRAN (Urutkan hasil array players):
    - Jika sortBy == 'size_asc': Urutkan berdasarkan ukuran dari terkecil ke terbesar (XS -> S -> M -> L -> XL -> 2XL -> 3XL -> 4XL -> 5XL), lalu nomor punggung.
@@ -150,11 +136,11 @@ ATURAN EKSTRAKSI SETIAP KOLOM:
                     items: {
                       type: Type.OBJECT,
                       properties: {
-                        name: { type: Type.STRING, description: "Nama punggung pemain persis teks asli (JANGAN ubah huruf besar/kecil dan JANGAN hapus simbol)" },
+                        name: { type: Type.STRING, description: "Nama punggung pemain bersih (huruf kapital)" },
                         size: { type: Type.STRING, description: "Ukuran standar: XS, S, M, L, XL, 2XL, 3XL, 4XL, 5XL, ALL SIZE" },
                         number: { type: Type.STRING, description: "Nomor punggung NOP (string angka seperti '01', '07', '10', atau '-')" },
                         model: { type: Type.STRING, description: "'PENDEK', 'LENGAN PANJANG', atau 'BUNTONG'" },
-                        notes: { type: Type.STRING, description: "Catatan khusus pemain persis teks asli (contoh: 'Kiper', 'Kapten', 'Celana L', atau '-')" }
+                        notes: { type: Type.STRING, description: "'KIPER', 'KAPTEN', catatan ukuran, atau '-'" }
                       },
                       required: ["name", "size", "number", "model", "notes"]
                     }
@@ -198,7 +184,7 @@ ATURAN EKSTRAKSI SETIAP KOLOM:
       console.log('Using enhanced local intelligent parser fallback');
       isAiOfflineFallback = true;
 
-      const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const lines = rawText.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
       const extractedPlayers: any[] = [];
       const warnings: string[] = [];
 
@@ -213,23 +199,23 @@ ATURAN EKSTRAKSI SETIAP KOLOM:
         
         // Header extraction
         if (lower.startsWith('konsumen:') || lower.startsWith('pemesan:') || lower.startsWith('nama konsumen:') || lower.startsWith('customer:')) {
-          detectedHeader.customer = line.split(':')[1]?.trim() || '';
+          detectedHeader.customer = line.split(':')[1]?.trim()?.toUpperCase() || '';
           continue;
         }
         if (lower.startsWith('bahan:') || lower.startsWith('bahan :') || lower.startsWith('kain:')) {
-          detectedHeader.material = line.split(':')[1]?.trim() || '';
+          detectedHeader.material = line.split(':')[1]?.trim()?.toUpperCase() || '';
           continue;
         }
         if (lower.startsWith('kerah:') || lower.startsWith('model kerah:') || lower.startsWith('kerah jersey:')) {
-          detectedHeader.collarModel = line.split(':')[1]?.trim() || '';
+          detectedHeader.collarModel = line.split(':')[1]?.trim()?.toUpperCase() || '';
           continue;
         }
         if (lower.startsWith('jahit:') || lower.startsWith('model jahit:') || lower.startsWith('jahitan:')) {
-          detectedHeader.sewingModel = line.split(':')[1]?.trim() || '';
+          detectedHeader.sewingModel = line.split(':')[1]?.trim()?.toUpperCase() || '';
           continue;
         }
         if (lower.startsWith('po:') || lower.startsWith('nama po:') || lower.startsWith('tim:') || lower.startsWith('nama tim:')) {
-          detectedHeader.poName = line.split(':')[1]?.trim() || '';
+          detectedHeader.poName = line.split(':')[1]?.trim()?.toUpperCase() || '';
           continue;
         }
         if (lower.startsWith('deadline:') || lower.startsWith('kirim:') || lower.startsWith('tgl kirim:')) {
@@ -283,15 +269,16 @@ ATURAN EKSTRAKSI SETIAP KOLOM:
           clean = clean.replace(new RegExp(`\\b${numMatch[1]}\\b`, 'g'), ' ');
         }
 
-        // Clean name while strictly preserving case and all internal punctuation/symbols
+        // Clean name
         let name = clean
-          .replace(/^[\s\,\;\:\|\-]+|[\s\,\;\:\|\-]+$/g, '')
+          .replace(/[\(\)\[\]\{\}\/\,\-\:\.\_\+\*\=\|\;\\]/g, ' ')
           .replace(/\s+/g, ' ')
-          .trim();
+          .trim()
+          .toUpperCase();
 
         if (name || number !== '-') {
           extractedPlayers.push({
-            name: name || `Pemain ${extractedPlayers.length + 1}`,
+            name: name || `PEMAIN ${extractedPlayers.length + 1}`,
             size,
             number,
             model,
@@ -340,7 +327,7 @@ ATURAN EKSTRAKSI SETIAP KOLOM:
     // Check duplicate numbers for warnings
     const numberMap = new Map<string, string[]>();
     (parsedJson.players || []).forEach((p: any) => {
-      const cleanNum = (p.number || '').toString().trim();
+      const cleanNum = (p.number || '').trim();
       if (cleanNum && cleanNum !== '-') {
         const list = numberMap.get(cleanNum) || [];
         list.push(p.name || 'Pemain');
@@ -358,47 +345,36 @@ ATURAN EKSTRAKSI SETIAP KOLOM:
       }
     });
 
-    // Give unique ids to each player and preserve case and symbols
+    // Give unique ids to each player and normalize values
     const processedPlayers = (parsedJson.players || []).map((p: any, idx: number) => {
-      let normSize = (p.size || 'L').toString().trim().toUpperCase().replace(/\s+/g, '');
+      let normSize = (p.size || 'L').trim().toUpperCase().replace(/\s+/g, '');
       if (normSize === 'XXL') normSize = '2XL';
       if (normSize === 'XXXL') normSize = '3XL';
       if (normSize === 'XXXXL') normSize = '4XL';
 
-      let normModel = (p.model || defaultModel).toString().trim().toUpperCase();
+      let normModel = (p.model || defaultModel).trim().toUpperCase();
       if (normModel.includes('PANJANG') || normModel.includes('PJG') || normModel === 'LS') normModel = 'LENGAN PANJANG';
       else if (normModel.includes('BUNTONG') || normModel.includes('SINGLET')) normModel = 'BUNTONG';
       else normModel = 'PENDEK';
 
-      // Preserve notes casing and symbols, only standardizing keywords if matched
-      let rawNotes = (p.notes || '-').toString().trim();
-      let normNotes = rawNotes;
-      const upperNotes = rawNotes.toUpperCase();
-      if (upperNotes.includes('KIPER') || upperNotes.includes('GK') || upperNotes.includes('KEEPER')) {
-        normNotes = 'KIPER';
-      } else if (upperNotes.includes('KAPTEN') || upperNotes === 'C' || upperNotes.includes('CAPTAIN')) {
-        normNotes = 'KAPTEN';
-      } else if (!rawNotes || rawNotes === '') {
-        normNotes = '-';
-      }
-
-      // Preserve exact case and symbols of player name (DO NOT convert to uppercase or strip symbols!)
-      const rawName = typeof p.name === 'string' ? p.name.trim() : (p.name != null ? String(p.name).trim() : '');
-      const playerName = rawName || `Pemain ${idx + 1}`;
+      let normNotes = (p.notes || '-').trim().toUpperCase();
+      if (normNotes.includes('KIPER') || normNotes.includes('GK') || normNotes.includes('KEEPER')) normNotes = 'KIPER';
+      else if (normNotes.includes('KAPTEN') || normNotes === 'C' || normNotes.includes('CAPTAIN')) normNotes = 'KAPTEN';
+      else if (!normNotes || normNotes === '') normNotes = '-';
 
       return {
         id: `p-gemini-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
         no: idx + 1,
-        name: playerName,
+        name: (p.name || `PEMAIN ${idx + 1}`).trim().toUpperCase(),
         size: normSize,
-        number: (p.number || '-').toString().trim(),
+        number: (p.number || '-').trim(),
         model: normModel,
         notes: normNotes,
         qc: false
       };
     });
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       data: {
         ...parsedJson,
@@ -408,48 +384,10 @@ ATURAN EKSTRAKSI SETIAP KOLOM:
       }
     });
   } catch (error: any) {
-    console.error('Error in /api/gemini/parse-spk:', error);
+    console.error('Error in /api/gemini/parse-spk serverless:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Terjadi kesalahan saat memproses data dengan Gemini AI'
     });
   }
-});
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
-});
-
-// Explicit API 404 handler to prevent HTML from ever returning for /api requests
-app.use('/api', (req, res) => {
-  res.status(404).json({ success: false, error: `API route ${req.originalUrl || req.url} not found` });
-});
-
-// Serve frontend in production or development
-async function setupServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa'
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-    // Extra fallback for any unmatched requests
-    app.use((req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running at http://0.0.0.0:${PORT}`);
-  });
 }
-
-setupServer();

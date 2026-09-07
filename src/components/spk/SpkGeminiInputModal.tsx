@@ -113,6 +113,7 @@ export const SpkGeminiInputModal: React.FC<SpkGeminiInputModalProps> = ({
   const [detectedHeader, setDetectedHeader] = useState<any>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [hasProcessed, setHasProcessed] = useState(false);
+  const [engineUsed, setEngineUsed] = useState<string | null>(null);
 
   // Quick Recap summary
   const sizeSummary = React.useMemo(() => {
@@ -162,6 +163,7 @@ export const SpkGeminiInputModal: React.FC<SpkGeminiInputModalProps> = ({
             setDetectedHeader(data.detectedHeader || null);
             setWarnings(data.warnings || []);
             setHasProcessed(true);
+            setEngineUsed(data.usedModel || 'Gemini 3.6 Flash');
             isSuccess = true;
           }
         }
@@ -183,6 +185,7 @@ export const SpkGeminiInputModal: React.FC<SpkGeminiInputModalProps> = ({
         setDetectedHeader(Object.keys(header).length > 0 ? header : null);
         setWarnings(parsed.warnings || []);
         setHasProcessed(true);
+        setEngineUsed('Smart Engine (Local)');
       }
     } catch (err: any) {
       console.error('Smart Extraction Error:', err);
@@ -268,9 +271,19 @@ export const SpkGeminiInputModal: React.FC<SpkGeminiInputModalProps> = ({
                 <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-tight">
                   Gemini AI — Smart Input & Auto Sort SPK
                 </h2>
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-[#00805F] dark:text-emerald-400 border border-emerald-500/30">
-                  Gemini AI Engine
-                </span>
+                {hasProcessed && engineUsed ? (
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
+                    engineUsed.toLowerCase().includes('gemini')
+                      ? 'bg-emerald-500/15 text-[#00805F] dark:text-emerald-400 border-emerald-500/30'
+                      : 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30'
+                  }`}>
+                    {engineUsed}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-[#00805F] dark:text-emerald-400 border border-emerald-500/30">
+                    Gemini AI Engine
+                  </span>
+                )}
               </div>
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Otomatis membaca chat WhatsApp, membersihkan nama/nomor, mendeteksi spesifikasi, dan mengurutkan roster dengan sangat rapi.
@@ -584,9 +597,9 @@ export const SpkGeminiInputModal: React.FC<SpkGeminiInputModalProps> = ({
                           <input
                             type="text"
                             value={p.name}
-                            onChange={(e) => handleUpdatePlayerRow(p.id, 'name', e.target.value.toUpperCase())}
-                            className="w-full px-2 py-1 text-xs rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-emerald-500 font-black text-slate-900 dark:text-white uppercase bg-transparent"
-                            placeholder="NAMA PEMAIN"
+                            onChange={(e) => handleUpdatePlayerRow(p.id, 'name', e.target.value)}
+                            className="w-full px-2 py-1 text-xs rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-emerald-500 font-black text-slate-900 dark:text-white bg-transparent"
+                            placeholder="Nama Pemain"
                           />
                         </td>
                         <td className="py-1 px-1 text-center">
@@ -629,8 +642,8 @@ export const SpkGeminiInputModal: React.FC<SpkGeminiInputModalProps> = ({
                             <input
                               type="text"
                               value={p.notes || '-'}
-                              onChange={(e) => handleUpdatePlayerRow(p.id, 'notes', e.target.value.toUpperCase())}
-                              className={`w-full px-2 py-1 text-[11px] rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-emerald-500 font-bold bg-transparent uppercase ${
+                              onChange={(e) => handleUpdatePlayerRow(p.id, 'notes', e.target.value)}
+                              className={`w-full px-2 py-1 text-[11px] rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-emerald-500 font-bold bg-transparent ${
                                 isKiper 
                                   ? 'text-amber-700 dark:text-amber-400 font-black' 
                                   : isKapten 

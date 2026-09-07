@@ -6,6 +6,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Pesanan, PesananItem, StatusProduksi, ShopSettings, PembayaranMasuk } from '../types';
 import { generateId, formatRupiah, compressImage } from '../utils';
+import { orderToSpkData, syncSpkToOrder } from '../utils/spkSync';
+import { SPKStatus } from '../spkTypes';
 import { 
   Save, 
   Trash2, 
@@ -22,7 +24,14 @@ import {
   Image as ImageIcon,
   Upload,
   X,
-  Loader2
+  Loader2,
+  FileText,
+  Scissors,
+  CheckCircle2,
+  Clock,
+  RefreshCw,
+  Tag,
+  AlertCircle
 } from 'lucide-react';
 
 interface OrderFormProps {
@@ -37,6 +46,8 @@ interface OrderFormProps {
 
 const STATUS_LIST: StatusProduksi[] = ['Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'];
 
+const SPK_STATUS_LIST: SPKStatus[] = ['NORMAL', 'PRIORITAS', 'URGENT', 'SELESAI', 'HOLD'];
+
 const BASELINE_COLLARS = [
   "O-Neck (Standar)",
   "V-Neck",
@@ -48,6 +59,22 @@ const BASELINE_COLLARS = [
   "Kerah Polo",
   "Kerah Sleting",
   "Kerah Shanghai"
+];
+
+const BASELINE_SLEEVES = [
+  "PENDEK",
+  "LENGAN PANJANG",
+  "BUNTONG / SLEEVELESS",
+  "RAGLAN 3/4",
+  "RAGLAN PANJANG"
+];
+
+const BASELINE_SEWING = [
+  "BIASA",
+  "FULL STIK",
+  "OVERDECK 3 JARUM",
+  "RANTAI STANDAR",
+  "OBRAS + STIK PUNDAK"
 ];
 
 const getCanonicalCollar = (c?: string): string => {
@@ -160,6 +187,18 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
   const [detailSizeNamaGambarUrl, setDetailSizeNamaGambarUrl] = useState('');
   const [isCompressingSizingFile, setIsCompressingSizingFile] = useState(false);
 
+  // SPK synchronized fields
+  const [nomorSpk, setNomorSpk] = useState('');
+  const [spkStatus, setSpkStatus] = useState<SPKStatus>('NORMAL');
+  const [modelLengan, setModelLengan] = useState('PENDEK');
+  const [modelJahit, setModelJahit] = useState('BIASA');
+
+  // Catatan Khusus Penjahit & QC fields
+  const [catatanPenjahitMain, setCatatanPenjahitMain] = useState('');
+  const [catatanPenjahitJahit, setCatatanPenjahitJahit] = useState('BIASA');
+  const [catatanPenjahitBahan, setCatatanPenjahitBahan] = useState('');
+  const [catatanPenjahitTangan, setCatatanPenjahitTangan] = useState('PENDEK');
+
   // Memoized lists of collars combining baseline and custom ones
   const availableCollars = useMemo(() => {
     const customList = settings?.customCollars || [];
@@ -210,6 +249,35 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setKomisiPerPcs(pesananToEdit.komisiPerPcs || 0);
       setDetailSizeNama(pesananToEdit.detailSizeNama || '');
       setDetailSizeNamaGambarUrl(pesananToEdit.detailSizeNamaGambarUrl || '');
+
+      // Load SPK synchronized fields
+      const initialSpkNum = pesananToEdit.nomorSpk || pesananToEdit.spkData?.spkNumber || `SPK-${new Date().getFullYear()}-${pesananToEdit.id.slice(-4).toUpperCase()}`;
+      setNomorSpk(initialSpkNum);
+      setSpkStatus((pesananToEdit.spkStatus || pesananToEdit.spkData?.status || 'NORMAL') as SPKStatus);
+      setModelLengan(pesananToEdit.modelLengan || pesananToEdit.spkData?.sleeveModel || pesananToEdit.items?.[0]?.modelLengan || 'PENDEK');
+      setModelJahit(pesananToEdit.modelJahit || pesananToEdit.spkData?.sewingModel || pesananToEdit.items?.[0]?.modelJahit || 'BIASA');
+
+      // Load Catatan Khusus Penjahit
+      if (pesananToEdit.catatanKhususPenjahit) {
+        if (typeof pesananToEdit.catatanKhususPenjahit === 'object') {
+          setCatatanPenjahitMain(pesananToEdit.catatanKhususPenjahit.mainNote || '');
+          setCatatanPenjahitJahit(pesananToEdit.catatanKhususPenjahit.jahit || pesananToEdit.modelJahit || 'BIASA');
+          setCatatanPenjahitBahan(pesananToEdit.catatanKhususPenjahit.bahan || pesananToEdit.bahan || '');
+          setCatatanPenjahitTangan(pesananToEdit.catatanKhususPenjahit.tangan || pesananToEdit.modelLengan || 'PENDEK');
+        } else {
+          setCatatanPenjahitMain(String(pesananToEdit.catatanKhususPenjahit));
+        }
+      } else if (pesananToEdit.spkData?.notes) {
+        setCatatanPenjahitMain(pesananToEdit.spkData.notes.mainNote || '');
+        setCatatanPenjahitJahit(pesananToEdit.spkData.notes.jahit || 'BIASA');
+        setCatatanPenjahitBahan(pesananToEdit.spkData.notes.bahan || pesananToEdit.bahan || '');
+        setCatatanPenjahitTangan(pesananToEdit.spkData.notes.tangan || 'PENDEK');
+      } else {
+        setCatatanPenjahitMain(pesananToEdit.catatanJahit || '');
+        setCatatanPenjahitJahit(pesananToEdit.modelJahit || 'BIASA');
+        setCatatanPenjahitBahan(pesananToEdit.bahan || (pesananToEdit.items?.[0]?.bahan || ''));
+        setCatatanPenjahitTangan(pesananToEdit.modelLengan || 'PENDEK');
+      }
 
       // Load creation date
       if (pesananToEdit.createdAt) {
@@ -285,6 +353,18 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       setDetailSizeNamaGambarUrl('');
       setDateMode('today');
       setCustomDate(getLocalDateString());
+
+      // SPK defaults for new order
+      const randNum = String(Math.floor(Math.random() * 9000) + 1000);
+      setNomorSpk(`SPK-${new Date().getFullYear()}-${randNum}`);
+      setSpkStatus('NORMAL');
+      setModelLengan('PENDEK');
+      setModelJahit('BIASA');
+      setCatatanPenjahitMain('TUTUP KERAH POLOS, JAHIT BIASA');
+      setCatatanPenjahitJahit('BIASA');
+      setCatatanPenjahitBahan('Dryfit Jarum');
+      setCatatanPenjahitTangan('PENDEK');
+
       setItems([
         {
           id: generateId(),
@@ -502,14 +582,46 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       items: items.map(it => ({
         ...it,
         vendorJahit: it.vendorJahit?.trim() || vendorJahit.trim() || '',
-        vendorSublim: it.vendorSublim?.trim() || vendorSublim.trim() || ''
+        vendorSublim: it.vendorSublim?.trim() || vendorSublim.trim() || '',
+        modelLengan: it.modelLengan || modelLengan,
+        modelJahit: it.modelJahit || modelJahit
       })),
       mockupUrl,
       fotoKerahUrl,
       pembayaranList,
       detailSizeNama: detailSizeNama.trim(),
-      detailSizeNamaGambarUrl
+      detailSizeNamaGambarUrl,
+      nomorSpk: nomorSpk.trim() || `SPK-${new Date().getFullYear()}-${pesananToEdit?.id?.slice(-4) || '0001'}`.toUpperCase(),
+      spkStatus,
+      modelLengan,
+      modelJahit,
+      catatanKhususPenjahit: {
+        mainNote: catatanPenjahitMain,
+        jahit: catatanPenjahitJahit,
+        bahan: catatanPenjahitBahan || summaryBahan,
+        tangan: catatanPenjahitTangan || modelLengan,
+        kerah: summaryModelKerah
+      }
     };
+
+    // Build fully synchronized SPK object
+    const synchedSpk = orderToSpkData(payload, undefined, settings);
+    synchedSpk.spkNumber = nomorSpk.trim() || synchedSpk.spkNumber;
+    synchedSpk.status = spkStatus;
+    synchedSpk.sleeveModel = modelLengan;
+    synchedSpk.sewingModel = modelJahit;
+    synchedSpk.collarModel = summaryModelKerah;
+    synchedSpk.material = summaryBahan;
+    synchedSpk.productModel = summaryNamaProduk;
+    synchedSpk.notes = {
+      mainNote: catatanPenjahitMain,
+      jahit: catatanPenjahitJahit,
+      bahan: catatanPenjahitBahan || summaryBahan,
+      tangan: catatanPenjahitTangan || modelLengan,
+      kerah: summaryModelKerah,
+      additionalNotes: pesananToEdit?.spkData?.notes?.additionalNotes || ''
+    };
+    payload.spkData = synchedSpk;
 
     // Automatically register any newly entered custom collar models or mitra jahit in the shop settings for next transactions
     if (onUpdateSettings && settings) {
@@ -1290,7 +1402,247 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
           </div>
         </div>
 
-        {/* Step 3.5: Mockup Desain Pesanan */}
+        {/* Step 3.5: SPK & SPESIFIKASI JAHIT PRODUKSI (SINKRONISASI REAL-TIME DENGAN DOKUMEN SPK) */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border-2 border-emerald-500/30 dark:border-emerald-500/20 p-5 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-100 dark:border-emerald-900/40 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-[#00805F] dark:text-emerald-400">
+                <FileText className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-850 dark:text-white flex items-center gap-2">
+                  Surat Perintah Kerja (SPK) & Spesifikasi Jahit
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Data ini tersinkronkan otomatis dengan dokumen cetak SPK, Nota Konsumen, dan Rekap Penjahit.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200">
+                <RefreshCw className="h-3 w-3 animate-spin text-emerald-600" style={{ animationDuration: '4s' }} />
+                Tersinkron Otomatis
+              </span>
+            </div>
+          </div>
+
+          {/* Row 1: Nomor SPK, Status SPK, Status Produksi */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                Nomor SPK
+              </label>
+              <div className="relative">
+                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="E.g. SPK-2026-0001"
+                  value={nomorSpk}
+                  onChange={(e) => setNomorSpk(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs font-mono font-bold rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 uppercase"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                Status SPK (Prioritas Produksi)
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {SPK_STATUS_LIST.map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setSpkStatus(st)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer select-none ${
+                      spkStatus === st
+                        ? st === 'URGENT'
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : st === 'PRIORITAS'
+                          ? 'bg-amber-500 text-white shadow-xs'
+                          : st === 'SELESAI'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : st === 'HOLD'
+                          ? 'bg-slate-600 text-white shadow-xs'
+                          : 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                Status Pengerjaan Pesanan
+              </label>
+              <select
+                value={statusProduksi}
+                onChange={(e) => setStatusProduksi(e.target.value as StatusProduksi)}
+                className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
+              >
+                {STATUS_LIST.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2: Model Lengan / Tangan & Model Jahit */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                Model Lengan / Tangan (SPK)
+              </label>
+              <input
+                type="text"
+                list="sleeve-models-list"
+                placeholder="Contoh: PENDEK, LENGAN PANJANG, BUNTONG..."
+                value={modelLengan}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setModelLengan(val);
+                  setCatatanPenjahitTangan(val);
+                }}
+                className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-bold"
+              />
+              <datalist id="sleeve-models-list">
+                {BASELINE_SLEEVES.map((sl) => (
+                  <option key={sl} value={sl} />
+                ))}
+              </datalist>
+              <div className="flex flex-wrap gap-1.5 pt-1.5">
+                {BASELINE_SLEEVES.map((sl) => (
+                  <button
+                    key={sl}
+                    type="button"
+                    onClick={() => {
+                      setModelLengan(sl);
+                      setCatatanPenjahitTangan(sl);
+                    }}
+                    className={`text-[9px] px-2 py-0.5 rounded-md font-bold transition cursor-pointer ${
+                      modelLengan.toUpperCase() === sl.toUpperCase()
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    {sl}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                Model Jahitan (SPK)
+              </label>
+              <input
+                type="text"
+                list="sewing-models-list"
+                placeholder="Contoh: BIASA, FULL STIK, OVERDECK..."
+                value={modelJahit}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setModelJahit(val);
+                  setCatatanPenjahitJahit(val);
+                }}
+                className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-bold"
+              />
+              <datalist id="sewing-models-list">
+                {BASELINE_SEWING.map((sw) => (
+                  <option key={sw} value={sw} />
+                ))}
+              </datalist>
+              <div className="flex flex-wrap gap-1.5 pt-1.5">
+                {BASELINE_SEWING.map((sw) => (
+                  <button
+                    key={sw}
+                    type="button"
+                    onClick={() => {
+                      setModelJahit(sw);
+                      setCatatanPenjahitJahit(sw);
+                    }}
+                    className={`text-[9px] px-2 py-0.5 rounded-md font-bold transition cursor-pointer ${
+                      modelJahit.toUpperCase() === sw.toUpperCase()
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    {sw}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Catatan Khusus Penjahit & QC Block (Gambar 1) */}
+          <div className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 p-4 rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5 uppercase tracking-wider">
+                <Scissors className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                CATATAN KHUSUS PENJAHIT & QC (SESUAI DOKUMEN SPK)
+              </h4>
+              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
+                Tercetak di Kotak Kuning / Biru SPK
+              </span>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">
+                Instruksi Utama (Highlight Tebal)
+              </label>
+              <input
+                type="text"
+                placeholder="Contoh: TUTUP KERAH POLOS, JAHIT BIASA..."
+                value={catatanPenjahitMain}
+                onChange={(e) => setCatatanPenjahitMain(e.target.value)}
+                className="w-full px-3.5 py-2 text-xs font-bold rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 uppercase"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Jahit</label>
+                <input
+                  type="text"
+                  value={catatanPenjahitJahit}
+                  onChange={(e) => setCatatanPenjahitJahit(e.target.value)}
+                  placeholder="BIASA"
+                  className="w-full px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white uppercase"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Bahan</label>
+                <input
+                  type="text"
+                  value={catatanPenjahitBahan}
+                  onChange={(e) => setCatatanPenjahitBahan(e.target.value)}
+                  placeholder="WAFFLE / MILANO / DRYFIT"
+                  className="w-full px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white uppercase"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tangan / Lengan</label>
+                <input
+                  type="text"
+                  value={catatanPenjahitTangan}
+                  onChange={(e) => setCatatanPenjahitTangan(e.target.value)}
+                  placeholder="PENDEK"
+                  className="w-full px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white uppercase"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Step 4: Mockup Desain Pesanan */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/80 p-5 shadow-sm space-y-4">
           <h3 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2 border-b border-slate-50 dark:border-slate-700 pb-2">
             <ImageIcon className="h-4 w-4 text-indigo-500" />

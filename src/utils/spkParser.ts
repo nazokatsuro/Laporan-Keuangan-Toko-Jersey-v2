@@ -54,14 +54,15 @@ export function normalizeModel(rawModel: string, defaultModel = 'PENDEK'): strin
  */
 export function normalizeNotes(rawNotes: string): string {
   if (!rawNotes) return '-';
-  const clean = rawNotes.trim().toUpperCase();
+  const trimmed = rawNotes.trim();
+  const clean = trimmed.toUpperCase();
   if (clean.includes('KIPER') || clean.includes('GK') || clean.includes('KEEPER') || clean.includes('GOALKEEPER')) {
     return 'KIPER';
   }
   if (clean.includes('KAPTEN') || clean === 'C' || clean.includes('CAPTAIN')) {
     return 'KAPTEN';
   }
-  return clean || '-';
+  return trimmed || '-';
 }
 
 /**
@@ -123,7 +124,7 @@ export function parseRosterLine(rawLine: string, lineIndex: number, defaultModel
   if (bracketMatch) {
     const bracketContent = bracketMatch[1].trim();
     if (notes === '-') {
-      notes = bracketContent.toUpperCase();
+      notes = bracketContent;
     }
     line = line.replace(/\([^)]+\)/g, ' ').trim();
   }
@@ -144,21 +145,20 @@ export function parseRosterLine(rawLine: string, lineIndex: number, defaultModel
     line = line.replace(new RegExp(`\\b${numMatch[1]}\\b`, 'g'), ' ').trim();
   }
 
-  // 7. Clean up the remaining text for Name
+  // 7. Clean up the remaining text for Name while strictly preserving case and internal punctuation/symbols
   let name = line
-    .replace(/[\(\)\[\]\{\}\/\,\-\:\.\_\+\*\=\|\;\\]/g, ' ')
+    .replace(/^[\s\,\;\:\|\-]+|[\s\,\;\:\|\-]+$/g, '')
     .replace(/\s+/g, ' ')
-    .trim()
-    .toUpperCase();
+    .trim();
 
   // If no size was matched by regex, check single letter tokens
   if (!foundSize) {
     const parts = name.split(/\s+/);
-    const sizePartIdx = parts.findIndex(p => KNOWN_SIZES.includes(p));
+    const sizePartIdx = parts.findIndex(p => KNOWN_SIZES.includes(p.toUpperCase()));
     if (sizePartIdx !== -1) {
       foundSize = normalizeSize(parts[sizePartIdx]);
       parts.splice(sizePartIdx, 1);
-      name = parts.join(' ').trim();
+      name = parts.join(' ').replace(/^[\s\,\;\:\|\-]+|[\s\,\;\:\|\-]+$/g, '').trim();
     }
   }
 
@@ -168,7 +168,7 @@ export function parseRosterLine(rawLine: string, lineIndex: number, defaultModel
   return {
     id: `player-${Date.now()}-${lineIndex}-${Math.random().toString(36).substring(2, 6)}`,
     no: lineIndex + 1,
-    name: name || `PEMAIN ${lineIndex + 1}`,
+    name: name || `Pemain ${lineIndex + 1}`,
     size: foundSize || 'L',
     number: foundNum || '-',
     model: model || defaultModel,
@@ -275,11 +275,11 @@ function parseColumnFormat(rawText: string, defaultModel: string): ParseResult {
     const items = lines.slice(1);
 
     if (header.includes('nama')) {
-      items.forEach(i => names.push(i.toUpperCase()));
+      items.forEach(i => names.push(i.trim()));
     } else if (header.includes('ukuran') || header.includes('size')) {
       items.forEach(i => sizes.push(normalizeSize(i)));
     } else if (header.includes('nomor') || header.includes('no') || header.includes('nop')) {
-      items.forEach(i => numbers.push(i));
+      items.forEach(i => numbers.push(i.trim()));
     } else if (header.includes('model')) {
       items.forEach(i => models.push(normalizeModel(i, defaultModel)));
     } else if (header.includes('keterangan')) {
@@ -294,7 +294,7 @@ function parseColumnFormat(rawText: string, defaultModel: string): ParseResult {
     players.push({
       id: `player-col-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
       no: i + 1,
-      name: names[i] || `PEMAIN ${i + 1}`,
+      name: names[i] || `Pemain ${i + 1}`,
       size: sizes[i] || 'L',
       number: numbers[i] || '-',
       model: models[i] || defaultModel,
@@ -458,32 +458,32 @@ export function extractHeaderSpecsFromText(rawText: string): {
     // Customer
     if (lower.startsWith('konsumen:') || lower.startsWith('pemesan:') || lower.startsWith('nama konsumen:') || lower.startsWith('customer:')) {
       const val = line.split(':')[1]?.trim();
-      if (val) result.customer = val.toUpperCase();
+      if (val) result.customer = val;
     }
     // PO / Team Name
     else if (lower.startsWith('po:') || lower.startsWith('nama po:') || lower.startsWith('po name:') || lower.startsWith('tim:') || lower.startsWith('nama tim:')) {
       const val = line.split(':')[1]?.trim();
-      if (val) result.poName = val.toUpperCase();
+      if (val) result.poName = val;
     }
     // Collar Model
     else if (lower.startsWith('kerah:') || lower.startsWith('model kerah:') || lower.startsWith('collar:')) {
       const val = line.split(':')[1]?.trim();
-      if (val) result.collarModel = val.toUpperCase();
+      if (val) result.collarModel = val;
     }
     // Material
     else if (lower.startsWith('bahan:') || lower.startsWith('kain:') || lower.startsWith('material:')) {
       const val = line.split(':')[1]?.trim();
-      if (val) result.material = val.toUpperCase();
+      if (val) result.material = val;
     }
     // Product Model
     else if (lower.startsWith('produk:') || lower.startsWith('model:') || lower.startsWith('jenis:')) {
       const val = line.split(':')[1]?.trim();
-      if (val) result.productModel = val.toUpperCase();
+      if (val) result.productModel = val;
     }
     // Sewing Model
     else if (lower.startsWith('jahit:') || lower.startsWith('model jahit:') || lower.startsWith('jahitan:') || lower.startsWith('stik:')) {
       const val = line.split(':')[1]?.trim();
-      if (val) result.sewingModel = val.toUpperCase();
+      if (val) result.sewingModel = val;
     }
     // Deadline
     else if (lower.startsWith('deadline:') || lower.startsWith('kirim:') || lower.startsWith('tgl kirim:') || lower.startsWith('tanggal kirim:')) {

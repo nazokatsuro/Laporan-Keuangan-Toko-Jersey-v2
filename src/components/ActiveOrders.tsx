@@ -376,12 +376,12 @@ export default function ActiveOrders({
 
     if (targetOrder) {
       const updatedOrder = syncSpkToOrder(updatedWithCompany, targetOrder);
-      if (onSavePesanan) {
-        onSavePesanan(updatedOrder);
-      } else if (onUpdatePesananList) {
+      if (onUpdatePesananList) {
         const newList = pesananList.map(p => p.id === updatedOrder.id ? updatedOrder : p);
         onUpdatePesananList(newList);
         persistOrders(newList).catch(() => {});
+      } else if (onSavePesanan) {
+        onSavePesanan(updatedOrder);
       }
     } else {
       setStandaloneSpkList(prev => {
@@ -414,12 +414,12 @@ export default function ActiveOrders({
 
     if (targetOrder) {
       const updatedOrder = syncSpkToOrder(updatedWithCompany, targetOrder);
-      if (onSavePesanan) {
-        onSavePesanan(updatedOrder);
-      } else if (onUpdatePesananList) {
+      if (onUpdatePesananList) {
         const newList = pesananList.map(p => p.id === updatedOrder.id ? updatedOrder : p);
         onUpdatePesananList(newList);
         persistOrders(newList).catch(() => {});
+      } else if (onSavePesanan) {
+        onSavePesanan(updatedOrder);
       }
     } else {
       // It's a standalone SPK
@@ -897,17 +897,17 @@ export default function ActiveOrders({
         <div className="flex flex-wrap items-center gap-2">
           {activeMainView === 'transaksi' ? (
             <>
-              {/* Button Nota Belum Lunas Jahit, Sublim, Komisi */}
+              {/* Button Nota Tagihan Vendor (Jahit, Sublim, Komisi - Lunas & Sisa Tagihan) */}
               <button
                 type="button"
                 onClick={() => handleOpenVendorPayables()}
-                title="Buka Nota Tagihan Belum Lunas Jahit, Sublim, & Komisi (Tanpa No Rekening & Barcode)"
+                title="Buka Nota Tagihan Vendor (Jahit, Sublim, & Komisi - Transparan Lunas & Sisa Tagihan)"
                 className="flex items-center justify-center gap-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 px-3.5 py-2.5 rounded-xl font-bold text-xs shadow-2xs transition-all cursor-pointer flex-1 sm:flex-none"
               >
                 <Scissors className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                <span>Nota Belum Lunas</span>
+                <span>Nota Tagihan Vendor</span>
                 <span className="text-[9.5px] bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 px-1.5 py-0.5 rounded-md font-extrabold uppercase">
-                  Vendor
+                  Lunas & Sisa
                 </span>
               </button>
 
@@ -1931,13 +1931,22 @@ export default function ActiveOrders({
         />
       )}
 
-      {/* Vendor Payables Modal (Belum Lunas Jahit, Sublim, Komisi - Tanpa No Rekening & Barcode) */}
+      {/* Vendor Payables Modal (Jahit, Sublim, Komisi - Rincian Lunas & Sisa Tagihan) */}
       {isVendorPayablesModalOpen && vendorPayablesOrders.length > 0 && (
         <VendorPayablesModal
           orders={vendorPayablesOrders}
           settings={settings}
           initialCategory={vendorPayablesInitialCategory}
           onClose={() => setIsVendorPayablesModalOpen(false)}
+          onUpdateOrders={(updatedList) => {
+            const updatedMap = new Map(updatedList.map(o => [o.id, o]));
+            const newList = pesananList.map(p => updatedMap.get(p.id) || p);
+            if (onUpdatePesananList) {
+              onUpdatePesananList(newList);
+            }
+            persistOrders(newList).catch(() => {});
+            setVendorPayablesOrders(updatedList);
+          }}
         />
       )}
 

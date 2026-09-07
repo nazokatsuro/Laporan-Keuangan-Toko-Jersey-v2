@@ -19,7 +19,7 @@ interface SpkSheetA4Props {
   activePageTab?: 'all' | string;
 }
 
-export const SpkSheetA4: React.FC<SpkSheetA4Props> = ({
+export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
   data,
   showSafeArea = false,
   scale = 1,
@@ -318,7 +318,7 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = ({
                     {/* Konsumen Card */}
                     <div className="border border-[#CBD5E1] rounded-md px-4 py-1.5 text-center min-w-[110px] flex flex-col justify-center bg-white shadow-2xs">
                       <span className="text-[8.5px] font-bold text-slate-500 tracking-wider uppercase block">KONSUMEN</span>
-                      <span className="text-sm font-black text-[#162033] truncate block mt-0.5 uppercase">
+                      <span className="text-sm font-black text-[#162033] truncate block mt-0.5">
                         {customer || 'KIERAHA'}
                       </span>
                     </div>
@@ -604,22 +604,22 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = ({
                     </div>
 
                     <div className="p-1.5 space-y-1 text-[8.5px]">
-                      <p className="font-black text-slate-900 tracking-tight leading-tight uppercase">
+                      <p className="font-black text-slate-900 tracking-tight leading-tight">
                         {notes?.mainNote || 'TUTUP KERAH POLOS, FULL STIK'}
                       </p>
                       
-                      <div className="grid grid-cols-3 gap-1 pt-0.5 border-t border-amber-200/60 text-[8px]">
+                       <div className="grid grid-cols-3 gap-1 pt-0.5 border-t border-amber-200/60 text-[8px]">
                         <div>
                           <span className="text-slate-500 font-bold block">Jahit:</span>
-                          <span className="font-black text-slate-900 uppercase">{notes?.jahit || sewingModel || 'FULL STIK'}</span>
+                          <span className="font-black text-slate-900">{notes?.jahit || sewingModel || 'FULL STIK'}</span>
                         </div>
                         <div>
                           <span className="text-slate-500 font-bold block">Bahan:</span>
-                          <span className="font-black text-slate-900 uppercase">{notes?.bahan || material || 'WAFFLE'}</span>
+                          <span className="font-black text-slate-900">{notes?.bahan || material || 'WAFFLE'}</span>
                         </div>
                         <div>
                           <span className="text-slate-500 font-bold block">Tangan:</span>
-                          <span className="font-black text-slate-900 uppercase">{notes?.tangan || sleeveModel || 'PENDEK'}</span>
+                          <span className="font-black text-slate-900">{notes?.tangan || sleeveModel || 'PENDEK'}</span>
                         </div>
                       </div>
                     </div>
@@ -900,4 +900,4 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = ({
 
     </div>
   );
-};
+});

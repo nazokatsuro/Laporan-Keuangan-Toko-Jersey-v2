@@ -42,34 +42,79 @@ export function orderToSpkData(
 ): SPKData {
   const mergedCompany = getSyncedCompanySettings(shopSettings, companySettings);
 
-  // If order already has cached SPK data, reuse and freshen header info
+  const primaryCollar = order.modelKerah || order.items?.[0]?.modelKerah || 'O-Neck (Standar)';
+  const primaryBahan = order.bahan || order.items?.[0]?.bahan || 'WAFFLE';
+  const primaryModel = order.namaProduk || order.items?.[0]?.namaProduk || 'SETELAN';
+  const primaryLengan = order.modelLengan || order.items?.[0]?.modelLengan || 'PENDEK';
+  const primaryJahit = order.modelJahit || order.items?.[0]?.modelJahit || order.catatanJahit || 'BIASA';
+
+  const defaultMainNote = order.catatanKhususPenjahit?.mainNote || order.keterangan || 'TUTUP KERAH POLOS, JAHIT BIASA';
+  const defaultJahitNote = order.catatanKhususPenjahit?.jahit || primaryJahit;
+  const defaultBahanNote = order.catatanKhususPenjahit?.bahan || primaryBahan;
+  const defaultTanganNote = order.catatanKhususPenjahit?.tangan || primaryLengan;
+  const defaultKerahNote = order.catatanKhususPenjahit?.kerah || primaryCollar;
+
+  // Derive unique SPK Number e.g. SPK-2026-LVX0 or reuse custom assigned
+  const year = order.createdAt ? order.createdAt.substring(0, 4) : String(new Date().getFullYear());
+  const idClean = (order.id || '').replace(/[^a-zA-Z0-9]/g, '');
+  const idShort = idClean.slice(-4).toUpperCase() || '001';
+  const defaultSpkNum = order.nomorSpk || `SPK-${year}-${idShort}`;
+
+  // Map status
+  let spkStatus: SPKStatus = order.spkStatus || 'NORMAL';
+  if (!order.spkStatus) {
+    if (order.statusProduksi === 'Beres') {
+      spkStatus = 'SELESAI';
+    } else {
+      const diff = new Date(order.deadline).getTime() - new Date().getTime();
+      const diffDays = Math.ceil(diff / (1000 * 60 * 60 * 24));
+      if (diffDays <= 3 && diffDays >= 0) {
+        spkStatus = 'URGENT';
+      } else if (diffDays < 0) {
+        spkStatus = 'URGENT';
+      } else if (order.statusProduksi === 'Print Press' || order.statusProduksi === 'Jahit') {
+        spkStatus = 'PRIORITAS';
+      }
+    }
+  }
+
+  // If order already has cached SPK data, reuse and freshen header & tailoring info
   if (order.spkData) {
     return {
       ...order.spkData,
       id: order.spkData.id || `spk-ord-${order.id}`,
-      customer: order.spkData.customer || order.namaPemesan || 'KONSUMEN',
-      poName: order.spkData.poName || order.namaPo || 'PO JERSEY',
-      deadline: order.spkData.deadline || order.deadline,
-      material: order.spkData.material || order.items?.[0]?.bahan || order.bahan || 'WAFFLE',
-      collarModel: order.spkData.collarModel || order.items?.[0]?.modelKerah || order.modelKerah || 'O-Neck (Standar)',
-      collarCaption: order.spkData.collarCaption || order.spkData.collarModel || order.items?.[0]?.modelKerah || order.modelKerah || 'O-Neck (Standar)',
-      collarImage: order.spkData.collarImage || order.fotoKerahUrl || DEFAULT_COLLAR_SVG,
-      vendorJahit: order.spkData.vendorJahit || order.vendorJahit || order.items?.[0]?.vendorJahit || '',
+      spkNumber: order.nomorSpk || order.spkData.spkNumber || defaultSpkNum,
+      customer: order.namaPemesan || order.spkData.customer || 'KONSUMEN',
+      poName: order.namaPo || order.spkData.poName || 'PO JERSEY',
+      deadline: order.deadline || order.spkData.deadline,
+      material: primaryBahan || order.spkData.material || 'WAFFLE',
+      productModel: primaryModel || order.spkData.productModel || 'SETELAN',
+      collarModel: primaryCollar || order.spkData.collarModel || 'O-Neck (Standar)',
+      sleeveModel: primaryLengan || order.spkData.sleeveModel || 'PENDEK',
+      sewingModel: primaryJahit || order.spkData.sewingModel || 'BIASA',
+      collarCaption: primaryCollar || order.spkData.collarCaption || 'O-Neck (Standar)',
+      collarImage: order.fotoKerahUrl || order.spkData.collarImage || DEFAULT_COLLAR_SVG,
+      vendorJahit: order.vendorJahit || order.items?.[0]?.vendorJahit || order.spkData.vendorJahit || '',
+      mitraJahit: order.vendorJahit || order.items?.[0]?.vendorJahit || order.spkData.mitraJahit || '',
+      status: spkStatus,
+      productionStatus: order.statusProduksi || (order.spkData as any).productionStatus || 'Setting',
+      notes: {
+        mainNote: defaultMainNote || order.spkData.notes?.mainNote || 'TUTUP KERAH POLOS, JAHIT BIASA',
+        jahit: defaultJahitNote || order.spkData.notes?.jahit || 'BIASA',
+        bahan: defaultBahanNote || order.spkData.notes?.bahan || 'WAFFLE',
+        tangan: defaultTanganNote || order.spkData.notes?.tangan || 'PENDEK',
+        kerah: defaultKerahNote || order.spkData.notes?.kerah || primaryCollar,
+        additionalNotes: order.spkData.notes?.additionalNotes || `Pesanan ID: ${order.id} | Telp: ${order.noTelepon || '-'}`
+      },
       companySettings: mergedCompany,
       updatedAt: order.spkData.updatedAt || new Date().toISOString()
     };
   }
 
-  // Derive unique SPK Number e.g. SPK-2026-A1B2
-  const year = order.createdAt ? order.createdAt.substring(0, 4) : String(new Date().getFullYear());
-  const idClean = (order.id || '').replace(/[^a-zA-Z0-9]/g, '');
-  const idShort = idClean.slice(-4).toUpperCase() || '001';
-  const spkNum = `SPK-${year}-${idShort}`;
-
   // Parse player roster from detailSizeNama
   let players: SPKPlayer[] = [];
   if (order.detailSizeNama && order.detailSizeNama.trim()) {
-    const parseRes = parseRawRosterText(order.detailSizeNama);
+    const parseRes = parseRawRosterText(order.detailSizeNama, primaryLengan);
     if (parseRes.players && parseRes.players.length > 0) {
       players = parseRes.players;
     }
@@ -85,10 +130,10 @@ export function orderToSpkData(
           players.push({
             id: `p-${order.id}-${counter}`,
             no: counter,
-            name: `${it.namaProduk.toUpperCase()} #${i + 1}`,
+            name: `${it.namaProduk} #${i + 1}`,
             size: 'L',
             number: String(counter).padStart(2, '0'),
-            model: 'PENDEK',
+            model: it.modelLengan || primaryLengan || 'PENDEK',
             notes: it.keterangan ? it.keterangan.slice(0, 15) : '-',
             qc: false
           });
@@ -101,34 +146,14 @@ export function orderToSpkData(
         players.push({
           id: `p-${order.id}-${i}`,
           no: i,
-          name: `PEMAIN ${i}`,
+          name: `Pemain ${i}`,
           size: 'L',
           number: String(i).padStart(2, '0'),
-          model: 'PENDEK',
+          model: primaryLengan || 'PENDEK',
           notes: '-',
           qc: false
         });
       }
-    }
-  }
-
-  const primaryCollar = order.items?.[0]?.modelKerah || order.modelKerah || 'O-Neck (Standar)';
-  const primaryBahan = order.items?.[0]?.bahan || order.bahan || 'WAFFLE';
-  const primaryModel = order.items?.[0]?.namaProduk || order.namaProduk || 'SETELAN';
-
-  // Map status
-  let spkStatus: SPKStatus = 'NORMAL';
-  if (order.statusProduksi === 'Beres') {
-    spkStatus = 'SELESAI';
-  } else {
-    const diff = new Date(order.deadline).getTime() - new Date().getTime();
-    const diffDays = Math.ceil(diff / (1000 * 60 * 60 * 24));
-    if (diffDays <= 3 && diffDays >= 0) {
-      spkStatus = 'URGENT';
-    } else if (diffDays < 0) {
-      spkStatus = 'URGENT';
-    } else if (order.statusProduksi === 'Print Press' || order.statusProduksi === 'Jahit') {
-      spkStatus = 'PRIORITAS';
     }
   }
 
@@ -137,17 +162,18 @@ export function orderToSpkData(
 
   return {
     id: `spk-ord-${order.id}`,
-    spkNumber: spkNum,
+    spkNumber: defaultSpkNum,
     customer: order.namaPemesan || 'KONSUMEN',
     poName: order.namaPo || 'PO JERSEY',
     collarModel: primaryCollar,
     productModel: primaryModel,
     material: primaryBahan,
-    sleeveModel: 'PENDEK',
-    sewingModel: 'FULL STIK',
+    sleeveModel: primaryLengan,
+    sewingModel: primaryJahit,
     vendorJahit: order.vendorJahit || order.items?.[0]?.vendorJahit || '',
     mitraJahit: order.vendorJahit || order.items?.[0]?.vendorJahit || '',
     status: spkStatus,
+    productionStatus: order.statusProduksi || 'Setting',
     productionDate: order.createdAt ? order.createdAt.substring(0, 10) : new Date().toISOString().substring(0, 10),
     deadline: order.deadline || new Date().toISOString().substring(0, 10),
     players: players,
@@ -162,7 +188,7 @@ export function orderToSpkData(
     jerseyImages: [
       {
         id: `img-${order.id}-1`,
-        title: `Mockup ${order.namaPo}`,
+        title: `Mockup ${order.namaPo || 'Jersey'}`,
         url: jerseyImgUrl,
         includedInSpk: true,
         zoom: 1,
@@ -175,11 +201,11 @@ export function orderToSpkData(
     ],
     
     notes: {
-      mainNote: order.keterangan || 'TUTUP KERAH POLOS, FULL STIK',
-      jahit: order.catatanJahit || 'FULL STIK',
-      bahan: primaryBahan,
-      tangan: 'PENDEK',
-      kerah: primaryCollar,
+      mainNote: defaultMainNote,
+      jahit: defaultJahitNote,
+      bahan: defaultBahanNote,
+      tangan: defaultTanganNote,
+      kerah: defaultKerahNote,
       additionalNotes: `Pesanan ID: ${order.id} | Telp: ${order.noTelepon || '-'}`
     },
     
@@ -229,20 +255,40 @@ export function syncSpkToOrder(spk: SPKData, order: Pesanan): Pesanan {
     newStatusProduksi = 'Beres';
   }
 
+  const sleeveModel = spk.sleeveModel || spk.notes?.tangan || 'PENDEK';
+  const sewingModel = spk.sewingModel || spk.notes?.jahit || 'BIASA';
+
   return {
     ...order,
+    nomorSpk: spk.spkNumber || order.nomorSpk,
     namaPemesan: spk.customer || order.namaPemesan,
     namaPo: spk.poName || order.namaPo,
     deadline: spk.deadline || order.deadline,
     bahan: spk.material || order.bahan,
+    namaProduk: spk.productModel || order.namaProduk,
     modelKerah: spk.collarModel || order.modelKerah,
-    catatanJahit: spk.notes?.jahit || order.catatanJahit,
+    modelLengan: sleeveModel,
+    modelJahit: sewingModel,
+    spkStatus: spk.status || order.spkStatus,
+    catatanJahit: spk.notes?.jahit || sewingModel || order.catatanJahit,
     vendorJahit: spk.vendorJahit || spk.mitraJahit || order.vendorJahit,
     items: order.items?.map(it => ({
       ...it,
+      bahan: spk.material || it.bahan,
+      modelKerah: spk.collarModel || it.modelKerah,
+      modelLengan: sleeveModel,
+      modelJahit: sewingModel,
       vendorJahit: it.vendorJahit || spk.vendorJahit || spk.mitraJahit || order.vendorJahit
     })),
     keterangan: spk.notes?.mainNote || order.keterangan,
+    catatanKhususPenjahit: {
+      mainNote: spk.notes?.mainNote || 'TUTUP KERAH POLOS, JAHIT BIASA',
+      jahit: spk.notes?.jahit || sewingModel,
+      bahan: spk.notes?.bahan || spk.material || 'WAFFLE',
+      tangan: spk.notes?.tangan || sleeveModel,
+      kerah: spk.notes?.kerah || spk.collarModel || 'O-Neck (Standar)',
+      additionalNotes: spk.notes?.additionalNotes
+    },
     detailSizeNama: detailSizeNama || order.detailSizeNama,
     statusProduksi: newStatusProduksi,
     fotoKerahUrl: (spk.collarImage && !spk.collarImage.startsWith('data:image/svg+xml')) 

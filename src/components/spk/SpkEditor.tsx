@@ -3,14 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useId } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect, useDeferredValue } from 'react';
 import { SPKData, SPKPlayer, SPKJerseyImage } from '../../spkTypes';
 import { SpkSheetA4 } from './SpkSheetA4';
 import { SpkQuickInputModal } from './SpkQuickInputModal';
 import { SpkImageEditorModal } from './SpkImageEditorModal';
 import { SpkValidationModal } from './SpkValidationModal';
 import { SpkFullscreenModal } from './SpkFullscreenModal';
-import { validateSpkData, calculateSizeRecap, normalizeSize } from '../../utils/spkParser';
+import { validateSpkData, normalizeSize } from '../../utils/spkParser';
 import { exportSpkPdf, exportSpkImage, printSpkDocument } from '../../utils/spkExport';
 import { 
   Sparkles, 
@@ -24,17 +24,11 @@ import {
   Eye, 
   Save, 
   Sliders, 
-  CheckCircle, 
   AlertTriangle, 
-  Layers, 
   Shirt, 
-  Scissors, 
   FileText,
-  Clock,
-  ArrowUpDown,
   RotateCcw,
   RotateCw,
-  Check,
   ZoomIn,
   ZoomOut
 } from 'lucide-react';
@@ -51,11 +45,133 @@ const PRESET_MODEL = ['SETELAN', 'ATASAN SAJA', 'CELANA SAJA', 'JAKET HOODIE', '
 const PRESET_JAHIT = ['FULL STIK', 'OVERDECK 3 JARUM', 'RANTAI STANDAR', 'OBRAS + STIK PUNDAK'];
 const PRESET_TANGAN = ['PENDEK', 'LENGAN PANJANG', 'BUNTONG / SLEEVELESS', 'RAGLAN 3/4'];
 
+// Memoized Player Row for ultra-smooth 60 FPS roster editing
+interface PlayerRowProps {
+  player: SPKPlayer;
+  index: number;
+  onUpdate: (id: string, field: keyof SPKPlayer, value: any) => void;
+  onDelete: (id: string) => void;
+}
+
+const MemoizedPlayerRow = React.memo<PlayerRowProps>(({ player, index, onUpdate, onDelete }) => {
+  return (
+    <tr className="hover:bg-white dark:hover:bg-slate-800/80 transition-colors">
+      {/* Number # */}
+      <td className="py-1 px-2 text-center text-slate-400 font-mono text-[10px]">
+        {index + 1}
+      </td>
+
+      {/* Name */}
+      <td className="py-1 px-2">
+        <input
+          type="text"
+          value={player.name}
+          onChange={(e) => onUpdate(player.id, 'name', e.target.value)}
+          placeholder="Nama Pemain"
+          className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-black text-slate-900 dark:text-white"
+        />
+      </td>
+
+      {/* Size */}
+      <td className="py-1 px-1 text-center">
+        <input
+          type="text"
+          value={player.size}
+          onChange={(e) => onUpdate(player.id, 'size', normalizeSize(e.target.value))}
+          className="w-full px-1.5 py-1 text-xs text-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-black text-indigo-600 dark:text-indigo-400"
+        />
+      </td>
+
+      {/* Jersey Number */}
+      <td className="py-1 px-1 text-center">
+        <input
+          type="text"
+          value={player.number}
+          onChange={(e) => onUpdate(player.id, 'number', e.target.value)}
+          placeholder="No"
+          className="w-full px-1.5 py-1 text-xs text-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-black text-emerald-700 dark:text-emerald-400"
+        />
+      </td>
+
+      {/* Model */}
+      <td className="py-1 px-1">
+        <select
+          value={player.model || 'PENDEK'}
+          onChange={(e) => onUpdate(player.id, 'model', e.target.value)}
+          className="w-full px-1 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold"
+        >
+          <option value="PENDEK">PENDEK</option>
+          <option value="LENGAN PANJANG">L. PANJANG</option>
+          <option value="BUNTONG">BUNTONG</option>
+        </select>
+      </td>
+
+      {/* Notes */}
+      <td className="py-1 px-1">
+        <input
+          type="text"
+          value={player.notes || '-'}
+          onChange={(e) => onUpdate(player.id, 'notes', e.target.value)}
+          placeholder="Keterangan"
+          className="w-full px-1.5 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-bold"
+        />
+      </td>
+
+      {/* Delete button */}
+      <td className="py-1 px-1 text-center">
+        <button
+          type="button"
+          onClick={() => onDelete(player.id)}
+          className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded transition-colors cursor-pointer"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </td>
+    </tr>
+  );
+});
+
 export const SpkEditor: React.FC<SpkEditorProps> = ({
   data,
   onChange,
   onSaveSpk
 }) => {
+  // Local state for instantaneous input responsiveness without blocking main thread
+  const [localData, setLocalData] = useState<SPKData>(data);
+  const deferredLocalData = useDeferredValue(localData);
+
+  // Keep latest onChange in a ref
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
+
+  // Synchronize when active SPK changes from parent (e.g. user selected another SPK)
+  const currentIdRef = useRef(data.id);
+  const isSyncingFromParentRef = useRef(true);
+
+  useEffect(() => {
+    if (data.id !== currentIdRef.current) {
+      currentIdRef.current = data.id;
+      isSyncingFromParentRef.current = true;
+      setLocalData(data);
+    }
+  }, [data.id, data]);
+
+  // Debounced parent onChange to completely eliminate keystroke lag and prevent setState-during-render errors
+  useEffect(() => {
+    if (isSyncingFromParentRef.current) {
+      isSyncingFromParentRef.current = false;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      onChangeRef.current(localData);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [localData]);
+
   const [activeTab, setActiveTab] = useState<'order' | 'roster' | 'design' | 'notes'>('order');
   const [previewScale, setPreviewScale] = useState<number>(0.72);
   const [previewPageTab, setPreviewPageTab] = useState<'all' | string>('all');
@@ -63,19 +179,19 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [saveToast, setSaveToast] = useState(false);
 
-  const totalPlayers = data.players?.length || 0;
-  const rawMaxPage1 = data.layout?.maxPlayersPerPage;
+  const totalPlayers = localData.players?.length || 0;
+  const rawMaxPage1 = localData.layout?.maxPlayersPerPage;
   const maxPage1Rows = typeof rawMaxPage1 === 'number' && rawMaxPage1 >= 20 ? rawMaxPage1 : 50;
 
-  const rawContinuation = data.layout?.continuationPageSize;
+  const rawContinuation = localData.layout?.continuationPageSize;
   const continuationPageSize = typeof rawContinuation === 'number' && rawContinuation >= 20 ? rawContinuation : 50;
 
   const totalPages = useMemo(() => {
-    if (data.layout?.pageMode === '1page') return 1;
+    if (localData.layout?.pageMode === '1page') return 1;
     if (totalPlayers <= maxPage1Rows) return 1;
-    if (data.layout?.pageMode === '2page') return 2;
+    if (localData.layout?.pageMode === '2page') return 2;
     return 1 + Math.ceil((totalPlayers - maxPage1Rows) / continuationPageSize);
-  }, [totalPlayers, maxPage1Rows, continuationPageSize, data.layout?.pageMode]);
+  }, [totalPlayers, maxPage1Rows, continuationPageSize, localData.layout?.pageMode]);
 
   // Modals state
   const [showQuickInput, setShowQuickInput] = useState(false);
@@ -94,284 +210,334 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
     opacity?: number;
   } | null>(null);
 
-  // Form Field Updates
-  const updateField = (field: keyof SPKData, value: any) => {
-    onChange({
-      ...data,
+  // Form Field Updates (Pure state updates without side-effects inside updater)
+  const updateField = useCallback((field: keyof SPKData, value: any) => {
+    setLocalData(prev => ({
+      ...prev,
       [field]: value,
       updatedAt: new Date().toISOString()
-    });
-  };
+    }));
+  }, []);
 
-  const updateNotesField = (field: string, value: string) => {
-    onChange({
-      ...data,
+  const updateNotesField = useCallback((field: string, value: string) => {
+    setLocalData(prev => ({
+      ...prev,
       notes: {
-        ...data.notes,
+        ...prev.notes,
         [field]: value
       },
       updatedAt: new Date().toISOString()
-    });
-  };
+    }));
+  }, []);
 
-  const updateLayoutField = (field: string, value: any) => {
-    onChange({
-      ...data,
+  const updateLayoutField = useCallback((field: string, value: any) => {
+    setLocalData(prev => ({
+      ...prev,
       layout: {
-        ...data.layout,
+        ...prev.layout,
         [field]: value
       }
-    });
-  };
+    }));
+  }, []);
 
   // Players / Roster Handlers
-  const handleAddPlayer = () => {
-    const newPlayer: SPKPlayer = {
-      id: `p-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-      no: data.players.length + 1,
-      name: '',
-      size: 'L',
-      number: '',
-      model: data.sleeveModel || 'PENDEK',
-      notes: '-',
-      qc: false
-    };
-    updateField('players', [...data.players, newPlayer]);
-  };
-
-  const handleUpdatePlayer = (id: string, field: keyof SPKPlayer, value: any) => {
-    const updated = data.players.map(p => {
-      if (p.id === id) {
-        return { ...p, [field]: value };
-      }
-      return p;
+  const handleAddPlayer = useCallback(() => {
+    setLocalData(prev => {
+      const newPlayer: SPKPlayer = {
+        id: `p-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        no: (prev.players?.length || 0) + 1,
+        name: '',
+        size: 'L',
+        number: '',
+        model: prev.sleeveModel || 'PENDEK',
+        notes: '-',
+        qc: false
+      };
+      return {
+        ...prev,
+        players: [...(prev.players || []), newPlayer],
+        updatedAt: new Date().toISOString()
+      };
     });
-    updateField('players', updated);
-  };
+  }, []);
 
-  const handleDeletePlayer = (id: string) => {
-    const filtered = data.players.filter(p => p.id !== id);
-    // Re-index row numbers
-    const reindexed = filtered.map((p, idx) => ({ ...p, no: idx + 1 }));
-    updateField('players', reindexed);
-  };
-
-  const handleToggleQc = (playerId: string) => {
-    const updated = data.players.map(p => {
-      if (p.id === playerId) {
-        return { ...p, qc: !p.qc };
-      }
-      return p;
+  const handleUpdatePlayer = useCallback((id: string, field: keyof SPKPlayer, value: any) => {
+    setLocalData(prev => {
+      const updatedPlayers = (prev.players || []).map(p => {
+        if (p.id === id) {
+          return { ...p, [field]: value };
+        }
+        return p;
+      });
+      return {
+        ...prev,
+        players: updatedPlayers,
+        updatedAt: new Date().toISOString()
+      };
     });
-    updateField('players', updated);
-  };
+  }, []);
 
-  const handleSortRoster = (mode: 'size_asc' | 'number_asc' | 'role_kiper_first' | 'name_asc') => {
-    const list = [...data.players];
-    const sizeWeights: Record<string, number> = {
-      'XS': 1, 'S': 2, 'M': 3, 'L': 4, 'XL': 5, '2XL': 6, 'XXL': 6,
-      '3XL': 7, 'XXXL': 7, '4XL': 8, 'XXXXL': 8, '5XL': 9, 'XXXXXL': 9,
-      'ALL SIZE': 99
-    };
+  const handleDeletePlayer = useCallback((id: string) => {
+    setLocalData(prev => {
+      const filtered = (prev.players || []).filter(p => p.id !== id);
+      const reindexed = filtered.map((p, idx) => ({ ...p, no: idx + 1 }));
+      return {
+        ...prev,
+        players: reindexed,
+        updatedAt: new Date().toISOString()
+      };
+    });
+  }, []);
 
-    if (mode === 'size_asc') {
-      list.sort((a, b) => {
-        const szA = (a.size || '').toUpperCase().trim();
-        const szB = (b.size || '').toUpperCase().trim();
-        const wA = sizeWeights[szA] || 50;
-        const wB = sizeWeights[szB] || 50;
-        if (wA !== wB) return wA - wB;
-        const numA = parseInt(a.number || '') || 9999;
-        const numB = parseInt(b.number || '') || 9999;
-        return numA - numB;
+  const handleToggleQc = useCallback((playerId: string) => {
+    setLocalData(prev => {
+      const updated = (prev.players || []).map(p => {
+        if (p.id === playerId) {
+          return { ...p, qc: !p.qc };
+        }
+        return p;
       });
-    } else if (mode === 'number_asc') {
-      list.sort((a, b) => {
-        const numA = parseInt(a.number || '') || 9999;
-        const numB = parseInt(b.number || '') || 9999;
-        return numA - numB;
-      });
-    } else if (mode === 'role_kiper_first') {
-      list.sort((a, b) => {
-        const aIsKiper = (a.notes || '').toUpperCase().includes('KIPER') || (a.model || '').toUpperCase().includes('KIPER');
-        const bIsKiper = (b.notes || '').toUpperCase().includes('KIPER') || (b.model || '').toUpperCase().includes('KIPER');
-        if (aIsKiper && !bIsKiper) return -1;
-        if (!aIsKiper && bIsKiper) return 1;
-        const szA = (a.size || '').toUpperCase().trim();
-        const szB = (b.size || '').toUpperCase().trim();
-        const wA = sizeWeights[szA] || 50;
-        const wB = sizeWeights[szB] || 50;
-        return wA - wB;
-      });
-    } else if (mode === 'name_asc') {
-      list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    }
+      return {
+        ...prev,
+        players: updated,
+        updatedAt: new Date().toISOString()
+      };
+    });
+  }, []);
 
-    const reindexed = list.map((p, idx) => ({ ...p, no: idx + 1 }));
-    updateField('players', reindexed);
-  };
+  const handleSortRoster = useCallback((mode: 'size_asc' | 'number_asc' | 'role_kiper_first' | 'name_asc') => {
+    setLocalData(prev => {
+      const list = [...(prev.players || [])];
+      const sizeWeights: Record<string, number> = {
+        'XS': 1, 'S': 2, 'M': 3, 'L': 4, 'XL': 5, '2XL': 6, 'XXL': 6,
+        '3XL': 7, 'XXXL': 7, '4XL': 8, 'XXXXL': 8, '5XL': 9, 'XXXXXL': 9,
+        'ALL SIZE': 99
+      };
 
-  const handleApplyQuickInput = (newPlayers: SPKPlayer[], appendMode: boolean, detectedHeader?: Partial<SPKData>) => {
-    let finalPlayers: SPKPlayer[];
-    if (appendMode) {
-      finalPlayers = [...data.players, ...newPlayers];
-    } else {
-      finalPlayers = newPlayers;
-    }
-    // Re-index row numbers
-    finalPlayers = finalPlayers.map((p, idx) => ({ ...p, no: idx + 1 }));
-
-    const updatedData: SPKData = {
-      ...data,
-      players: finalPlayers,
-      updatedAt: new Date().toISOString()
-    };
-
-    // If Gemini extracted header specs (Customer, PO, Collar, Material, etc.), apply them
-    if (detectedHeader) {
-      if (detectedHeader.customer) updatedData.customer = detectedHeader.customer;
-      if (detectedHeader.poName) updatedData.poName = detectedHeader.poName;
-      if (detectedHeader.collarModel) {
-        updatedData.collarModel = detectedHeader.collarModel;
-        if (!data.collarCaption) updatedData.collarCaption = detectedHeader.collarModel;
+      if (mode === 'size_asc') {
+        list.sort((a, b) => {
+          const szA = (a.size || '').toUpperCase().trim();
+          const szB = (b.size || '').toUpperCase().trim();
+          const wA = sizeWeights[szA] || 50;
+          const wB = sizeWeights[szB] || 50;
+          if (wA !== wB) return wA - wB;
+          const numA = parseInt(a.number || '') || 9999;
+          const numB = parseInt(b.number || '') || 9999;
+          return numA - numB;
+        });
+      } else if (mode === 'number_asc') {
+        list.sort((a, b) => {
+          const numA = parseInt(a.number || '') || 9999;
+          const numB = parseInt(b.number || '') || 9999;
+          return numA - numB;
+        });
+      } else if (mode === 'role_kiper_first') {
+        list.sort((a, b) => {
+          const aIsKiper = (a.notes || '').toUpperCase().includes('KIPER') || (a.model || '').toUpperCase().includes('KIPER');
+          const bIsKiper = (b.notes || '').toUpperCase().includes('KIPER') || (b.model || '').toUpperCase().includes('KIPER');
+          if (aIsKiper && !bIsKiper) return -1;
+          if (!aIsKiper && bIsKiper) return 1;
+          const szA = (a.size || '').toUpperCase().trim();
+          const szB = (b.size || '').toUpperCase().trim();
+          const wA = sizeWeights[szA] || 50;
+          const wB = sizeWeights[szB] || 50;
+          return wA - wB;
+        });
+      } else if (mode === 'name_asc') {
+        list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       }
-      if (detectedHeader.material) updatedData.material = detectedHeader.material;
-      if (detectedHeader.productModel) updatedData.productModel = detectedHeader.productModel;
-      if (detectedHeader.sleeveModel) updatedData.sleeveModel = detectedHeader.sleeveModel;
-      if (detectedHeader.sewingModel) updatedData.sewingModel = detectedHeader.sewingModel;
-      if (detectedHeader.deadline) updatedData.deadline = detectedHeader.deadline;
-      if (detectedHeader.notes) {
-        updatedData.notes = {
-          ...data.notes,
-          ...detectedHeader.notes
-        };
-      }
-    }
 
-    onChange(updatedData);
-  };
+      const reindexed = list.map((p, idx) => ({ ...p, no: idx + 1 }));
+      return {
+        ...prev,
+        players: reindexed,
+        updatedAt: new Date().toISOString()
+      };
+    });
+  }, []);
+
+  const handleApplyQuickInput = useCallback((newPlayers: SPKPlayer[], appendMode: boolean, detectedHeader?: Partial<SPKData>) => {
+    setLocalData(prev => {
+      let finalPlayers: SPKPlayer[];
+      if (appendMode) {
+        finalPlayers = [...(prev.players || []), ...newPlayers];
+      } else {
+        finalPlayers = newPlayers;
+      }
+      finalPlayers = finalPlayers.map((p, idx) => ({ ...p, no: idx + 1 }));
+
+      const updatedData: SPKData = {
+        ...prev,
+        players: finalPlayers,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (detectedHeader) {
+        if (detectedHeader.customer) updatedData.customer = detectedHeader.customer;
+        if (detectedHeader.poName) updatedData.poName = detectedHeader.poName;
+        if (detectedHeader.collarModel) {
+          updatedData.collarModel = detectedHeader.collarModel;
+          if (!prev.collarCaption) updatedData.collarCaption = detectedHeader.collarModel;
+        }
+        if (detectedHeader.material) updatedData.material = detectedHeader.material;
+        if (detectedHeader.productModel) updatedData.productModel = detectedHeader.productModel;
+        if (detectedHeader.sleeveModel) updatedData.sleeveModel = detectedHeader.sleeveModel;
+        if (detectedHeader.sewingModel) updatedData.sewingModel = detectedHeader.sewingModel;
+        if (detectedHeader.deadline) updatedData.deadline = detectedHeader.deadline;
+        if (detectedHeader.notes) {
+          updatedData.notes = {
+            ...prev.notes,
+            ...detectedHeader.notes
+          };
+        }
+      }
+
+      return updatedData;
+    });
+  }, []);
 
   // Image Upload Handlers
-  const handleUploadCollar = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadCollar = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = () => {
-        onChange({
-          ...data,
+        setLocalData(prev => ({
+          ...prev,
           collarImage: reader.result as string,
           updatedAt: new Date().toISOString()
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  }, []);
+
+  const handleUploadJersey = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setLocalData(prev => {
+          const newImg: SPKJerseyImage = {
+            id: `jimg-${Date.now()}`,
+            title: `Desain Mockup #${(prev.jerseyImages || []).length + 1}`,
+            url: reader.result as string,
+            includedInSpk: true,
+            zoom: 1,
+            posX: 0,
+            posY: 0,
+            rotation: 90,
+            opacity: 1,
+            fitMode: 'contain'
+          };
+          return {
+            ...prev,
+            jerseyImages: [...(prev.jerseyImages || []), newImg],
+            updatedAt: new Date().toISOString()
+          };
         });
       };
       reader.readAsDataURL(file);
     }
-  };
+  }, []);
 
-  const handleUploadJersey = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const newImg: SPKJerseyImage = {
-          id: `jimg-${Date.now()}`,
-          title: `Desain Mockup #${data.jerseyImages.length + 1}`,
-          url: reader.result as string,
-          includedInSpk: true,
-          zoom: 1,
-          posX: 0,
-          posY: 0,
-          rotation: 90, // Default 90 derajat / vertikal sesuai permintaan
-          opacity: 1,
-          fitMode: 'contain'
-        };
-        updateField('jerseyImages', [...data.jerseyImages, newImg]);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleQuickRotateMockup = (id: string, customDeg?: number) => {
-    const updated = data.jerseyImages.map(img => {
-      if (img.id === id) {
-        const nextRot = customDeg !== undefined ? customDeg : ((img.rotation ?? 90) + 90) % 360;
-        return { ...img, rotation: nextRot };
-      }
-      return img;
+  const handleQuickRotateMockup = useCallback((id: string, customDeg?: number) => {
+    setLocalData(prev => {
+      const updated = (prev.jerseyImages || []).map(img => {
+        if (img.id === id) {
+          const nextRot = customDeg !== undefined ? customDeg : ((img.rotation ?? 90) + 90) % 360;
+          return { ...img, rotation: nextRot };
+        }
+        return img;
+      });
+      return { ...prev, jerseyImages: updated };
     });
-    updateField('jerseyImages', updated);
-  };
+  }, []);
 
-  const handleQuickZoomMockup = (id: string, delta: number) => {
-    const updated = data.jerseyImages.map(img => {
-      if (img.id === id) {
-        const currentZoom = img.zoom ?? 1;
-        const nextZoom = Math.max(Number((currentZoom + delta).toFixed(2)), 0.3);
-        return { ...img, zoom: Math.min(nextZoom, 3) };
-      }
-      return img;
+  const handleQuickZoomMockup = useCallback((id: string, delta: number) => {
+    setLocalData(prev => {
+      const updated = (prev.jerseyImages || []).map(img => {
+        if (img.id === id) {
+          const currentZoom = img.zoom ?? 1;
+          const nextZoom = Math.max(Number((currentZoom + delta).toFixed(2)), 0.3);
+          return { ...img, zoom: Math.min(nextZoom, 3) };
+        }
+        return img;
+      });
+      return { ...prev, jerseyImages: updated };
     });
-    updateField('jerseyImages', updated);
-  };
+  }, []);
 
-  const handleSetAllMockupsVertical = () => {
-    const updated = data.jerseyImages.map(img => ({
-      ...img,
-      rotation: 90,
-      zoom: 1,
-      posX: 0,
-      posY: 0
-    }));
-    updateField('jerseyImages', updated);
-  };
-
-  const handleDeleteJerseyImage = (id: string) => {
-    const filtered = data.jerseyImages.filter(img => img.id !== id);
-    updateField('jerseyImages', filtered);
-  };
-
-  const handleToggleJerseyImage = (id: string) => {
-    const updated = data.jerseyImages.map(img => {
-      if (img.id === id) {
-        return { ...img, includedInSpk: !img.includedInSpk };
-      }
-      return img;
+  const handleSetAllMockupsVertical = useCallback(() => {
+    setLocalData(prev => {
+      const updated = (prev.jerseyImages || []).map(img => ({
+        ...img,
+        rotation: 90,
+        zoom: 1,
+        posX: 0,
+        posY: 0
+      }));
+      return { ...prev, jerseyImages: updated };
     });
-    updateField('jerseyImages', updated);
-  };
+  }, []);
+
+  const handleDeleteJerseyImage = useCallback((id: string) => {
+    setLocalData(prev => {
+      const filtered = (prev.jerseyImages || []).filter(img => img.id !== id);
+      return { ...prev, jerseyImages: filtered };
+    });
+  }, []);
+
+  const handleToggleJerseyImage = useCallback((id: string) => {
+    setLocalData(prev => {
+      const updated = (prev.jerseyImages || []).map(img => {
+        if (img.id === id) {
+          return { ...img, includedInSpk: !img.includedInSpk };
+        }
+        return img;
+      });
+      return { ...prev, jerseyImages: updated };
+    });
+  }, []);
 
   // Auto Generate SPK Number
-  const handleGenerateSpkNumber = () => {
+  const handleGenerateSpkNumber = useCallback(() => {
     const year = new Date().getFullYear();
     const randNum = String(Math.floor(Math.random() * 900) + 100).padStart(3, '0');
     updateField('spkNumber', `SPK-${year}-${randNum}`);
-  };
+  }, [updateField]);
 
   // Validation
-  const validationResult = validateSpkData({
-    customer: data.customer,
-    spkNumber: data.spkNumber,
-    poName: data.poName,
-    deadline: data.deadline,
-    players: data.players,
-    jerseyImages: data.jerseyImages
-  });
+  const validationResult = useMemo(() => {
+    return validateSpkData({
+      customer: localData.customer,
+      spkNumber: localData.spkNumber,
+      poName: localData.poName,
+      deadline: localData.deadline,
+      players: localData.players,
+      jerseyImages: localData.jerseyImages
+    });
+  }, [localData.customer, localData.spkNumber, localData.poName, localData.deadline, localData.players, localData.jerseyImages]);
 
   // Save SPK
   const handleSave = () => {
-    onSaveSpk(data);
+    onChangeRef.current(localData);
+    onSaveSpk(localData);
     setSaveToast(true);
     setTimeout(() => setSaveToast(false), 2500);
   };
 
   // Export handlers
   const handlePrint = () => {
+    onChangeRef.current(localData);
     printSpkDocument();
   };
 
   const handleExportPdf = async () => {
     try {
+      onChangeRef.current(localData);
       setIsExporting('PDF');
-      await exportSpkPdf('spk-editor-live-sheet', data);
+      await exportSpkPdf('spk-editor-live-sheet', localData);
     } catch (err: any) {
       alert(`Gagal export PDF: ${err.message}`);
     } finally {
@@ -381,8 +547,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
 
   const handleExportImage = async (format: 'png' | 'jpeg') => {
     try {
+      onChangeRef.current(localData);
       setIsExporting(format.toUpperCase());
-      await exportSpkImage('spk-editor-live-sheet', data, format);
+      await exportSpkImage('spk-editor-live-sheet', localData, format);
     } catch (err: any) {
       alert(`Gagal export Gambar: ${err.message}`);
     } finally {
@@ -403,17 +570,17 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{data.spkNumber}</span>
+              <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{localData.spkNumber}</span>
               <span className="text-slate-400">•</span>
-              <span className="text-xs font-bold text-[#00805F] dark:text-emerald-400 uppercase">{data.poName || 'BELUM ADA PO'}</span>
+              <span className="text-xs font-bold text-[#00805F] dark:text-emerald-400 uppercase">{localData.poName || 'BELUM ADA PO'}</span>
               <span className={`px-2 py-0.2 rounded text-[9px] font-black uppercase ${
-                data.status === 'URGENT' ? 'bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400' : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                localData.status === 'URGENT' ? 'bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400' : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
               }`}>
-                {data.status}
+                {localData.status}
               </span>
             </div>
             <p className="text-[10px] text-slate-500 dark:text-slate-400">
-              Total Roster: <b className="text-slate-900 dark:text-white">{data.players.length} PCS</b> | Konsumen: <b className="text-slate-900 dark:text-white">{data.customer || '-'}</b>
+              Total Roster: <b className="text-slate-900 dark:text-white">{(localData.players || []).length} PCS</b> | Konsumen: <b className="text-slate-900 dark:text-white">{localData.customer || '-'}</b>
             </p>
           </div>
         </div>
@@ -549,7 +716,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
               }`}
             >
               <Shirt className="h-3.5 w-3.5" />
-              <span>2. Roster ({data.players.length})</span>
+              <span>2. Roster ({(localData.players || []).length})</span>
             </button>
 
             <button
@@ -591,14 +758,14 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     <button
                       type="button"
                       onClick={handleGenerateSpkNumber}
-                      className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline"
+                      className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
                     >
                       Auto No
                     </button>
                   </div>
                   <input
                     type="text"
-                    value={data.spkNumber}
+                    value={localData.spkNumber}
                     onChange={(e) => updateField('spkNumber', e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-mono font-bold text-slate-900 dark:text-white"
                   />
@@ -608,7 +775,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Nama Konsumen:</label>
                   <input
                     type="text"
-                    value={data.customer}
+                    value={localData.customer}
                     onChange={(e) => updateField('customer', e.target.value)}
                     placeholder="Contoh: KIERAHA"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-black uppercase text-slate-900 dark:text-white"
@@ -622,7 +789,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Nama PO / Tim:</label>
                   <input
                     type="text"
-                    value={data.poName}
+                    value={localData.poName}
                     onChange={(e) => updateField('poName', e.target.value)}
                     placeholder="Contoh: SOLIDARITAS"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-black uppercase text-slate-900 dark:text-white"
@@ -632,7 +799,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Status Produksi:</label>
                   <select
-                    value={data.status}
+                    value={localData.status}
                     onChange={(e) => updateField('status', e.target.value as any)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-black text-slate-900 dark:text-white"
                   >
@@ -647,10 +814,10 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
 
               {/* Status Pengerjaan (Setting -> Print Press -> Jahit -> Tinggal Kirim -> Beres) */}
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Status Pengerjaan Pesanan (Sinkron Otomatis ke App.tsx):</label>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Status Pengerjaan Pesanan:</label>
                 <div className="grid grid-cols-5 gap-1.5">
                   {(['Setting', 'Print Press', 'Jahit', 'Tinggal Kirim', 'Beres'] as string[]).map((st) => {
-                    const currentProdStatus = (data as any).productionStatus || 'Setting';
+                    const currentProdStatus = (localData as any).productionStatus || 'Setting';
                     const isActive = currentProdStatus === st;
                     return (
                       <button
@@ -682,10 +849,10 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                   <input
                     type="text"
                     list="kerah-list"
-                    value={data.collarModel}
+                    value={localData.collarModel}
                     onChange={(e) => {
                       updateField('collarModel', e.target.value);
-                      if (!data.collarCaption) updateField('collarCaption', e.target.value);
+                      if (!localData.collarCaption) updateField('collarCaption', e.target.value);
                     }}
                     placeholder="Contoh: V DATAR + LIDAH"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold uppercase text-slate-900 dark:text-white"
@@ -700,7 +867,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                   <input
                     type="text"
                     list="bahan-list"
-                    value={data.material}
+                    value={localData.material}
                     onChange={(e) => updateField('material', e.target.value)}
                     placeholder="Contoh: WAFFLE"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold uppercase text-slate-900 dark:text-white"
@@ -711,14 +878,14 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                 </div>
               </div>
 
-              {/* Model Pesanan & Model Tangan */}
+              {/* Model Produk & Model Lengan */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Model Pesanan:</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Model Produk:</label>
                   <input
                     type="text"
                     list="model-list"
-                    value={data.productModel}
+                    value={localData.productModel}
                     onChange={(e) => updateField('productModel', e.target.value)}
                     placeholder="Contoh: SETELAN"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold uppercase text-slate-900 dark:text-white"
@@ -729,11 +896,11 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Model Tangan Standar:</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Model Lengan:</label>
                   <input
                     type="text"
                     list="tangan-list"
-                    value={data.sleeveModel}
+                    value={localData.sleeveModel}
                     onChange={(e) => updateField('sleeveModel', e.target.value)}
                     placeholder="Contoh: PENDEK"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold uppercase text-slate-900 dark:text-white"
@@ -744,14 +911,14 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                 </div>
               </div>
 
-              {/* Jahitan & Deadline */}
+              {/* Model Jahitan & Deadline */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Model Jahitan:</label>
                   <input
                     type="text"
                     list="jahit-list"
-                    value={data.sewingModel}
+                    value={localData.sewingModel}
                     onChange={(e) => updateField('sewingModel', e.target.value)}
                     placeholder="Contoh: FULL STIK"
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold uppercase text-slate-900 dark:text-white"
@@ -765,7 +932,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                   <label className="block font-bold text-rose-600 dark:text-rose-400 mb-1">Deadline / Tgl Kirim:</label>
                   <input
                     type="date"
-                    value={data.deadline}
+                    value={localData.deadline}
                     onChange={(e) => updateField('deadline', e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/20 font-bold text-rose-700 dark:text-rose-300"
                   />
@@ -782,10 +949,10 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <span className="font-black text-slate-900 dark:text-white text-sm block">
-                    Daftar Pemain / Roster ({data.players.length} Pemain)
+                    Daftar Pemain / Roster ({(localData.players || []).length} Pemain)
                   </span>
                   <span className="text-[11px] text-slate-500">
-                    Edit langsung baris pemain atau gunakan tombol "Input Cepat"
+                    Ketik langsung di baris pemain — responsif dan instan.
                   </span>
                 </div>
 
@@ -811,7 +978,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
               </div>
 
               {/* Quick Sorting Toolbar */}
-              {data.players.length > 1 && (
+              {(localData.players || []).length > 1 && (
                 <div className="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                   <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
                     Urutkan Roster:
@@ -868,84 +1035,17 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {data.players.map((player, idx) => (
-                      <tr key={player.id} className="hover:bg-white dark:hover:bg-slate-800/80 transition-colors">
-                        
-                        {/* Number # */}
-                        <td className="py-1 px-2 text-center text-slate-400 font-mono text-[10px]">
-                          {idx + 1}
-                        </td>
-
-                        {/* Name */}
-                        <td className="py-1 px-2">
-                          <input
-                            type="text"
-                            value={player.name}
-                            onChange={(e) => handleUpdatePlayer(player.id, 'name', e.target.value.toUpperCase())}
-                            placeholder="Nama Pemain"
-                            className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-black uppercase text-slate-900 dark:text-white"
-                          />
-                        </td>
-
-                        {/* Size */}
-                        <td className="py-1 px-1 text-center">
-                          <input
-                            type="text"
-                            value={player.size}
-                            onChange={(e) => handleUpdatePlayer(player.id, 'size', normalizeSize(e.target.value))}
-                            className="w-full px-1.5 py-1 text-xs text-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-black text-indigo-600 dark:text-indigo-400"
-                          />
-                        </td>
-
-                        {/* Jersey Number */}
-                        <td className="py-1 px-1 text-center">
-                          <input
-                            type="text"
-                            value={player.number}
-                            onChange={(e) => handleUpdatePlayer(player.id, 'number', e.target.value)}
-                            placeholder="No"
-                            className="w-full px-1.5 py-1 text-xs text-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-black text-emerald-700 dark:text-emerald-400"
-                          />
-                        </td>
-
-                        {/* Model */}
-                        <td className="py-1 px-1">
-                          <select
-                            value={player.model || 'PENDEK'}
-                            onChange={(e) => handleUpdatePlayer(player.id, 'model', e.target.value)}
-                            className="w-full px-1 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold"
-                          >
-                            <option value="PENDEK">PENDEK</option>
-                            <option value="LENGAN PANJANG">L. PANJANG</option>
-                            <option value="BUNTONG">BUNTONG</option>
-                          </select>
-                        </td>
-
-                        {/* Notes */}
-                        <td className="py-1 px-1">
-                          <input
-                            type="text"
-                            value={player.notes || '-'}
-                            onChange={(e) => handleUpdatePlayer(player.id, 'notes', e.target.value.toUpperCase())}
-                            placeholder="Keterangan"
-                            className="w-full px-1.5 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-bold"
-                          />
-                        </td>
-
-                        {/* Delete button */}
-                        <td className="py-1 px-1 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleDeletePlayer(player.id)}
-                            className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded transition-colors"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </td>
-                      </tr>
+                    {(localData.players || []).map((player, idx) => (
+                      <MemoizedPlayerRow
+                        key={player.id}
+                        player={player}
+                        index={idx}
+                        onUpdate={handleUpdatePlayer}
+                        onDelete={handleDeletePlayer}
+                      />
                     ))}
 
-                    {data.players.length === 0 && (
+                    {(localData.players || []).length === 0 && (
                       <tr>
                         <td colSpan={7} className="py-8 text-center text-slate-400 dark:text-slate-500 italic">
                           Belum ada pemain di roster. Klik "Input Data Cepat" atau "Tambah Baris".
@@ -969,18 +1069,18 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                   <span className="font-black text-slate-900 dark:text-white uppercase tracking-wider block">
                     1. Preview Gambar Kerah
                   </span>
-                  {data.collarImage && (
+                  {localData.collarImage && (
                     <button
                       type="button"
                       onClick={() => setActiveImageEditor({
                         isOpen: true,
                         type: 'collar',
-                        url: data.collarImage || '',
+                        url: localData.collarImage || '',
                         title: 'Gambar Kerah',
-                        zoom: data.collarZoom || 1,
-                        posX: data.collarPosX || 0,
-                        posY: data.collarPosY || 0,
-                        rotation: data.collarRotation || 0
+                        zoom: localData.collarZoom || 1,
+                        posX: localData.collarPosX || 0,
+                        posY: localData.collarPosY || 0,
+                        rotation: localData.collarRotation || 0
                       })}
                       className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                     >
@@ -992,8 +1092,8 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
 
                 <div className="flex items-center gap-4">
                   <div className="h-20 w-28 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 flex items-center justify-center overflow-hidden shrink-0">
-                    {data.collarImage ? (
-                      <img src={data.collarImage} alt="Collar" className="max-h-full max-w-full object-contain" />
+                    {localData.collarImage ? (
+                      <img src={localData.collarImage} alt="Collar" className="max-h-full max-w-full object-contain" />
                     ) : (
                       <span className="text-[10px] text-slate-400 font-bold text-center px-1">Kosong</span>
                     )}
@@ -1006,10 +1106,10 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                       </label>
                       <input
                         type="text"
-                        value={data.collarCaption || data.collarModel || ''}
-                        onChange={(e) => updateField('collarCaption', e.target.value.toUpperCase())}
-                        placeholder="Contoh: V DATAR + LIDAH"
-                        className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-bold uppercase text-slate-900 dark:text-white"
+                        value={localData.collarCaption || localData.collarModel || ''}
+                        onChange={(e) => updateField('collarCaption', e.target.value)}
+                        placeholder="Contoh: V Datar + Lidah"
+                        className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-bold text-slate-900 dark:text-white"
                       />
                     </div>
 
@@ -1025,61 +1125,76 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
               </div>
 
               {/* Jersey Mockups Gallery Box */}
-              <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3 bg-slate-50/40 dark:bg-slate-900/40">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <span className="font-black text-slate-900 dark:text-white uppercase tracking-wider block">
+              <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3.5 bg-slate-50/50 dark:bg-slate-900/50">
+                {/* Header Title & Badge */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-slate-900 dark:text-white uppercase tracking-wider text-xs">
                       2. Desain Jersey & Mockup Produksi
                     </span>
-                    <span className="text-[11px] text-slate-500">
-                      Default orientasi: <strong className="text-[#00805F]">90° (Vertikal)</strong>. Anda dapat menggeser posisi X/Y, zoom, atau memutar sudut mockup.
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    {data.jerseyImages.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleSetAllMockupsVertical}
-                        className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
-                        title="Setel semua mockup menjadi vertikal 90°"
-                      >
-                        🔄 Set Semua 90° Vertikal
-                      </button>
+                    {(localData.jerseyImages || []).length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#00805F]/10 text-[#00805F] dark:text-emerald-400 border border-[#00805F]/20">
+                        {localData.jerseyImages.length} Mockup
+                      </span>
                     )}
-                    <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs">
-                      <Upload className="h-3.5 w-3.5" />
-                      <span>Upload Mockup Baru</span>
-                      <input type="file" accept="image/*" onChange={handleUploadJersey} className="hidden" />
-                    </label>
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  {data.jerseyImages.map((img) => {
+                {/* Full-width Explanatory Text */}
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed m-0">
+                  Default orientasi lembar SPK: <strong className="text-[#00805F] dark:text-emerald-400 font-bold">90° (Vertikal)</strong>. Anda dapat menggeser posisi X/Y, zoom, atau memutar sudut mockup secara langsung.
+                </p>
+                
+                {/* Action Buttons Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                  <label className="cursor-pointer px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors select-none">
+                    <Upload className="h-4 w-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
+                    <span>Upload Mockup Baru</span>
+                    <input type="file" accept="image/*" onChange={handleUploadJersey} className="hidden" />
+                  </label>
+
+                  {(localData.jerseyImages || []).length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleSetAllMockupsVertical}
+                      className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer flex items-center justify-center gap-2 shadow-2xs transition-colors"
+                      title="Setel semua sudut mockup ke 90° (Vertikal)"
+                    >
+                      <RotateCw className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>Set Semua 90° Vertikal</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Mockup Cards List */}
+                <div className="space-y-3 pt-1">
+                  {(localData.jerseyImages || []).map((img) => {
                     const currentRot = img.rotation ?? 90;
                     const isVertical = ((currentRot % 360) + 360) % 360 === 90;
 
                     return (
                       <div
                         key={img.id}
-                        className="p-3 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2"
+                        className="p-3.5 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3"
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          
-                          {/* Left: Checkbox & Live Thumbnail */}
-                          <div className="flex items-center gap-3">
-                            <label className="flex items-center gap-1.5 cursor-pointer">
+                        {/* Top Row: Checkbox, Thumbnail, Details & Delete */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            {/* SPK Include Toggle */}
+                            <label 
+                              className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer shrink-0 hover:border-emerald-500 transition-colors"
+                              title="Centang untuk menyertakan mockup ini pada lembar cetak SPK"
+                            >
                               <input
                                 type="checkbox"
                                 checked={img.includedInSpk}
                                 onChange={() => handleToggleJerseyImage(img.id)}
-                                className="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                                className="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4 cursor-pointer"
                               />
-                              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 hidden sm:inline">SPK</span>
+                              <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 select-none">SPK</span>
                             </label>
 
-                            {/* Thumbnail with actual live transform */}
+                            {/* Live Transform Thumbnail */}
                             <div 
                               onClick={() => setActiveImageEditor({
                                 isOpen: true,
@@ -1093,7 +1208,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                                 rotation: img.rotation ?? 90,
                                 opacity: img.opacity ?? 1
                               })}
-                              className="h-12 w-14 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 flex items-center justify-center overflow-hidden cursor-pointer hover:border-emerald-500 transition-colors relative group"
+                              className="h-12 w-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 flex items-center justify-center overflow-hidden cursor-pointer hover:border-emerald-500 transition-colors relative group shrink-0"
                               title="Klik untuk membuka editor posisi visual"
                             >
                               <img 
@@ -1105,101 +1220,105 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                                   opacity: img.opacity ?? 1
                                 }}
                               />
-                              <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
-                                <Sliders className="h-3.5 w-3.5" />
+                              <div className="absolute inset-0 bg-slate-950/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+                                <Sliders className="h-4 w-4" />
                               </div>
                             </div>
 
-                            {/* Title & Specs */}
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-black text-slate-900 dark:text-white text-xs truncate max-w-[150px] sm:max-w-[200px]">
-                                  {img.title}
-                                </span>
-                                <span className={`px-1.5 py-0.2 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                            {/* Title, Orientation Badge, & Coordinate Specs */}
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <span className="font-bold text-slate-900 dark:text-white text-xs block truncate" title={img.title}>
+                                {img.title}
+                              </span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-wider whitespace-nowrap ${
                                   isVertical 
                                     ? 'bg-emerald-500/15 text-[#00805F] dark:text-emerald-400 border border-emerald-500/30'
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                                 }`}>
-                                  {currentRot === 90 ? 'Vertikal (90°)' : currentRot === 0 ? 'Horizontal (0°)' : `${currentRot}°`}
+                                  {currentRot === 90 ? 'VERTIKAL (90°)' : currentRot === 0 ? 'HORIZONTAL (0°)' : `${currentRot}°`}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400 whitespace-nowrap">
+                                  Zoom: {Math.round((img.zoom ?? 1) * 100)}% | X: {img.posX ?? 0}% | Y: {img.posY ?? 0}%
                                 </span>
                               </div>
-                              <p className="text-[10px] font-mono text-slate-400 mt-0.5">
-                                Zoom: {Math.round((img.zoom ?? 1) * 100)}% | X: {img.posX ?? 0}% | Y: {img.posY ?? 0}%
-                              </p>
                             </div>
                           </div>
 
-                          {/* Right: Quick Tools */}
-                          <div className="flex items-center gap-1">
-                            {/* Quick Rotate Button */}
-                            <button
-                              type="button"
-                              onClick={() => handleQuickRotateMockup(img.id)}
-                              className="px-2 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-700 dark:text-slate-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
-                              title="Putar rotasi (+90°)"
-                            >
-                              <RotateCw className="h-3.5 w-3.5 text-emerald-600" />
-                              <span className="hidden md:inline">Putar 90°</span>
-                            </button>
+                          {/* Delete Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteJerseyImage(img.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer transition-colors shrink-0"
+                            title="Hapus mockup ini"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
 
-                            {/* Quick Zoom In/Out */}
+                        {/* Bottom Row: Control Toolbar */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                          {/* 1. Open Position Editor */}
+                          <button
+                            type="button"
+                            onClick={() => setActiveImageEditor({
+                              isOpen: true,
+                              type: 'jersey',
+                              jerseyId: img.id,
+                              url: img.url,
+                              title: img.title,
+                              zoom: img.zoom ?? 1,
+                              posX: img.posX ?? 0,
+                              posY: img.posY ?? 0,
+                              rotation: img.rotation ?? 90,
+                              opacity: img.opacity ?? 1
+                            })}
+                            className="w-full py-1.5 px-2.5 rounded-xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                            title="Buka panel geser posisi visual, zoom & rotasi"
+                          >
+                            <Sliders className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">Atur Posisi & Zoom</span>
+                          </button>
+
+                          {/* 2. Rotate 90° */}
+                          <button
+                            type="button"
+                            onClick={() => handleQuickRotateMockup(img.id)}
+                            className="w-full py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-700 dark:text-slate-200 font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                            title="Putar rotasi (+90°)"
+                          >
+                            <RotateCw className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span>Putar 90°</span>
+                          </button>
+
+                          {/* 3. Zoom Stepper */}
+                          <div className="w-full flex items-center justify-between border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900">
                             <button
                               type="button"
                               onClick={() => handleQuickZoomMockup(img.id, -0.1)}
-                              className="p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                              title="Zoom Out (-10%)"
+                              className="px-2.5 py-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer transition-colors"
+                              title="Perkecil Zoom (-10%)"
                             >
                               <ZoomOut className="h-3.5 w-3.5" />
                             </button>
+                            <span className="text-[11px] font-mono px-2 text-slate-700 dark:text-slate-300 font-bold select-none">
+                              {Math.round((img.zoom ?? 1) * 100)}%
+                            </span>
                             <button
                               type="button"
                               onClick={() => handleQuickZoomMockup(img.id, 0.1)}
-                              className="p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                              title="Zoom In (+10%)"
+                              className="px-2.5 py-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer transition-colors"
+                              title="Perbesar Zoom (+10%)"
                             >
                               <ZoomIn className="h-3.5 w-3.5" />
                             </button>
-
-                            {/* Main Open Visual Editor Modal */}
-                            <button
-                              type="button"
-                              onClick={() => setActiveImageEditor({
-                                isOpen: true,
-                                type: 'jersey',
-                                jerseyId: img.id,
-                                url: img.url,
-                                title: img.title,
-                                zoom: img.zoom ?? 1,
-                                posX: img.posX ?? 0,
-                                posY: img.posY ?? 0,
-                                rotation: img.rotation ?? 90,
-                                opacity: img.opacity ?? 1
-                              })}
-                              className="px-2.5 py-1.5 bg-[#00805F] hover:bg-[#006B50] text-white rounded-xl text-[11px] font-bold flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
-                              title="Buka Editor Posisi Visual"
-                            >
-                              <Sliders className="h-3.5 w-3.5" />
-                              <span className="hidden sm:inline">Sesuaikan Posisi</span>
-                            </button>
-
-                            {/* Delete */}
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteJerseyImage(img.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors cursor-pointer"
-                              title="Hapus Mockup"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
                           </div>
-
                         </div>
                       </div>
                     );
                   })}
 
-                  {data.jerseyImages.length === 0 && (
+                  {(localData.jerseyImages || []).length === 0 && (
                     <div className="text-center py-6 text-slate-400 italic">
                       Belum ada mockup jersey yang diupload. Klik "Upload Mockup Baru" di atas.
                     </div>
@@ -1225,10 +1344,10 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                   </label>
                   <input
                     type="text"
-                    value={data.notes?.mainNote || ''}
-                    onChange={(e) => updateNotesField('mainNote', e.target.value.toUpperCase())}
+                    value={localData.notes?.mainNote || ''}
+                    onChange={(e) => updateNotesField('mainNote', e.target.value)}
                     placeholder="Contoh: TUTUP KERAH POLOS, FULL STIK"
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-amber-300 dark:border-amber-800 bg-white dark:bg-slate-950 font-black uppercase text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-amber-300 dark:border-amber-800 bg-white dark:bg-slate-950 font-black text-slate-900 dark:text-white"
                   />
                 </div>
 
@@ -1237,9 +1356,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">Jahit:</label>
                     <input
                       type="text"
-                      value={data.notes?.jahit || data.sewingModel || ''}
-                      onChange={(e) => updateNotesField('jahit', e.target.value.toUpperCase())}
-                      className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold uppercase"
+                      value={localData.notes?.jahit || localData.sewingModel || ''}
+                      onChange={(e) => updateNotesField('jahit', e.target.value)}
+                      className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold"
                     />
                   </div>
 
@@ -1247,9 +1366,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">Bahan:</label>
                     <input
                       type="text"
-                      value={data.notes?.bahan || data.material || ''}
-                      onChange={(e) => updateNotesField('bahan', e.target.value.toUpperCase())}
-                      className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold uppercase"
+                      value={localData.notes?.bahan || localData.material || ''}
+                      onChange={(e) => updateNotesField('bahan', e.target.value)}
+                      className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold"
                     />
                   </div>
 
@@ -1257,9 +1376,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">Tangan:</label>
                     <input
                       type="text"
-                      value={data.notes?.tangan || data.sleeveModel || ''}
-                      onChange={(e) => updateNotesField('tangan', e.target.value.toUpperCase())}
-                      className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold uppercase"
+                      value={localData.notes?.tangan || localData.sleeveModel || ''}
+                      onChange={(e) => updateNotesField('tangan', e.target.value)}
+                      className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold"
                     />
                   </div>
                 </div>
@@ -1281,7 +1400,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                       type="button"
                       onClick={() => updateLayoutField('pageMode', 'auto')}
                       className={`p-2 rounded-xl border text-center font-bold transition-all cursor-pointer ${
-                        (data.layout?.pageMode ?? 'auto') === 'auto' || data.layout?.pageMode === 'multi'
+                        (localData.layout?.pageMode ?? 'auto') === 'auto' || localData.layout?.pageMode === 'multi'
                           ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
                           : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                       }`}
@@ -1294,7 +1413,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                       type="button"
                       onClick={() => updateLayoutField('pageMode', '1page')}
                       className={`p-2 rounded-xl border text-center font-bold transition-all cursor-pointer ${
-                        data.layout?.pageMode === '1page'
+                        localData.layout?.pageMode === '1page'
                           ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
                           : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                       }`}
@@ -1307,7 +1426,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                       type="button"
                       onClick={() => updateLayoutField('pageMode', '2page')}
                       className={`p-2 rounded-xl border text-center font-bold transition-all cursor-pointer ${
-                        data.layout?.pageMode === '2page'
+                        localData.layout?.pageMode === '2page'
                           ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
                           : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                       }`}
@@ -1329,7 +1448,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                         type="number"
                         min={10}
                         max={75}
-                        value={data.layout?.maxPlayersPerPage || 50}
+                        value={localData.layout?.maxPlayersPerPage || 50}
                         onChange={(e) => updateLayoutField('maxPlayersPerPage', parseInt(e.target.value) || 50)}
                         className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold"
                       />
@@ -1346,7 +1465,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                         type="number"
                         min={10}
                         max={75}
-                        value={data.layout?.continuationPageSize || 50}
+                        value={localData.layout?.continuationPageSize || 50}
                         onChange={(e) => updateLayoutField('continuationPageSize', parseInt(e.target.value) || 50)}
                         className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-bold"
                       />
@@ -1363,9 +1482,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={data.layout?.showHeader ?? true}
+                        checked={localData.layout?.showHeader ?? true}
                         onChange={(e) => updateLayoutField('showHeader', e.target.checked)}
-                        className="rounded text-emerald-600"
+                        className="rounded text-emerald-600 cursor-pointer"
                       />
                       <span>Kop Header Apparel</span>
                     </label>
@@ -1373,9 +1492,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={data.layout?.showOrderInfo ?? true}
+                        checked={localData.layout?.showOrderInfo ?? true}
                         onChange={(e) => updateLayoutField('showOrderInfo', e.target.checked)}
-                        className="rounded text-emerald-600"
+                        className="rounded text-emerald-600 cursor-pointer"
                       />
                       <span>Informasi Order 2 Kolom</span>
                     </label>
@@ -1383,9 +1502,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={data.layout?.showCollarPreview ?? true}
+                        checked={localData.layout?.showCollarPreview ?? true}
                         onChange={(e) => updateLayoutField('showCollarPreview', e.target.checked)}
-                        className="rounded text-emerald-600"
+                        className="rounded text-emerald-600 cursor-pointer"
                       />
                       <span>Preview Kerah</span>
                     </label>
@@ -1393,9 +1512,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={data.layout?.showSizeRecap ?? true}
+                        checked={localData.layout?.showSizeRecap ?? true}
                         onChange={(e) => updateLayoutField('showSizeRecap', e.target.checked)}
-                        className="rounded text-emerald-600"
+                        className="rounded text-emerald-600 cursor-pointer"
                       />
                       <span>Rekap Ukuran</span>
                     </label>
@@ -1403,9 +1522,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={data.layout?.showJerseyDesign ?? true}
+                        checked={localData.layout?.showJerseyDesign ?? true}
                         onChange={(e) => updateLayoutField('showJerseyDesign', e.target.checked)}
-                        className="rounded text-emerald-600"
+                        className="rounded text-emerald-600 cursor-pointer"
                       />
                       <span>Mockup Desain Jersey</span>
                     </label>
@@ -1413,9 +1532,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={data.layout?.showTailorNotes ?? true}
+                        checked={localData.layout?.showTailorNotes ?? true}
                         onChange={(e) => updateLayoutField('showTailorNotes', e.target.checked)}
-                        className="rounded text-emerald-600"
+                        className="rounded text-emerald-600 cursor-pointer"
                       />
                       <span>Catatan Penjahit</span>
                     </label>
@@ -1486,7 +1605,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                   type="checkbox"
                   checked={showSafeArea}
                   onChange={(e) => setShowSafeArea(e.target.checked)}
-                  className="rounded text-emerald-600"
+                  className="rounded text-emerald-600 cursor-pointer"
                 />
                 <span>Garis Aman</span>
               </label>
@@ -1554,7 +1673,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
             >
               <SpkSheetA4
                 id="spk-editor-live-sheet"
-                data={data}
+                data={deferredLocalData}
                 showSafeArea={showSafeArea}
                 onToggleQc={handleToggleQc}
                 activePageTab={previewPageTab}
@@ -1571,8 +1690,8 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
         isOpen={showQuickInput}
         onClose={() => setShowQuickInput(false)}
         onApply={handleApplyQuickInput}
-        defaultModel={data.sleeveModel || 'PENDEK'}
-        currentSpkData={data}
+        defaultModel={localData.sleeveModel || 'PENDEK'}
+        currentSpkData={localData}
       />
 
       {/* Validation Modal */}
@@ -1588,7 +1707,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
       <SpkFullscreenModal
         isOpen={showFullscreen}
         onClose={() => setShowFullscreen(false)}
-        data={data}
+        data={localData}
       />
 
       {/* Image Editor Modal */}
@@ -1605,28 +1724,30 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
           initialOpacity={activeImageEditor.opacity}
           onSave={(settings) => {
             if (activeImageEditor.type === 'collar') {
-              onChange({
-                ...data,
+              setLocalData(prev => ({
+                ...prev,
                 collarZoom: settings.zoom,
                 collarPosX: settings.posX,
                 collarPosY: settings.posY,
                 collarRotation: settings.rotation
-              });
+              }));
             } else if (activeImageEditor.type === 'jersey' && activeImageEditor.jerseyId) {
-              const updated = data.jerseyImages.map(img => {
-                if (img.id === activeImageEditor.jerseyId) {
-                  return {
-                    ...img,
-                    zoom: settings.zoom,
-                    posX: settings.posX,
-                    posY: settings.posY,
-                    rotation: settings.rotation,
-                    opacity: settings.opacity
-                  };
-                }
-                return img;
+              setLocalData(prev => {
+                const updated = (prev.jerseyImages || []).map(img => {
+                  if (img.id === activeImageEditor.jerseyId) {
+                    return {
+                      ...img,
+                      zoom: settings.zoom,
+                      posX: settings.posX,
+                      posY: settings.posY,
+                      rotation: settings.rotation,
+                      opacity: settings.opacity
+                    };
+                  }
+                  return img;
+                });
+                return { ...prev, jerseyImages: updated };
               });
-              updateField('jerseyImages', updated);
             }
           }}
         />

@@ -10,23 +10,23 @@ import {
   Scissors, 
   Layers, 
   DollarSign, 
-  FileSpreadsheet, 
   CheckCircle2, 
   AlertCircle,
-  Building2,
   Calendar,
-  User,
   Phone,
   ShieldCheck,
-  ReceiptText
+  ReceiptText,
+  Clock
 } from 'lucide-react';
 
 export type VendorPayableCategory = 'semua' | 'jahit' | 'sublim' | 'komisi';
+export type VendorStatusFilter = 'semua' | 'belum_lunas' | 'lunas';
 
 export interface VendorPayablesCardProps {
   orders: Pesanan[];
   settings: ShopSettings;
   category: VendorPayableCategory;
+  statusFilter?: VendorStatusFilter;
   vendorNameFilter?: string;
   documentNumber?: string;
   customNotes?: string;
@@ -40,6 +40,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
       orders,
       settings,
       category,
+      statusFilter = 'semua',
       vendorNameFilter = '',
       documentNumber,
       customNotes,
@@ -48,8 +49,8 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
     },
     ref
   ) {
-    // Process and group orders by PO
-    interface GroupedPayableItem {
+    // Process and group orders by PO with full status tracking
+    interface ProcessedItem {
       itemId: string;
       namaProduk: string;
       bahan: string;
@@ -69,28 +70,45 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
       isJahitLunas: boolean;
       isSublimLunas: boolean;
       isKomisiLunas: boolean;
-      totalBiaya: number;
+      
+      // Category specific values
+      cost: number;
+      paid: number;
+      unpaid: number;
+      status: 'Lunas' | 'Belum Lunas' | 'Sebagian Lunas';
     }
 
-    interface GroupedPayableOrder {
+    interface ProcessedOrder {
       orderId: string;
       namaPo: string;
       namaPemesan: string;
       noTelepon: string;
       deadline: string;
       createdAt: string;
-      items: GroupedPayableItem[];
+      items: ProcessedItem[];
       totalQty: number;
+      totalCost: number;
+      totalPaid: number;
+      totalUnpaid: number;
+      orderStatus: 'Lunas' | 'Belum Lunas' | 'Sebagian Lunas';
+      
       sumJahit: number;
+      sumJahitPaid: number;
+      sumJahitUnpaid: number;
+      
       sumSublim: number;
+      sumSublimPaid: number;
+      sumSublimUnpaid: number;
+      
       sumKomisi: number;
-      sumBiaya: number;
+      sumKomisiPaid: number;
+      sumKomisiUnpaid: number;
     }
 
-    const groupedOrders: GroupedPayableOrder[] = [];
+    const groupedOrders: ProcessedOrder[] = [];
 
     orders.forEach((order, oIdx) => {
-      let rawItems: GroupedPayableItem[] = [];
+      let rawItems: ProcessedItem[] = [];
 
       if (order.items && order.items.length > 0) {
         rawItems = order.items.map((item, iIdx) => {
@@ -110,6 +128,41 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
           const isJahitLunas = item.statusBayarJahit === 'Lunas' || order.statusBayarJahit === 'Lunas';
           const isSublimLunas = item.statusBayarSublim === 'Lunas' || order.statusBayarSublim === 'Lunas';
           const isKomisiLunas = item.statusBayarKomisi === 'Lunas' || order.statusBayarKomisi === 'Lunas';
+
+          // Category-specific calculation
+          let cost = 0;
+          let paid = 0;
+          let unpaid = 0;
+          let status: 'Lunas' | 'Belum Lunas' | 'Sebagian Lunas' = 'Belum Lunas';
+
+          if (category === 'jahit') {
+            cost = totalJahit;
+            paid = isJahitLunas ? totalJahit : 0;
+            unpaid = isJahitLunas ? 0 : totalJahit;
+            status = isJahitLunas ? 'Lunas' : 'Belum Lunas';
+          } else if (category === 'sublim') {
+            cost = totalSublim;
+            paid = isSublimLunas ? totalSublim : 0;
+            unpaid = isSublimLunas ? 0 : totalSublim;
+            status = isSublimLunas ? 'Lunas' : 'Belum Lunas';
+          } else if (category === 'komisi') {
+            cost = totalKomisi;
+            paid = isKomisiLunas ? totalKomisi : 0;
+            unpaid = isKomisiLunas ? 0 : totalKomisi;
+            status = isKomisiLunas ? 'Lunas' : 'Belum Lunas';
+          } else {
+            // 'semua'
+            cost = totalJahit + totalSublim + totalKomisi;
+            paid = (isJahitLunas ? totalJahit : 0) + (isSublimLunas ? totalSublim : 0) + (isKomisiLunas ? totalKomisi : 0);
+            unpaid = cost - paid;
+            if (unpaid <= 0 && cost > 0) {
+              status = 'Lunas';
+            } else if (paid > 0 && unpaid > 0) {
+              status = 'Sebagian Lunas';
+            } else {
+              status = 'Belum Lunas';
+            }
+          }
 
           return {
             itemId: item.id || `item-${oIdx}-${iIdx}`,
@@ -131,7 +184,10 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
             isJahitLunas,
             isSublimLunas,
             isKomisiLunas,
-            totalBiaya: totalJahit + totalSublim + totalKomisi
+            cost,
+            paid,
+            unpaid,
+            status
           };
         });
       } else {
@@ -151,6 +207,39 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
         const isJahitLunas = order.statusBayarJahit === 'Lunas';
         const isSublimLunas = order.statusBayarSublim === 'Lunas';
         const isKomisiLunas = order.statusBayarKomisi === 'Lunas';
+
+        let cost = 0;
+        let paid = 0;
+        let unpaid = 0;
+        let status: 'Lunas' | 'Belum Lunas' | 'Sebagian Lunas' = 'Belum Lunas';
+
+        if (category === 'jahit') {
+          cost = totalJahit;
+          paid = isJahitLunas ? totalJahit : 0;
+          unpaid = isJahitLunas ? 0 : totalJahit;
+          status = isJahitLunas ? 'Lunas' : 'Belum Lunas';
+        } else if (category === 'sublim') {
+          cost = totalSublim;
+          paid = isSublimLunas ? totalSublim : 0;
+          unpaid = isSublimLunas ? 0 : totalSublim;
+          status = isSublimLunas ? 'Lunas' : 'Belum Lunas';
+        } else if (category === 'komisi') {
+          cost = totalKomisi;
+          paid = isKomisiLunas ? totalKomisi : 0;
+          unpaid = isKomisiLunas ? 0 : totalKomisi;
+          status = isKomisiLunas ? 'Lunas' : 'Belum Lunas';
+        } else {
+          cost = totalJahit + totalSublim + totalKomisi;
+          paid = (isJahitLunas ? totalJahit : 0) + (isSublimLunas ? totalSublim : 0) + (isKomisiLunas ? totalKomisi : 0);
+          unpaid = cost - paid;
+          if (unpaid <= 0 && cost > 0) {
+            status = 'Lunas';
+          } else if (paid > 0 && unpaid > 0) {
+            status = 'Sebagian Lunas';
+          } else {
+            status = 'Belum Lunas';
+          }
+        }
 
         rawItems = [{
           itemId: `order-${order.id}`,
@@ -172,49 +261,69 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
           isJahitLunas,
           isSublimLunas,
           isKomisiLunas,
-          totalBiaya: totalJahit + totalSublim + totalKomisi
+          cost,
+          paid,
+          unpaid,
+          status
         }];
       }
 
-      // Filter matching items per category
+      // Filter matching items per category and vendorNameFilter
       const matchingItems = rawItems.filter(row => {
-        if (category === 'jahit') {
-          if (row.isJahitLunas) return false;
-          if (row.totalJahit <= 0) return false;
-          if (vendorNameFilter && !row.vendorJahit.toLowerCase().includes(vendorNameFilter.toLowerCase())) {
+        // Vendor name filter
+        if (vendorNameFilter) {
+          const needle = vendorNameFilter.toLowerCase();
+          if (category === 'jahit' && !row.vendorJahit.toLowerCase().includes(needle)) return false;
+          if (category === 'sublim' && !row.vendorSublim.toLowerCase().includes(needle)) return false;
+          if (category === 'komisi' && !row.penerimaKomisi.toLowerCase().includes(needle)) return false;
+          if (category === 'semua' && 
+              !row.vendorJahit.toLowerCase().includes(needle) && 
+              !row.vendorSublim.toLowerCase().includes(needle) && 
+              !row.penerimaKomisi.toLowerCase().includes(needle)) {
             return false;
           }
-          return true;
         }
-        if (category === 'sublim') {
-          if (row.isSublimLunas) return false;
-          if (row.totalSublim <= 0) return false;
-          if (vendorNameFilter && !row.vendorSublim.toLowerCase().includes(vendorNameFilter.toLowerCase())) {
-            return false;
-          }
-          return true;
+
+        // Relevant cost check
+        if (category === 'jahit' && row.totalJahit <= 0) return false;
+        if (category === 'sublim' && row.totalSublim <= 0) return false;
+        if (category === 'komisi' && row.totalKomisi <= 0) return false;
+        if (category === 'semua' && row.cost <= 0) return false;
+
+        // Payment status filter
+        if (statusFilter === 'belum_lunas') {
+          if (row.unpaid <= 0) return false;
+        } else if (statusFilter === 'lunas') {
+          if (row.unpaid > 0) return false;
         }
-        if (category === 'komisi') {
-          if (row.isKomisiLunas) return false;
-          if (row.totalKomisi <= 0) return false;
-          if (vendorNameFilter && !row.penerimaKomisi.toLowerCase().includes(vendorNameFilter.toLowerCase())) {
-            return false;
-          }
-          return true;
-        }
-        // 'semua'
-        const hasUnpaid = (!row.isJahitLunas && row.totalJahit > 0) ||
-                          (!row.isSublimLunas && row.totalSublim > 0) ||
-                          (!row.isKomisiLunas && row.totalKomisi > 0);
-        return hasUnpaid;
+
+        return true;
       });
 
       if (matchingItems.length > 0) {
         const totalQty = matchingItems.reduce((sum, it) => sum + it.qty, 0);
-        const sumJahit = matchingItems.reduce((sum, it) => sum + (it.isJahitLunas ? 0 : it.totalJahit), 0);
-        const sumSublim = matchingItems.reduce((sum, it) => sum + (it.isSublimLunas ? 0 : it.totalSublim), 0);
-        const sumKomisi = matchingItems.reduce((sum, it) => sum + (it.isKomisiLunas ? 0 : it.totalKomisi), 0);
-        const sumBiaya = sumJahit + sumSublim + sumKomisi;
+        const totalCost = matchingItems.reduce((sum, it) => sum + it.cost, 0);
+        const totalPaid = matchingItems.reduce((sum, it) => sum + it.paid, 0);
+        const totalUnpaid = matchingItems.reduce((sum, it) => sum + it.unpaid, 0);
+
+        let orderStatus: 'Lunas' | 'Belum Lunas' | 'Sebagian Lunas' = 'Belum Lunas';
+        if (totalUnpaid <= 0 && totalCost > 0) {
+          orderStatus = 'Lunas';
+        } else if (totalPaid > 0 && totalUnpaid > 0) {
+          orderStatus = 'Sebagian Lunas';
+        }
+
+        const sumJahit = matchingItems.reduce((sum, it) => sum + it.totalJahit, 0);
+        const sumJahitPaid = matchingItems.reduce((sum, it) => sum + (it.isJahitLunas ? it.totalJahit : 0), 0);
+        const sumJahitUnpaid = matchingItems.reduce((sum, it) => sum + (!it.isJahitLunas ? it.totalJahit : 0), 0);
+
+        const sumSublim = matchingItems.reduce((sum, it) => sum + it.totalSublim, 0);
+        const sumSublimPaid = matchingItems.reduce((sum, it) => sum + (it.isSublimLunas ? it.totalSublim : 0), 0);
+        const sumSublimUnpaid = matchingItems.reduce((sum, it) => sum + (!it.isSublimLunas ? it.totalSublim : 0), 0);
+
+        const sumKomisi = matchingItems.reduce((sum, it) => sum + it.totalKomisi, 0);
+        const sumKomisiPaid = matchingItems.reduce((sum, it) => sum + (it.isKomisiLunas ? it.totalKomisi : 0), 0);
+        const sumKomisiUnpaid = matchingItems.reduce((sum, it) => sum + (!it.isKomisiLunas ? it.totalKomisi : 0), 0);
 
         groupedOrders.push({
           orderId: order.id,
@@ -225,63 +334,77 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
           createdAt: order.createdAt,
           items: matchingItems,
           totalQty,
+          totalCost,
+          totalPaid,
+          totalUnpaid,
+          orderStatus,
           sumJahit,
+          sumJahitPaid,
+          sumJahitUnpaid,
           sumSublim,
+          sumSublimPaid,
+          sumSublimUnpaid,
           sumKomisi,
-          sumBiaya
+          sumKomisiPaid,
+          sumKomisiUnpaid
         });
       }
     });
 
-    // Aggregates for grouped rows
-    const totalPcs = groupedOrders.reduce((sum, g) => sum + g.totalQty, 0);
-    const sumJahit = groupedOrders.reduce((sum, g) => sum + g.sumJahit, 0);
-    const sumSublim = groupedOrders.reduce((sum, g) => sum + g.sumSublim, 0);
-    const sumKomisi = groupedOrders.reduce((sum, g) => sum + g.sumKomisi, 0);
+    // Grand totals across all processed orders
+    const totalOrdersCount = groupedOrders.length;
+    const totalPcsAll = groupedOrders.reduce((sum, g) => sum + g.totalQty, 0);
+    const grandTotalCost = groupedOrders.reduce((sum, g) => sum + g.totalCost, 0);
+    const grandTotalPaid = groupedOrders.reduce((sum, g) => sum + g.totalPaid, 0);
+    const grandTotalUnpaid = groupedOrders.reduce((sum, g) => sum + g.totalUnpaid, 0);
 
-    const grandTotal = category === 'jahit'
-      ? sumJahit
-      : category === 'sublim'
-      ? sumSublim
-      : category === 'komisi'
-      ? sumKomisi
-      : (sumJahit + sumSublim + sumKomisi);
+    const paidOrdersCount = groupedOrders.filter(g => g.totalUnpaid <= 0).length;
+    const unpaidOrdersCount = groupedOrders.filter(g => g.totalUnpaid > 0).length;
+
+    // Breakdown aggregates for 'semua'
+    const grandSumJahit = groupedOrders.reduce((sum, g) => sum + g.sumJahit, 0);
+    const grandSumJahitPaid = groupedOrders.reduce((sum, g) => sum + g.sumJahitPaid, 0);
+    const grandSumJahitUnpaid = groupedOrders.reduce((sum, g) => sum + g.sumJahitUnpaid, 0);
+
+    const grandSumSublim = groupedOrders.reduce((sum, g) => sum + g.sumSublim, 0);
+    const grandSumSublimPaid = groupedOrders.reduce((sum, g) => sum + g.sumSublimPaid, 0);
+    const grandSumSublimUnpaid = groupedOrders.reduce((sum, g) => sum + g.sumSublimUnpaid, 0);
+
+    const grandSumKomisi = groupedOrders.reduce((sum, g) => sum + g.sumKomisi, 0);
+    const grandSumKomisiPaid = groupedOrders.reduce((sum, g) => sum + g.sumKomisiPaid, 0);
+    const grandSumKomisiUnpaid = groupedOrders.reduce((sum, g) => sum + g.sumKomisiUnpaid, 0);
 
     // Dynamic Title & Badge styling based on category
     const titleConfig = {
       jahit: {
-        title: 'NOTA TAGIHAN ONGKOS JAHIT (BELUM LUNAS)',
-        subtitle: 'Rincian Tanggungan Upah & Ongkos Jahit Konveksi Jersey',
+        title: 'NOTA TAGIHAN ONGKOS JAHIT',
+        subtitle: 'Rincian Status Pembayaran & Sisa Tagihan Ongkos Jahit Konveksi',
         icon: Scissors,
         colorClass: 'text-amber-700 bg-amber-50 border-amber-300',
-        badgeText: 'BELUM LUNAS JAHIT',
         roleSignLeft: 'Penjahit / Vendor Jahit',
         roleSignRight: 'Manajemen Toko (Owner)'
       },
       sublim: {
-        title: 'NOTA TAGIHAN ONGKOS PRINT & PRESS SUBLIM (BELUM LUNAS)',
-        subtitle: 'Rincian Tanggungan Ongkos Cetak / Sublimasi Printing',
+        title: 'NOTA TAGIHAN ONGKOS PRINT & PRESS SUBLIM',
+        subtitle: 'Rincian Status Pembayaran & Sisa Tagihan Ongkos Cetak / Sublimasi Printing',
         icon: Layers,
         colorClass: 'text-sky-700 bg-sky-50 border-sky-300',
-        badgeText: 'BELUM LUNAS SUBLIM',
         roleSignLeft: 'Vendor Print & Press Sublim',
         roleSignRight: 'Manajemen Toko (Owner)'
       },
       komisi: {
-        title: 'NOTA TAGIHAN KOMISI & MARKETING FEE (BELUM LUNAS)',
-        subtitle: 'Rincian Tanggungan Komisi Penjualan / Broker / Desainer',
+        title: 'NOTA TAGIHAN KOMISI & MARKETING FEE',
+        subtitle: 'Rincian Status Pembayaran & Sisa Tagihan Komisi Penjualan / Broker',
         icon: DollarSign,
         colorClass: 'text-emerald-700 bg-emerald-50 border-emerald-300',
-        badgeText: 'BELUM LUNAS KOMISI',
         roleSignLeft: 'Penerima Komisi / Mitra',
         roleSignRight: 'Manajemen Toko (Owner)'
       },
       semua: {
-        title: 'NOTA REKAP BIAYA PRODUKSI & KOMISI (BELUM LUNAS)',
-        subtitle: 'Rekapitulasi Tanggungan Ongkos Jahit, Sublim, & Komisi Per Pesanan',
+        title: 'NOTA REKAP BIAYA PRODUKSI & KOMISI VENDOR',
+        subtitle: 'Rekapitulasi Transaksi Lunas & Sisa Tagihan Ongkos Jahit, Sublim, & Komisi',
         icon: ReceiptText,
         colorClass: 'text-indigo-700 bg-indigo-50 border-indigo-300',
-        badgeText: 'REKAP BELUM LUNAS',
         roleSignLeft: 'Penerima / Vendor / Mitra',
         roleSignRight: 'Manajemen Toko (Owner)'
       }
@@ -295,7 +418,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
       year: 'numeric'
     });
 
-    const docNo = documentNumber || `NP-${category.substring(0, 3).toUpperCase()}-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${orders.length}PO`;
+    const docNo = documentNumber || `NV-${category.substring(0, 3).toUpperCase()}-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${orders.length}PO`;
 
     return (
       <div 
@@ -344,10 +467,33 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
           </div>
 
           {/* Nomor Nota & Status Dokumen */}
-          <div className="text-left sm:text-right space-y-1 shrink-0 self-stretch sm:self-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-150">
-            <div className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10.5px] font-black tracking-wider uppercase border ${titleConfig.colorClass}`}>
-              <AlertCircle className="h-3.5 w-3.5" />
-              <span>{titleConfig.badgeText}</span>
+          <div className="flex flex-col items-start sm:items-end gap-1 shrink-0 self-stretch sm:self-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-150">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-900 text-white text-xs font-black tracking-wider uppercase shadow-xs">
+              <IconComponent className="h-3.5 w-3.5" />
+              <span>{titleConfig.title}</span>
+            </div>
+            {vendorNameFilter && (
+              <p className="text-[11px] font-bold text-indigo-700">
+                Mitra: <span className="underline">{vendorNameFilter}</span>
+              </p>
+            )}
+            <div className="pt-0.5">
+              {grandTotalUnpaid <= 0 ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10.5px] font-black tracking-wider uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>SEMUA TRANSAKSI LUNAS</span>
+                </span>
+              ) : grandTotalPaid > 0 ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10.5px] font-black tracking-wider uppercase bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>SEBAGIAN BELUM LUNAS</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10.5px] font-black tracking-wider uppercase bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  <span>BELUM ADA PELUNASAN</span>
+                </span>
+              )}
             </div>
             <p className="font-mono text-xs font-extrabold text-slate-800">
               No: <span className="text-slate-950">{docNo}</span>
@@ -360,70 +506,105 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
 
         </div>
 
-        {/* Banner Judul Nota Tagihan */}
-        <div className="my-4 p-3.5 bg-slate-900 text-white rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-white/10 text-white flex items-center justify-center shrink-0">
-              <IconComponent className="h-5 w-5" />
+        {/* 4-KPI Summary Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-4 mb-5">
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <span className="text-[9.5px] uppercase font-bold text-slate-400 block tracking-wider">Total Pesanan (PO)</span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-lg font-black text-slate-900 font-mono">{totalOrdersCount}</span>
+              <span className="text-[11px] text-slate-500">PO ({totalPcsAll} Pcs)</span>
             </div>
-            <div>
-              <h3 className="text-sm sm:text-base font-black tracking-wide uppercase">
-                {titleConfig.title}
-              </h3>
-              <p className="text-[11px] text-slate-300 font-medium">
-                {titleConfig.subtitle}
-              </p>
+            <div className="flex items-center gap-1.5 mt-1 text-[10px] font-semibold">
+              <span className="text-emerald-600 flex items-center gap-0.5">
+                <CheckCircle2 className="h-2.5 w-2.5" /> {paidOrdersCount} Lunas
+              </span>
+              {unpaidOrdersCount > 0 && (
+                <span className="text-rose-600 flex items-center gap-0.5">
+                  <AlertCircle className="h-2.5 w-2.5" /> {unpaidOrdersCount} Belum
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="text-left sm:text-right bg-white/10 px-3 py-1.5 rounded-lg shrink-0">
-            <span className="text-[10px] uppercase font-bold text-slate-300 block">Total Ditagihkan:</span>
-            <span className="text-sm sm:text-base font-mono font-black text-amber-300">
-              {formatRupiah(grandTotal)}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <span className="text-[9.5px] uppercase font-bold text-slate-400 block tracking-wider">Total Nilai Transaksi</span>
+            <span className="text-base font-black text-slate-900 font-mono block mt-0.5">
+              {formatRupiah(grandTotalCost)}
+            </span>
+            <span className="text-[9.5px] text-slate-400 block mt-0.5">Akumulasi seluruh pesanan</span>
+          </div>
+
+          <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+            <span className="text-[9.5px] uppercase font-bold text-emerald-700 block tracking-wider">Sudah Lunas / Dibayar</span>
+            <span className="text-base font-black text-emerald-700 font-mono block mt-0.5">
+              {formatRupiah(grandTotalPaid)}
+            </span>
+            <span className="text-[9.5px] text-emerald-600 font-medium block mt-0.5">
+              {grandTotalCost > 0 ? `${Math.round((grandTotalPaid / grandTotalCost) * 100)}% dari transaksi` : '-'}
+            </span>
+          </div>
+
+          <div className={`p-3 rounded-xl border ${grandTotalUnpaid <= 0 ? 'bg-emerald-50/50 border-emerald-200' : 'bg-rose-50/70 border-rose-200'}`}>
+            <span className={`text-[9.5px] uppercase font-bold block tracking-wider ${grandTotalUnpaid <= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+              Sisa Tagihan (Kewajiban)
+            </span>
+            <span className={`text-base font-black font-mono block mt-0.5 ${grandTotalUnpaid <= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+              {grandTotalUnpaid <= 0 ? 'LUNAS (Rp 0)' : formatRupiah(grandTotalUnpaid)}
+            </span>
+            <span className={`text-[9.5px] font-medium block mt-0.5 ${grandTotalUnpaid <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {grandTotalUnpaid <= 0 ? 'Semua tagihan lunas' : `${unpaidOrdersCount} PO belum lunas`}
             </span>
           </div>
         </div>
 
-        {/* Tabel Rincian Per PO */}
+        {/* Tabel Rincian Per PO & Item */}
         <div className="rounded-xl border border-slate-300 shadow-2xs mb-5 overflow-hidden">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-slate-100 text-slate-800 font-extrabold uppercase text-[10.5px] border-b border-slate-300">
-                <th className="py-2.5 px-2.5 text-center w-10 border-r border-slate-200">No</th>
-                <th className="py-2.5 px-3 w-44 border-r border-slate-200">Nama PO / Pemesan</th>
-                <th className="py-2.5 px-3 w-40 border-r border-slate-200">Rincian Item & Spesifikasi</th>
-                <th className="py-2.5 px-2.5 text-center w-14 border-r border-slate-200">Qty</th>
+              <tr className="bg-slate-100 text-slate-800 font-extrabold uppercase text-[10px] border-b border-slate-300">
+                <th className="py-2.5 px-2 text-center w-8 border-r border-slate-200">No</th>
+                <th className="py-2.5 px-2.5 w-40 border-r border-slate-200">Nama PO / Pemesan</th>
+                <th className="py-2.5 px-2.5 w-36 border-r border-slate-200">Rincian Item</th>
+                <th className="py-2.5 px-2 text-center w-12 border-r border-slate-200">Qty</th>
                 
                 {category === 'jahit' && (
                   <>
-                    <th className="py-2.5 px-3 w-28 text-right border-r border-slate-200">Tarif Jahit/Pcs</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Catatan Jahit & Kerah</th>
-                    <th className="py-2.5 px-3 w-32 text-right font-black text-amber-900 bg-amber-50/70">Subtotal Jahit</th>
+                    <th className="py-2.5 px-2.5 w-24 text-right border-r border-slate-200">Tarif Jahit</th>
+                    <th className="py-2.5 px-2.5 border-r border-slate-200">Catatan & Mitra</th>
+                    <th className="py-2.5 px-2 text-center w-24 border-r border-slate-200">Status Bayar</th>
+                    <th className="py-2.5 px-2.5 w-28 text-right border-r border-slate-200">Total Ongkos</th>
+                    <th className="py-2.5 px-2.5 w-28 text-right font-black text-rose-900 bg-rose-50/70">Sisa Tagihan</th>
                   </>
                 )}
 
                 {category === 'sublim' && (
                   <>
-                    <th className="py-2.5 px-3 w-28 text-right border-r border-slate-200">Tarif Print/Pcs</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Bahan & Keterangan</th>
-                    <th className="py-2.5 px-3 w-32 text-right font-black text-sky-900 bg-sky-50/70">Subtotal Sublim</th>
+                    <th className="py-2.5 px-2.5 w-24 text-right border-r border-slate-200">Tarif Print</th>
+                    <th className="py-2.5 px-2.5 border-r border-slate-200">Bahan & Vendor</th>
+                    <th className="py-2.5 px-2 text-center w-24 border-r border-slate-200">Status Bayar</th>
+                    <th className="py-2.5 px-2.5 w-28 text-right border-r border-slate-200">Total Ongkos</th>
+                    <th className="py-2.5 px-2.5 w-28 text-right font-black text-sky-900 bg-sky-50/70">Sisa Tagihan</th>
                   </>
                 )}
 
                 {category === 'komisi' && (
                   <>
-                    <th className="py-2.5 px-3 w-28 text-right border-r border-slate-200">Tarif Komisi/Pcs</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Penerima Komisi</th>
-                    <th className="py-2.5 px-3 w-32 text-right font-black text-emerald-900 bg-emerald-50/70">Subtotal Komisi</th>
+                    <th className="py-2.5 px-2.5 w-24 text-right border-r border-slate-200">Tarif Komisi</th>
+                    <th className="py-2.5 px-2.5 border-r border-slate-200">Penerima Komisi</th>
+                    <th className="py-2.5 px-2 text-center w-24 border-r border-slate-200">Status Bayar</th>
+                    <th className="py-2.5 px-2.5 w-28 text-right border-r border-slate-200">Total Komisi</th>
+                    <th className="py-2.5 px-2.5 w-28 text-right font-black text-emerald-900 bg-emerald-50/70">Sisa Tagihan</th>
                   </>
                 )}
 
                 {category === 'semua' && (
                   <>
-                    <th className="py-2.5 px-2.5 w-24 text-right border-r border-slate-200">Ongkos Jahit</th>
-                    <th className="py-2.5 px-2.5 w-24 text-right border-r border-slate-200">Ongkos Sublim</th>
-                    <th className="py-2.5 px-2.5 w-24 text-right border-r border-slate-200">Komisi Fee</th>
-                    <th className="py-2.5 px-3 w-28 text-right font-black text-indigo-950 bg-indigo-50/70">Total Biaya</th>
+                    <th className="py-2.5 px-2 w-20 text-right border-r border-slate-200">Ongkos Jahit</th>
+                    <th className="py-2.5 px-2 w-20 text-right border-r border-slate-200">Ongkos Sublim</th>
+                    <th className="py-2.5 px-2 w-20 text-right border-r border-slate-200">Komisi Fee</th>
+                    <th className="py-2.5 px-2.5 w-24 text-right border-r border-slate-200">Total Biaya</th>
+                    <th className="py-2.5 px-2 text-center w-24 border-r border-slate-200">Status</th>
+                    <th className="py-2.5 px-2.5 w-26 text-right font-black text-indigo-950 bg-indigo-50/70">Sisa Tagihan</th>
                   </>
                 )}
               </tr>
@@ -439,11 +620,12 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                       {group.items.map((item, itemIdx) => {
                         const isFirstItem = itemIdx === 0;
                         const isLastItem = itemIdx === itemCount - 1;
+                        const isItemFullyPaid = item.unpaid <= 0;
 
                         return (
                           <tr 
                             key={`${group.orderId}-${item.itemId}-${itemIdx}`} 
-                            className={`hover:bg-slate-50/70 transition-colors ${
+                            className={`hover:bg-slate-50/80 transition-colors ${
                               isLastItem ? 'border-b-2 border-slate-300' : 'border-b border-slate-100'
                             }`}
                           >
@@ -451,7 +633,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                             {isFirstItem && (
                               <td 
                                 rowSpan={itemCount} 
-                                className="py-2.5 px-2.5 text-center font-black text-slate-900 border-r border-slate-200 bg-slate-50/40 align-top text-sm"
+                                className="py-2.5 px-2 text-center font-black text-slate-900 border-r border-slate-200 bg-slate-50/40 align-top text-xs"
                               >
                                 {poNumber}
                               </td>
@@ -461,20 +643,20 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                             {isFirstItem && (
                               <td 
                                 rowSpan={itemCount} 
-                                className="py-2.5 px-3 border-r border-slate-200 break-words bg-slate-50/30 align-top"
+                                className="py-2.5 px-2.5 border-r border-slate-200 break-words bg-slate-50/30 align-top"
                               >
-                                <p className="font-extrabold text-slate-950 text-[12px] leading-tight">
+                                <p className="font-extrabold text-slate-950 text-[11.5px] leading-tight">
                                   {group.namaPo}
                                 </p>
                                 <p className="text-[10px] text-slate-600 font-medium mt-0.5">
                                   #{group.orderId} • {group.namaPemesan}
                                 </p>
                                 <p className="text-[9.5px] text-slate-500 mt-0.5">
-                                  Deadline: <span className="font-semibold text-rose-600">{group.deadline}</span>
+                                  Deadline: <span className="font-semibold text-rose-600">{group.deadline || '-'}</span>
                                 </p>
                                 {itemCount > 1 && (
-                                  <div className="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-[9px] font-bold">
-                                    <span>{itemCount} Produk</span>
+                                  <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[8.5px] font-bold">
+                                    <span>{itemCount} Item</span>
                                     <span>•</span>
                                     <span>{group.totalQty} Pcs</span>
                                   </div>
@@ -483,97 +665,164 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                             )}
 
                             {/* Column 3: Rincian Item Produk */}
-                            <td className="py-2 px-3 border-r border-slate-200 break-words">
-                              <p className="font-bold text-slate-900 text-[11px] flex items-center gap-1.5">
-                                {itemCount > 1 && (
-                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block shrink-0"></span>
-                                )}
+                            <td className="py-2 px-2.5 border-r border-slate-200 break-words">
+                              <p className="font-bold text-slate-900 text-[10.5px]">
                                 {item.namaProduk}
                               </p>
-                              <p className="text-[10px] text-slate-500 mt-0.5">
+                              <p className="text-[9.5px] text-slate-500 mt-0.5">
                                 Bahan: <span className="font-semibold text-slate-700">{item.bahan}</span>
                               </p>
-                              <p className="text-[10px] text-slate-500">
+                              <p className="text-[9.5px] text-slate-500">
                                 Kerah: <span className="font-semibold text-slate-700">{item.modelKerah}</span>
                               </p>
                             </td>
 
                             {/* Column 4: Qty */}
-                            <td className="py-2 px-2.5 text-center font-black text-slate-900 border-r border-slate-200">
-                              {item.qty} <span className="text-[9px] font-normal text-slate-500">Pcs</span>
+                            <td className="py-2 px-2 text-center font-black text-slate-900 border-r border-slate-200">
+                              {item.qty} <span className="text-[8.5px] font-normal text-slate-500">Pcs</span>
                             </td>
 
-                            {/* Category Specific Columns */}
+                            {/* Category: Jahit */}
                             {category === 'jahit' && (
                               <>
-                                <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
+                                <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
                                   {formatRupiah(item.jahitPerPcs)}
                                 </td>
-                                <td className="py-2 px-3 border-r border-slate-200 text-[10.5px]">
+                                <td className="py-2 px-2.5 border-r border-slate-200 text-[10px]">
                                   <p className="font-medium text-slate-700">
                                     {item.catatanJahit && item.catatanJahit !== '-' ? item.catatanJahit : `Kerah ${item.modelKerah}`}
                                   </p>
-                                  <p className="text-[9.5px] text-slate-500 mt-0.5 font-medium">
+                                  <p className="text-[9px] text-slate-500 mt-0.5">
                                     Mitra: <span className="font-bold text-slate-700">{item.vendorJahit}</span>
                                   </p>
                                 </td>
-                                <td className="py-2 px-3 text-right font-mono font-black text-amber-950 bg-amber-50/40">
+                                <td className="py-2 px-2 text-center border-r border-slate-200">
+                                  <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                    item.isJahitLunas
+                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                      : 'bg-rose-100 text-rose-800 border border-rose-300'
+                                  }`}>
+                                    {item.isJahitLunas ? '✓ LUNAS' : 'BELUM LUNAS'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
                                   {formatRupiah(item.totalJahit)}
+                                </td>
+                                <td className="py-2 px-2.5 text-right font-mono font-black">
+                                  <span className={item.isJahitLunas ? 'text-emerald-700' : 'text-rose-700'}>
+                                    {item.isJahitLunas ? 'Rp 0' : formatRupiah(item.unpaid)}
+                                  </span>
                                 </td>
                               </>
                             )}
 
+                            {/* Category: Sublim */}
                             {category === 'sublim' && (
                               <>
-                                <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
+                                <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
                                   {formatRupiah(item.printPerPcs)}
                                 </td>
-                                <td className="py-2 px-3 border-r border-slate-200 text-[10.5px]">
+                                <td className="py-2 px-2.5 border-r border-slate-200 text-[10px]">
                                   <p className="font-medium text-slate-700">
                                     {item.bahan}
                                   </p>
-                                  <p className="text-[9.5px] text-slate-500 mt-0.5 font-medium">
+                                  <p className="text-[9px] text-slate-500 mt-0.5">
                                     Vendor: <span className="font-bold text-slate-700">{item.vendorSublim}</span>
                                   </p>
                                 </td>
-                                <td className="py-2 px-3 text-right font-mono font-black text-sky-950 bg-sky-50/40">
+                                <td className="py-2 px-2 text-center border-r border-slate-200">
+                                  <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                    item.isSublimLunas
+                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                      : 'bg-rose-100 text-rose-800 border border-rose-300'
+                                  }`}>
+                                    {item.isSublimLunas ? '✓ LUNAS' : 'BELUM LUNAS'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
                                   {formatRupiah(item.totalSublim)}
+                                </td>
+                                <td className="py-2 px-2.5 text-right font-mono font-black">
+                                  <span className={item.isSublimLunas ? 'text-emerald-700' : 'text-sky-700'}>
+                                    {item.isSublimLunas ? 'Rp 0' : formatRupiah(item.unpaid)}
+                                  </span>
                                 </td>
                               </>
                             )}
 
+                            {/* Category: Komisi */}
                             {category === 'komisi' && (
                               <>
-                                <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
+                                <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
                                   {formatRupiah(item.komisiPerPcs)}
                                 </td>
-                                <td className="py-2 px-3 border-r border-slate-200 text-[10.5px]">
+                                <td className="py-2 px-2.5 border-r border-slate-200 text-[10px]">
                                   <p className="font-bold text-emerald-900">
                                     {item.penerimaKomisi}
                                   </p>
-                                  <p className="text-[9.5px] text-slate-400 mt-0.5">
-                                    Broker
+                                  <p className="text-[9px] text-slate-400 mt-0.5">
+                                    Marketing / Broker
                                   </p>
                                 </td>
-                                <td className="py-2 px-3 text-right font-mono font-black text-emerald-950 bg-emerald-50/40">
+                                <td className="py-2 px-2 text-center border-r border-slate-200">
+                                  <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                    item.isKomisiLunas
+                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                      : 'bg-rose-100 text-rose-800 border border-rose-300'
+                                  }`}>
+                                    {item.isKomisiLunas ? '✓ LUNAS' : 'BELUM LUNAS'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
                                   {formatRupiah(item.totalKomisi)}
+                                </td>
+                                <td className="py-2 px-2.5 text-right font-mono font-black">
+                                  <span className={item.isKomisiLunas ? 'text-emerald-700' : 'text-emerald-700 font-black'}>
+                                    {item.isKomisiLunas ? 'Rp 0' : formatRupiah(item.unpaid)}
+                                  </span>
                                 </td>
                               </>
                             )}
 
+                            {/* Category: Semua */}
                             {category === 'semua' && (
                               <>
-                                <td className="py-2 px-2.5 text-right font-mono text-slate-700 border-r border-slate-200">
-                                  {formatRupiah(item.totalJahit)}
+                                <td className="py-2 px-2 text-right font-mono text-[10.5px] border-r border-slate-200">
+                                  <div className="font-bold text-slate-800">{formatRupiah(item.totalJahit)}</div>
+                                  <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${item.isJahitLunas ? 'text-emerald-700 bg-emerald-50' : 'text-rose-600 bg-rose-50'}`}>
+                                    {item.isJahitLunas ? '✓ Lunas' : 'Belum'}
+                                  </span>
                                 </td>
-                                <td className="py-2 px-2.5 text-right font-mono text-slate-700 border-r border-slate-200">
-                                  {formatRupiah(item.totalSublim)}
+                                <td className="py-2 px-2 text-right font-mono text-[10.5px] border-r border-slate-200">
+                                  <div className="font-bold text-slate-800">{formatRupiah(item.totalSublim)}</div>
+                                  <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${item.isSublimLunas ? 'text-emerald-700 bg-emerald-50' : 'text-rose-600 bg-rose-50'}`}>
+                                    {item.isSublimLunas ? '✓ Lunas' : 'Belum'}
+                                  </span>
                                 </td>
-                                <td className="py-2 px-2.5 text-right font-mono text-slate-700 border-r border-slate-200">
-                                  {formatRupiah(item.totalKomisi)}
+                                <td className="py-2 px-2 text-right font-mono text-[10.5px] border-r border-slate-200">
+                                  <div className="font-bold text-slate-800">{formatRupiah(item.totalKomisi)}</div>
+                                  <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${item.isKomisiLunas ? 'text-emerald-700 bg-emerald-50' : 'text-rose-600 bg-rose-50'}`}>
+                                    {item.isKomisiLunas ? '✓ Lunas' : 'Belum'}
+                                  </span>
                                 </td>
-                                <td className="py-2 px-3 text-right font-mono font-black text-indigo-950 bg-indigo-50/40">
-                                  {formatRupiah(item.totalBiaya)}
+                                <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-900 border-r border-slate-200">
+                                  {formatRupiah(item.cost)}
+                                </td>
+                                <td className="py-2 px-2 text-center border-r border-slate-200">
+                                  <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase ${
+                                    item.status === 'Lunas'
+                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                      : item.status === 'Sebagian Lunas'
+                                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                      : 'bg-rose-100 text-rose-800 border border-rose-300'
+                                  }`}>
+                                    {item.status}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-2.5 text-right font-mono font-black">
+                                  <span className={item.unpaid <= 0 ? 'text-emerald-700' : 'text-rose-700'}>
+                                    {item.unpaid <= 0 ? 'Rp 0' : formatRupiah(item.unpaid)}
+                                  </span>
                                 </td>
                               </>
                             )}
@@ -585,68 +834,96 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                 })
               ) : (
                 <tr>
-                  <td colSpan={category === 'semua' ? 8 : 7} className="py-8 text-center text-slate-400 italic">
-                    Tidak ada tanggungan belum lunas untuk kategori yang dipilih.
+                  <td colSpan={category === 'semua' ? 10 : 9} className="py-8 text-center text-slate-400 italic">
+                    Tidak ada transaksi vendor yang cocok dengan filter yang dipilih.
                   </td>
                 </tr>
               )}
             </tbody>
+
             {/* Total Footer Row */}
             <tfoot>
-              <tr className="bg-slate-100/90 text-slate-900 font-extrabold border-t-2 border-slate-300 text-xs">
-                <td colSpan={3} className="py-2.5 px-3 text-right uppercase tracking-wider border-r border-slate-200">
-                  Total Keseluruhan:
+              <tr className="bg-slate-100 font-extrabold border-t-2 border-slate-300 text-xs">
+                <td colSpan={3} className="py-3 px-2.5 text-right uppercase tracking-wider border-r border-slate-200 text-slate-900 font-black">
+                  TOTAL KESELURUHAN ({totalOrdersCount} PO)
                 </td>
-                <td className="py-2.5 px-2.5 text-center font-black border-r border-slate-200">
-                  {totalPcs} <span className="text-[9px] font-normal text-slate-500">Pcs</span>
+                <td className="py-3 px-2 text-center font-black border-r border-slate-200 font-mono text-indigo-950">
+                  {totalPcsAll} <span className="text-[8.5px] font-normal text-slate-500">Pcs</span>
                 </td>
 
                 {category === 'jahit' && (
                   <>
-                    <td colSpan={2} className="py-2.5 px-3 text-right uppercase text-[10px] text-slate-500 border-r border-slate-200">
-                      Total Ongkos Jahit ({groupedOrders.length} PO):
+                    <td colSpan={2} className="py-3 px-2.5 text-right uppercase text-[9.5px] text-slate-500 border-r border-slate-200 font-bold">
+                      Lunas: {formatRupiah(grandTotalPaid)}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-black text-sm text-amber-950 bg-amber-100/80">
-                      {formatRupiah(sumJahit)}
+                    <td className="py-3 px-2 text-center border-r border-slate-200 font-bold text-[9.5px] text-slate-700">
+                      {paidOrdersCount}L / {unpaidOrdersCount}B
+                    </td>
+                    <td className="py-3 px-2.5 text-right font-mono font-black text-slate-900 border-r border-slate-200">
+                      {formatRupiah(grandTotalCost)}
+                    </td>
+                    <td className="py-3 px-2.5 text-right font-mono font-black text-rose-700 bg-rose-100/70 text-sm">
+                      {grandTotalUnpaid <= 0 ? 'Rp 0 (LUNAS)' : formatRupiah(grandTotalUnpaid)}
                     </td>
                   </>
                 )}
 
                 {category === 'sublim' && (
                   <>
-                    <td colSpan={2} className="py-2.5 px-3 text-right uppercase text-[10px] text-slate-500 border-r border-slate-200">
-                      Total Ongkos Sublim ({groupedOrders.length} PO):
+                    <td colSpan={2} className="py-3 px-2.5 text-right uppercase text-[9.5px] text-slate-500 border-r border-slate-200 font-bold">
+                      Lunas: {formatRupiah(grandTotalPaid)}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-black text-sm text-sky-950 bg-sky-100/80">
-                      {formatRupiah(sumSublim)}
+                    <td className="py-3 px-2 text-center border-r border-slate-200 font-bold text-[9.5px] text-slate-700">
+                      {paidOrdersCount}L / {unpaidOrdersCount}B
+                    </td>
+                    <td className="py-3 px-2.5 text-right font-mono font-black text-slate-900 border-r border-slate-200">
+                      {formatRupiah(grandTotalCost)}
+                    </td>
+                    <td className="py-3 px-2.5 text-right font-mono font-black text-sky-900 bg-sky-100/70 text-sm">
+                      {grandTotalUnpaid <= 0 ? 'Rp 0 (LUNAS)' : formatRupiah(grandTotalUnpaid)}
                     </td>
                   </>
                 )}
 
                 {category === 'komisi' && (
                   <>
-                    <td colSpan={2} className="py-2.5 px-3 text-right uppercase text-[10px] text-slate-500 border-r border-slate-200">
-                      Total Komisi ({groupedOrders.length} PO):
+                    <td colSpan={2} className="py-3 px-2.5 text-right uppercase text-[9.5px] text-slate-500 border-r border-slate-200 font-bold">
+                      Lunas: {formatRupiah(grandTotalPaid)}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-black text-sm text-emerald-950 bg-emerald-100/80">
-                      {formatRupiah(sumKomisi)}
+                    <td className="py-3 px-2 text-center border-r border-slate-200 font-bold text-[9.5px] text-slate-700">
+                      {paidOrdersCount}L / {unpaidOrdersCount}B
+                    </td>
+                    <td className="py-3 px-2.5 text-right font-mono font-black text-slate-900 border-r border-slate-200">
+                      {formatRupiah(grandTotalCost)}
+                    </td>
+                    <td className="py-3 px-2.5 text-right font-mono font-black text-emerald-900 bg-emerald-100/70 text-sm">
+                      {grandTotalUnpaid <= 0 ? 'Rp 0 (LUNAS)' : formatRupiah(grandTotalUnpaid)}
                     </td>
                   </>
                 )}
 
                 {category === 'semua' && (
                   <>
-                    <td className="py-2.5 px-2.5 text-right font-mono font-bold text-amber-900 border-r border-slate-200">
-                      {formatRupiah(sumJahit)}
+                    <td className="py-3 px-2 text-right font-mono text-[10.5px] font-bold text-amber-900 border-r border-slate-200">
+                      <div>{formatRupiah(grandSumJahit)}</div>
+                      <div className="text-[8.5px] text-slate-500 font-normal">Sisa: {formatRupiah(grandSumJahitUnpaid)}</div>
                     </td>
-                    <td className="py-2.5 px-2.5 text-right font-mono font-bold text-sky-900 border-r border-slate-200">
-                      {formatRupiah(sumSublim)}
+                    <td className="py-3 px-2 text-right font-mono text-[10.5px] font-bold text-sky-900 border-r border-slate-200">
+                      <div>{formatRupiah(grandSumSublim)}</div>
+                      <div className="text-[8.5px] text-slate-500 font-normal">Sisa: {formatRupiah(grandSumSublimUnpaid)}</div>
                     </td>
-                    <td className="py-2.5 px-2.5 text-right font-mono font-bold text-emerald-900 border-r border-slate-200">
-                      {formatRupiah(sumKomisi)}
+                    <td className="py-3 px-2 text-right font-mono text-[10.5px] font-bold text-emerald-900 border-r border-slate-200">
+                      <div>{formatRupiah(grandSumKomisi)}</div>
+                      <div className="text-[8.5px] text-slate-500 font-normal">Sisa: {formatRupiah(grandSumKomisiUnpaid)}</div>
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-black text-sm text-indigo-950 bg-indigo-100/80">
-                      {formatRupiah(grandTotal)}
+                    <td className="py-3 px-2.5 text-right font-mono font-black text-slate-900 border-r border-slate-200 text-xs">
+                      {formatRupiah(grandTotalCost)}
+                    </td>
+                    <td className="py-3 px-2 text-center border-r border-slate-200 text-[9.5px] font-bold text-slate-700">
+                      {paidOrdersCount}L / {unpaidOrdersCount}B
+                    </td>
+                    <td className="py-3 px-2.5 text-right font-mono font-black text-rose-700 bg-rose-100/70 text-sm">
+                      {grandTotalUnpaid <= 0 ? 'Rp 0 (LUNAS)' : formatRupiah(grandTotalUnpaid)}
                     </td>
                   </>
                 )}
@@ -662,21 +939,26 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
           <div className="sm:col-span-7 bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
             <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
               <ShieldCheck className="h-4 w-4 text-indigo-600" />
-              <span>Ringkasan Tagihan Produksi & Komisi</span>
+              <span>Rincian Rekapitulasi Pembayaran Vendor</span>
             </h4>
             <div className="grid grid-cols-3 gap-2 pt-1 text-center">
               <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
-                <span className="text-[10px] text-slate-500 font-medium block">Total PO</span>
-                <span className="text-sm font-black text-slate-900">{orders.length} PO</span>
+                <span className="text-[9.5px] text-slate-500 font-medium block">Total Transaksi</span>
+                <span className="text-xs font-black text-slate-900">{formatRupiah(grandTotalCost)}</span>
               </div>
               <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
-                <span className="text-[10px] text-slate-500 font-medium block">Total Jersey</span>
-                <span className="text-sm font-black text-slate-900">{totalPcs} Pcs</span>
+                <span className="text-[9.5px] text-emerald-600 font-medium block">Sudah Lunas</span>
+                <span className="text-xs font-black text-emerald-700">{formatRupiah(grandTotalPaid)}</span>
               </div>
               <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
-                <span className="text-[10px] text-slate-500 font-medium block">Status</span>
-                <span className="text-[11px] font-black text-amber-700">Belum Lunas</span>
+                <span className="text-[9.5px] text-rose-600 font-medium block">Sisa Tagihan</span>
+                <span className="text-xs font-black text-rose-700">{formatRupiah(grandTotalUnpaid)}</span>
               </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-600">
+              <span>Status Transaksi: <strong className="text-emerald-700">{paidOrdersCount} PO Lunas</strong>, <strong className="text-rose-700">{unpaidOrdersCount} PO Belum Lunas</strong></span>
+              <span className="font-mono text-slate-500">{totalPcsAll} Pcs Total</span>
             </div>
 
             {customNotes && (
@@ -686,32 +968,37 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
             )}
           </div>
 
-          {/* Grand Total Box Highlight */}
+          {/* Grand Total Sisa Tagihan Highlight */}
           <div className="sm:col-span-5 bg-linear-to-br from-slate-900 to-slate-950 text-white p-4 rounded-xl shadow-xs flex flex-col justify-between">
             <div>
-              <span className="text-[10.5px] uppercase font-bold text-slate-300 tracking-wider block">
-                Total Kewajiban Pembayaran:
+              <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider block">
+                Total Sisa Tagihan (Kewajiban Belum Lunas):
               </span>
               <p className="font-mono text-2xl font-black text-amber-300 mt-1">
-                {formatRupiah(grandTotal)}
+                {grandTotalUnpaid <= 0 ? 'LUNAS (Rp 0)' : formatRupiah(grandTotalUnpaid)}
               </p>
+              <div className="flex items-center gap-3 text-[10.5px] text-slate-300 mt-1 pt-1 border-t border-slate-800">
+                <span>Total: <strong className="text-white font-mono">{formatRupiah(grandTotalCost)}</strong></span>
+                <span>•</span>
+                <span>Lunas: <strong className="text-emerald-400 font-mono">{formatRupiah(grandTotalPaid)}</strong></span>
+              </div>
             </div>
-            <p className="text-[10px] text-slate-400 mt-2 italic leading-tight">
-              *Jumlah di atas merupakan rincian tagihan resmi yang belum diselesaikan / belum lunas per tanggal cetak.
+            <p className="text-[9.5px] text-slate-400 mt-2 italic leading-tight">
+              *Rincian resmi di atas mencantumkan daftar pesanan yang sudah lunas dan yang belum lunas per tanggal cetak.
             </p>
           </div>
 
         </div>
 
-        {/* Dual Signatures / Tanda Tangan Validasi (Tanpa Nomor Rekening & Tanpa Barcode) */}
+        {/* Dual Signatures / Tanda Tangan Validasi */}
         <div className="pt-4 border-t-2 border-slate-200">
           <div className="grid grid-cols-2 gap-8 text-center text-xs">
             
-            {/* Tanda Tangan Yang Mengajukan / Vendor / Penjahit / Komisi */}
+            {/* Tanda Tangan Yang Menagihkan / Vendor / Penjahit / Komisi */}
             <div className="space-y-16">
               <div>
                 <p className="font-bold text-slate-700">Yang Menagihkan / Mitra,</p>
-                <p className="text-[10.5px] text-slate-500">({titleConfig.roleSignLeft})</p>
+                <p className="text-[10px] text-slate-500">({titleConfig.roleSignLeft})</p>
               </div>
               <p className="font-bold text-slate-800 border-b-2 border-slate-400 pb-1 px-4 inline-block min-w-[150px]">
                 {vendorNameFilter || '( ................................... )'}
@@ -722,7 +1009,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
             <div className="space-y-16">
               <div>
                 <p className="font-bold text-slate-700">Mengetahui & Menyetujui,</p>
-                <p className="text-[10.5px] text-slate-500">({titleConfig.roleSignRight})</p>
+                <p className="text-[10px] text-slate-500">({titleConfig.roleSignRight})</p>
               </div>
               <p className="font-black text-slate-950 border-b-2 border-slate-400 pb-1 px-4 inline-block min-w-[150px]">
                 {settings.namaToko || 'Nomaden Apparel'}
@@ -732,7 +1019,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
           </div>
 
           <div className="mt-6 pt-3 border-t border-slate-200 text-center text-[10px] text-slate-400">
-            Dokumen Nota Rincian Tagihan Produksi Internal • {settings.namaToko || 'Nomaden Apparel'} • {dateFormatted}
+            Dokumen Nota Rincian Tagihan Produksi & Mitra • {settings.namaToko || 'Nomaden Apparel'} • {dateFormatted}
           </div>
         </div>
 
