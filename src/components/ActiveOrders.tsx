@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Pesanan, StatusProduksi, ShopSettings, CashFlowTransaction } from '../types';
-import { formatRupiah, checkOrderPaymentStatus } from '../utils';
+import { formatRupiah, checkOrderPaymentStatus, isTransactionForOrder } from '../utils';
 import { SPKData, SPKCompanySettings, SPKTemplate } from '../spkTypes';
 import { 
   DEFAULT_COMPANY_SETTINGS, 
@@ -215,6 +215,7 @@ export default function ActiveOrders({
   const [isVendorPayablesModalOpen, setIsVendorPayablesModalOpen] = useState<boolean>(false);
   const [vendorPayablesOrders, setVendorPayablesOrders] = useState<Pesanan[]>([]);
   const [vendorPayablesInitialCategory, setVendorPayablesInitialCategory] = useState<VendorPayableCategory>('semua');
+  const [actionNotification, setActionNotification] = useState<string | null>(null);
 
   // Sync SPK states to LocalStorage
   useEffect(() => {
@@ -707,9 +708,9 @@ export default function ActiveOrders({
           : 0;
 
         const paymentStatus = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList);
-        const hasPaidSublim = paymentStatus.isSublimPaid;
-        const hasPaidJahit = paymentStatus.isJahitPaid;
-        const hasPaidKomisi = paymentStatus.isKomisiPaid;
+        const hasPaidSublim = item.statusBayarSublim === 'Lunas' || (item.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid);
+        const hasPaidJahit = item.statusBayarJahit === 'Lunas' || (item.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid);
+        const hasPaidKomisi = item.statusBayarKomisi === 'Lunas' || (item.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid);
         const hasTakenProfit = paymentStatus.isProfitTaken;
 
         if (paymentFilter === 'Lunas') {
@@ -851,6 +852,192 @@ export default function ActiveOrders({
     } else {
       alert('Tidak ada pesanan yang tersedia untuk dibuatkan nota tagihan belum lunas.');
     }
+  };
+
+  // Bulk action: Tandai Lunas pesanan terpilih sekaligus mencatat ke nota vendor
+  const handleBulkMarkAsPaid = () => {
+    if (selectedOrderIds.length === 0) {
+      alert('Pilih minimal satu pesanan terlebih dahulu.');
+      return;
+    }
+
+    const count = selectedOrderIds.length;
+    const confirmMsg = `Tandai LUNAS ${count} pesanan terpilih?\n\n• Status pembayaran konsumen akan diset LUNAS (sisa tagihan = Rp 0).\n• Ongkos vendor Sublim & Jahit akan diset LUNAS.\n• Pembayaran lunas akan tercatat di batch nota vendor.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const todayStr = new Date().toISOString().substring(0, 10);
+    const targetIds = new Set(selectedOrderIds);
+
+    const updatedList = pesananList.map(order => {
+      if (!targetIds.has(order.id)) return order;
+
+      const remaining = Number(order.sisaTagihan) || 0;
+      const total = Number(order.totalHarga) || 0;
+      const currentPayments = order.pembayaranList || [];
+      const newPayments = [...currentPayments];
+
+      // Pelunasan pelanggan jika masih ada sisa
+      if (remaining > 0 || Number(order.uangMasuk) < total) {
+        newPayments.push({
+          id: `pm-batch-${Date.now()}-${order.id}`,
+          tanggal: todayStr,
+          nominal: remaining > 0 ? remaining : total,
+          keterangan: 'Pelunasan Transaksi'
+        });
+
+        if (onLogToCashFlow) {
+          onLogToCashFlow(
+            'Pelunasan Konsumen',
+            'masuk',
+            remaining > 0 ? remaining : total,
+            `Pelunasan Pesanan PO ${order.namaPo} [ID:${order.id}]`,
+            order.id
+          );
+        }
+      }
+
+      // Hitung rincian biaya vendor
+      const sublimCost = order.items && order.items.length > 0
+        ? order.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
+        : (order.qty * (order.printPerPcs || 0));
+
+      const jahitCost = order.items && order.items.length > 0
+        ? order.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
+        : (order.qty * (order.jahitPerPcs || 0));
+
+      const baseKomisi = order.komisiPerPcs || 0;
+      const hasPenerimaKomisi = !!order.penerimaKomisi?.trim();
+      const komisiCost = hasPenerimaKomisi
+        ? (order.items && order.items.length > 0
+            ? order.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
+            : order.qty * baseKomisi)
+        : 0;
+
+      const paymentStatus = checkOrderPaymentStatus(order, settings.cashFlowList, pesananList);
+
+      // Catat pengeluaran vendor ke cash flow jika belum tercatat
+      if (onLogToCashFlow) {
+        if (sublimCost > 0 && !paymentStatus.isSublimPaid) {
+          onLogToCashFlow('Sublim', 'keluar', sublimCost, `Bayar Sublim/Print PO ${order.namaPo} [ID:${order.id}]`, order.id);
+        }
+        if (jahitCost > 0 && !paymentStatus.isJahitPaid) {
+          onLogToCashFlow('Jahit', 'keluar', jahitCost, `Bayar Jahit PO ${order.namaPo} [ID:${order.id}]`, order.id);
+        }
+        if (komisiCost > 0 && !paymentStatus.isKomisiPaid) {
+          onLogToCashFlow('Komisi', 'keluar', komisiCost, `Bayar Komisi PO ${order.namaPo} [ID:${order.id}]`, order.id);
+        }
+      }
+
+      const updatedOrder: Pesanan = {
+        ...order,
+        uangMasuk: total,
+        sisaTagihan: 0,
+        pembayaranList: newPayments,
+        statusBayarJahit: 'Lunas',
+        statusBayarSublim: 'Lunas',
+        statusBayarKomisi: 'Lunas',
+        items: order.items?.map(it => ({
+          ...it,
+          statusBayarJahit: 'Lunas',
+          statusBayarSublim: 'Lunas',
+          statusBayarKomisi: 'Lunas'
+        }))
+      };
+
+      return updatedOrder;
+    });
+
+    if (onUpdatePesananList) {
+      onUpdatePesananList(updatedList);
+    }
+    persistOrders(updatedList).catch(err => console.error('Failed to persist orders:', err));
+
+    setVendorPayablesOrders(prev => {
+      const map = new Map(updatedList.map(o => [o.id, o]));
+      return prev.map(p => map.get(p.id) || p);
+    });
+
+    setActionNotification(`${count} pesanan berhasil ditandai LUNAS & disinkronkan ke Nota Vendor!`);
+    setTimeout(() => {
+      setActionNotification(null);
+    }, 4500);
+  };
+
+  // Quick toggle status vendor (Sublim/Jahit/Komisi) untuk satu pesanan
+  const handleQuickToggleVendorStatus = (order: Pesanan, type: 'sublim' | 'jahit' | 'komisi') => {
+    const paymentStatus = checkOrderPaymentStatus(order, settings.cashFlowList, pesananList);
+    const currentIsPaid = type === 'sublim'
+      ? (order.statusBayarSublim === 'Lunas' || (order.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid))
+      : type === 'jahit'
+        ? (order.statusBayarJahit === 'Lunas' || (order.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid))
+        : (order.statusBayarKomisi === 'Lunas' || (order.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid));
+
+    const newStatus: 'Lunas' | 'Belum Lunas' = currentIsPaid ? 'Belum Lunas' : 'Lunas';
+
+    // Synchronize cash flow logs
+    if (newStatus === 'Lunas' && onLogToCashFlow) {
+      if (type === 'sublim') {
+        const sublimCost = order.items && order.items.length > 0
+          ? order.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
+          : (order.qty * (order.printPerPcs || 0));
+        if (sublimCost > 0 && !paymentStatus.isSublimPaid) {
+          onLogToCashFlow('Sublim', 'keluar', sublimCost, `Bayar Sublim/Print PO ${order.namaPo} [ID:${order.id}]`, order.id);
+        }
+      } else if (type === 'jahit') {
+        const jahitCost = order.items && order.items.length > 0
+          ? order.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
+          : (order.qty * (order.jahitPerPcs || 0));
+        if (jahitCost > 0 && !paymentStatus.isJahitPaid) {
+          onLogToCashFlow('Jahit', 'keluar', jahitCost, `Bayar Jahit PO ${order.namaPo} [ID:${order.id}]`, order.id);
+        }
+      } else if (type === 'komisi') {
+        const baseKomisi = order.komisiPerPcs || 0;
+        const komisiCost = order.items && order.items.length > 0
+          ? order.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
+          : (order.qty * baseKomisi);
+        if (komisiCost > 0 && !paymentStatus.isKomisiPaid) {
+          onLogToCashFlow('Komisi', 'keluar', komisiCost, `Bayar Komisi PO ${order.namaPo} [ID:${order.id}]`, order.id);
+        }
+      }
+    } else if (newStatus === 'Belum Lunas' && onUpdateSettings && settings.cashFlowList) {
+      const updatedCf = settings.cashFlowList.filter(cf => {
+        if (cf.jenis !== 'keluar') return true;
+        const desc = (cf.keterangan || '').toLowerCase();
+        const cat = (cf.kategori || '').toLowerCase();
+        const matchesType = type === 'jahit'
+          ? (desc.includes('jahit') || cat.includes('jahit'))
+          : type === 'sublim'
+            ? (desc.includes('sublim') || cat.includes('sublim'))
+            : (desc.includes('komisi') || cat.includes('komisi'));
+        if (!matchesType) return true;
+        return !isTransactionForOrder(cf, order, pesananList);
+      });
+      onUpdateSettings({ cashFlowList: updatedCf });
+    }
+
+    const updatedOrder: Pesanan = {
+      ...order,
+      ...(type === 'sublim' ? { statusBayarSublim: newStatus } : {}),
+      ...(type === 'jahit' ? { statusBayarJahit: newStatus } : {}),
+      ...(type === 'komisi' ? { statusBayarKomisi: newStatus } : {}),
+      items: order.items?.map(it => ({
+        ...it,
+        ...(type === 'sublim' ? { statusBayarSublim: newStatus } : {}),
+        ...(type === 'jahit' ? { statusBayarJahit: newStatus } : {}),
+        ...(type === 'komisi' ? { statusBayarKomisi: newStatus } : {})
+      }))
+    };
+
+    const updatedList = pesananList.map(p => p.id === order.id ? updatedOrder : p);
+    if (onUpdatePesananList) {
+      onUpdatePesananList(updatedList);
+    }
+    persistOrders(updatedList).catch(err => console.error('Failed to persist orders:', err));
+
+    setActionNotification(`Status ${type.toUpperCase()} PO ${order.namaPo} diubah ke: ${newStatus}`);
+    setTimeout(() => {
+      setActionNotification(null);
+    }, 3000);
   };
 
   return (
@@ -1190,10 +1377,22 @@ export default function ActiveOrders({
               </div>
 
               {selectedOrderIds.length > 0 && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800">
                     {selectedOrderIds.length} PO Terpilih
                   </span>
+                  
+                  {/* Tombol Tandai Lunas Massal */}
+                  <button
+                    type="button"
+                    onClick={handleBulkMarkAsPaid}
+                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs font-black shadow-xs cursor-pointer transition-all hover:scale-105 active:scale-95"
+                    title="Tandai Lunas semua pesanan terpilih dan catat ke batch nota vendor"
+                  >
+                    <CheckCircle className="h-3.5 w-3.5" />
+                    <span>Tandai Lunas ({selectedOrderIds.length})</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => handleOpenBatchNota()}
@@ -1202,6 +1401,17 @@ export default function ActiveOrders({
                     <Receipt className="h-3.5 w-3.5" />
                     <span>Buka Batch Nota A4</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenVendorPayables()}
+                    className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded-lg text-xs font-black shadow-xs cursor-pointer transition-transform"
+                    title="Buka rincian & nota tagihan vendor untuk pesanan yang dipilih"
+                  >
+                    <Scissors className="h-3.5 w-3.5" />
+                    <span>Nota Vendor ({selectedOrderIds.length})</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setSelectedOrderIds([])}
@@ -1222,31 +1432,44 @@ export default function ActiveOrders({
                   </div>
                   <div>
                     <h5 className="font-extrabold text-sm leading-tight text-white">
-                      {selectedOrderIds.length} Pesanan Dipilih untuk Batch Nota
+                      {selectedOrderIds.length} Pesanan Dipilih
                     </h5>
                     <p className="text-[11px] text-indigo-200">
-                      Cetak massal, ekspor multi-halaman PDF, atau unduh paket gambar PNG.
+                      Tandai lunas massal & sinkronkan ke nota vendor, atau cetak batch nota.
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Tombol Tandai Lunas Utama */}
+                  <button
+                    type="button"
+                    onClick={handleBulkMarkAsPaid}
+                    className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95"
+                    title="Tandai Lunas semua pesanan terpilih & sinkronkan ke nota vendor"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Tandai Lunas ({selectedOrderIds.length} PO)</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => handleOpenVendorPayables()}
                     className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95"
                   >
                     <Scissors className="h-4 w-4" />
-                    <span>Nota Belum Lunas ({selectedOrderIds.length} PO)</span>
+                    <span>Nota Tagihan Vendor</span>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => handleOpenBatchNota()}
                     className="flex items-center gap-1.5 bg-white text-indigo-900 hover:bg-indigo-50 font-black text-xs px-4 py-2 rounded-xl shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95"
                   >
                     <Receipt className="h-4 w-4 text-indigo-600" />
-                    <span>Buka Generator Batch Nota ({selectedOrderIds.length})</span>
+                    <span>Buka Batch Nota A4</span>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => setSelectedOrderIds([])}
@@ -1258,6 +1481,27 @@ export default function ActiveOrders({
               </div>
             )}
           </div>
+
+          {/* Desktop Table Header */}
+          {filteredAndSortedList.length > 0 && (
+            <div className="hidden lg:grid grid-cols-12 gap-5 px-5 py-2.5 bg-slate-100/90 dark:bg-slate-800/80 rounded-xl text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 items-center border border-slate-200/70 dark:border-slate-700/70">
+              <div className="col-span-2 flex items-center gap-2">
+                <span>PO & Pelanggan</span>
+              </div>
+              <div className="col-span-2">
+                <span>Produk & Bahan</span>
+              </div>
+              <div className="col-span-3 text-center">
+                <span>Ringkasan Finansial</span>
+              </div>
+              <div className="col-span-2 text-center">
+                <span>Status Vendor</span>
+              </div>
+              <div className="col-span-3 text-right pr-2">
+                <span>Status & Tindakan</span>
+              </div>
+            </div>
+          )}
 
           {/* Primary orders renderer (Card list) */}
           {filteredAndSortedList.length === 0 ? (
@@ -1294,6 +1538,18 @@ export default function ActiveOrders({
                 const hasPaidJahit = paymentStatus.isJahitPaid;
                 const hasPaidKomisi = paymentStatus.isKomisiPaid;
                 const hasTakenProfit = paymentStatus.isProfitTaken;
+
+                // Status Vendor Lunas logic: independen dari status lunas konsumen
+                const isSublimLunas = item.statusBayarSublim === 'Lunas' 
+                  || (item.statusBayarSublim !== 'Belum Lunas' && (hasPaidSublim || (item.items && item.items.length > 0 && item.items.some(it => it.statusBayarSublim === 'Lunas'))));
+                const isJahitLunas = item.statusBayarJahit === 'Lunas' 
+                  || (item.statusBayarJahit !== 'Belum Lunas' && (hasPaidJahit || (item.items && item.items.length > 0 && item.items.some(it => it.statusBayarJahit === 'Lunas'))));
+                const isKomisiLunas = item.statusBayarKomisi === 'Lunas' 
+                  || (item.statusBayarKomisi !== 'Belum Lunas' && (hasPaidKomisi || (item.items && item.items.length > 0 && item.items.some(it => it.statusBayarKomisi === 'Lunas'))));
+
+                const vendorSublimName = item.vendorSublim || item.items?.find(it => it.vendorSublim)?.vendorSublim || 'Sublim';
+                const vendorJahitName = item.vendorJahit || item.items?.find(it => it.vendorJahit)?.vendorJahit || 'Penjahit';
+                const penerimaKomisiName = item.penerimaKomisi?.trim() || 'Komisi';
 
                 return (
                   <div 
@@ -1444,58 +1700,164 @@ export default function ActiveOrders({
                         )}
                       </div>
 
-                      {/* Middle Column 2 (Cols 5-9): Financial recap */}
-                      <div className="lg:col-span-5 flex flex-col items-center justify-center min-w-0 w-full gap-2">
-                        <div className="flex flex-row items-stretch justify-center bg-slate-50 dark:bg-slate-900/40 p-2.5 sm:p-3 rounded-xl border border-slate-100 dark:border-slate-750/80 min-w-0 w-full text-center">
+                      {/* Middle Column 2 (Cols 5-7): Financial recap */}
+                      <div className="lg:col-span-3 flex flex-col items-center justify-center min-w-0 w-full gap-2">
+                        <div className="flex flex-row items-stretch justify-center bg-slate-50 dark:bg-slate-900/40 p-2 sm:p-2.5 rounded-xl border border-slate-100 dark:border-slate-750/80 min-w-0 w-full text-center">
                           {/* Qty Section */}
-                          <div className="pr-2.5 max-w-[70px] border-r border-slate-205 dark:border-slate-700/80 shrink-0 flex flex-col items-center justify-center">
-                            <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none">Qty</span>
-                            <span className="text-[11px] sm:text-xs xl:text-sm font-extrabold text-slate-800 dark:text-white block mt-1.5 truncate max-w-full" title={`${item.qty} Pcs`}>
-                              {item.qty} Pcs
+                          <div className="pr-2 max-w-[55px] border-r border-slate-205 dark:border-slate-700/80 shrink-0 flex flex-col items-center justify-center">
+                            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">Qty</span>
+                            <span className="text-[11px] sm:text-xs font-extrabold text-slate-800 dark:text-white block mt-1 truncate max-w-full" title={`${item.qty} Pcs`}>
+                              {item.qty}
                             </span>
                           </div>
                           
                           {/* Total Tagihan Section */}
-                          <div className="px-3 flex-1 min-w-0 flex flex-col items-center justify-center">
-                            <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Total Tagihan</span>
-                            <span className="text-[11px] sm:text-xs xl:text-sm font-extrabold text-slate-800 dark:text-white block mt-1.5 truncate max-w-full" title={formatRupiah(item.totalHarga)}>
+                          <div className="px-2 flex-1 min-w-0 flex flex-col items-center justify-center">
+                            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Total</span>
+                            <span className="text-[11px] sm:text-xs font-extrabold text-slate-800 dark:text-white block mt-1 truncate max-w-full" title={formatRupiah(item.totalHarga)}>
                               {formatRupiah(item.totalHarga)}
                             </span>
                           </div>
 
                           {/* Sisa Bayar Section */}
-                          <div className="border-l border-slate-205 dark:border-slate-700/80 px-3 flex-1 min-w-0 flex flex-col items-center justify-center">
-                            <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Sisa Bayar</span>
-                            <span className={`text-[11px] sm:text-xs xl:text-sm font-black block mt-1.5 truncate max-w-full ${isFullyPaid ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500'}`} title={isFullyPaid ? 'Lunas' : formatRupiah(item.sisaTagihan)}>
+                          <div className="border-l border-slate-205 dark:border-slate-700/80 px-2 flex-1 min-w-0 flex flex-col items-center justify-center">
+                            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">Sisa</span>
+                            <span className={`text-[11px] sm:text-xs font-black block mt-1 truncate max-w-full ${isFullyPaid ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500'}`} title={isFullyPaid ? 'Lunas' : formatRupiah(item.sisaTagihan)}>
                               {isFullyPaid ? 'Lunas ✓' : formatRupiah(item.sisaTagihan)}
                             </span>
                           </div>
 
                           {/* Profit Section */}
-                          <div className="border-l border-slate-205 dark:border-slate-700/80 pl-3 flex-1 min-w-0 flex flex-col items-center justify-center">
-                            <span className="block text-[9.5px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">
-                              Profit {hasTakenProfit ? '(Ambil ✓)' : '(Belum)'}
+                          <div className="border-l border-slate-205 dark:border-slate-700/80 pl-2 flex-1 min-w-0 flex flex-col items-center justify-center">
+                            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate max-w-full">
+                              Profit
                             </span>
-                            <span className={`text-[11px] sm:text-xs xl:text-sm font-black block mt-1.5 truncate max-w-full ${hasTakenProfit ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-[#10b981]'}`} title={formatRupiah(item.profit)}>
+                            <span className={`text-[11px] sm:text-xs font-black block mt-1 truncate max-w-full ${hasTakenProfit ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-[#10b981]'}`} title={formatRupiah(item.profit)}>
                               {formatRupiah(item.profit)}
                             </span>
                           </div>
                         </div>
 
-                        {/* Notifikasi Pembayaran Produksi & Komisi */}
-                        {((!hasPaidSublim && sublimCost > 0) || (!hasPaidJahit && jahitCost > 0) || (!hasPaidKomisi && komisiCost > 0)) && (
-                          <div 
-                            className="text-[10px] sm:text-[11px] font-bold text-[#ff3b5c] animate-pulse truncate"
-                            style={{ animationDuration: '1.5s' }}
-                            title="Masih ada biaya produksi atau komisi yang belum dibayar"
+                        {/* Status Sisa Bayar Konsumen badge jika belum lunas */}
+                        {!isFullyPaid && (Number(item.sisaTagihan) || 0) > 0 && (
+                          <div className="text-[10px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-950/30 px-2 py-0.5 rounded-full border border-rose-200 dark:border-rose-900/40 truncate">
+                            Sisa: {formatRupiah(item.sisaTagihan)}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Middle Column 3 (Cols 8-9): Status Vendor Column */}
+                      <div className="lg:col-span-2 flex flex-col items-stretch justify-center min-w-0 w-full gap-1.5 bg-slate-50/70 dark:bg-slate-900/30 p-2 sm:p-2.5 rounded-xl border border-slate-150 dark:border-slate-800">
+                        <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                          <span className="flex items-center gap-1">
+                            <Scissors className="h-3 w-3 text-indigo-500 shrink-0" />
+                            Status Vendor
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenVendorPayables([item])}
+                            className="text-[9.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                            title="Buka rincian nota tagihan vendor untuk pesanan ini"
                           >
-                            {(() => {
-                              const badges = [];
-                              if (!hasPaidSublim && sublimCost > 0) badges.push('BELUM BAYAR SUBLIM');
-                              if (!hasPaidJahit && jahitCost > 0) badges.push('BELUM BAYAR JAHIT');
-                              if (!hasPaidKomisi && komisiCost > 0) badges.push('BELUM BAYAR KOMISI');
-                              return '🔴 ' + badges.join(' • ');
-                            })()}
+                            Nota
+                          </button>
+                        </div>
+
+                        {/* Indikator Status Sublim */}
+                        <div className="flex items-center justify-between text-xs py-0.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span 
+                              className={`h-2.5 w-2.5 rounded-full shrink-0 ${
+                                sublimCost <= 0 
+                                  ? 'bg-slate-300 dark:bg-slate-600' 
+                                  : isSublimLunas 
+                                    ? 'bg-emerald-500 shadow-xs shadow-emerald-500/50' 
+                                    : 'bg-rose-500 animate-pulse shadow-xs shadow-rose-500/50'
+                              }`} 
+                              title={sublimCost <= 0 ? 'Tidak ada ongkos sublim' : isSublimLunas ? 'Sublim: LUNAS' : 'Sublim: BELUM LUNAS'}
+                            />
+                            <span className="font-semibold text-slate-700 dark:text-slate-200 text-[11px] truncate" title={`Sublim: ${vendorSublimName} (${formatRupiah(sublimCost)})`}>
+                              Sublim
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickToggleVendorStatus(item, 'sublim')}
+                            disabled={sublimCost <= 0}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-black tracking-tight transition-colors cursor-pointer ${
+                              sublimCost <= 0
+                                ? 'text-slate-400 bg-slate-100 dark:bg-slate-800 cursor-not-allowed'
+                                : isSublimLunas
+                                  ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-950/60 hover:bg-emerald-200'
+                                  : 'text-rose-700 dark:text-rose-300 bg-rose-100/80 dark:bg-rose-950/60 hover:bg-rose-200'
+                            }`}
+                            title={`Klik untuk toggle status Sublim (${isSublimLunas ? 'Lunas' : 'Belum Lunas'})`}
+                          >
+                            {sublimCost <= 0 ? 'N/A' : isSublimLunas ? 'Lunas' : 'Belum'}
+                          </button>
+                        </div>
+
+                        {/* Indikator Status Jahit */}
+                        <div className="flex items-center justify-between text-xs py-0.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span 
+                              className={`h-2.5 w-2.5 rounded-full shrink-0 ${
+                                jahitCost <= 0 
+                                  ? 'bg-slate-300 dark:bg-slate-600' 
+                                  : isJahitLunas 
+                                    ? 'bg-emerald-500 shadow-xs shadow-emerald-500/50' 
+                                    : 'bg-rose-500 animate-pulse shadow-xs shadow-rose-500/50'
+                              }`} 
+                              title={jahitCost <= 0 ? 'Tidak ada ongkos jahit' : isJahitLunas ? 'Jahit: LUNAS' : 'Jahit: BELUM LUNAS'}
+                            />
+                            <span className="font-semibold text-slate-700 dark:text-slate-200 text-[11px] truncate" title={`Jahit: ${vendorJahitName} (${formatRupiah(jahitCost)})`}>
+                              Jahit
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickToggleVendorStatus(item, 'jahit')}
+                            disabled={jahitCost <= 0}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-black tracking-tight transition-colors cursor-pointer ${
+                              jahitCost <= 0
+                                ? 'text-slate-400 bg-slate-100 dark:bg-slate-800 cursor-not-allowed'
+                                : isJahitLunas
+                                  ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-950/60 hover:bg-emerald-200'
+                                  : 'text-rose-700 dark:text-rose-300 bg-rose-100/80 dark:bg-rose-950/60 hover:bg-rose-200'
+                            }`}
+                            title={`Klik untuk toggle status Jahit (${isJahitLunas ? 'Lunas' : 'Belum Lunas'})`}
+                          >
+                            {jahitCost <= 0 ? 'N/A' : isJahitLunas ? 'Lunas' : 'Belum'}
+                          </button>
+                        </div>
+
+                        {/* Indikator Status Komisi jika ada */}
+                        {hasPenerimaKomisi && komisiCost > 0 && (
+                          <div className="flex items-center justify-between text-xs py-0.5 border-t border-slate-200/60 dark:border-slate-800/60 pt-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span 
+                                className={`h-2 w-2 rounded-full shrink-0 ${
+                                  isKomisiLunas 
+                                    ? 'bg-emerald-500' 
+                                    : 'bg-amber-500'
+                                }`} 
+                                title={isKomisiLunas ? 'Komisi: LUNAS' : 'Komisi: BELUM LUNAS'}
+                              />
+                              <span className="font-medium text-slate-600 dark:text-slate-300 text-[10px] truncate" title={`Komisi: ${penerimaKomisiName} (${formatRupiah(komisiCost)})`}>
+                                Komisi
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickToggleVendorStatus(item, 'komisi')}
+                              className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold ${
+                                isKomisiLunas
+                                  ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40'
+                                  : 'text-amber-600 bg-amber-50 dark:bg-amber-950/40'
+                              }`}
+                            >
+                              {isKomisiLunas ? 'Lunas' : 'Belum'}
+                            </button>
                           </div>
                         )}
                       </div>
@@ -1948,6 +2310,23 @@ export default function ActiveOrders({
             setVendorPayablesOrders(updatedList);
           }}
         />
+      )}
+
+      {/* Toast Notification for Bulk / Quick Actions */}
+      {actionNotification && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-slate-900/95 dark:bg-slate-850 text-white px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/40 backdrop-blur-md animate-fade-in">
+          <div className="h-7 w-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle className="h-4 w-4" />
+          </div>
+          <span className="text-xs font-bold leading-tight">{actionNotification}</span>
+          <button
+            type="button"
+            onClick={() => setActionNotification(null)}
+            className="text-slate-400 hover:text-white ml-2 text-xs font-bold cursor-pointer p-1"
+          >
+            ✕
+          </button>
+        </div>
       )}
 
     </div>

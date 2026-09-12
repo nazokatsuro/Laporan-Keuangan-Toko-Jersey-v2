@@ -43,20 +43,20 @@ export function isTransactionForOrder(
     desc.includes(`[id: ${orderIdLower}]`) ||
     desc.includes(`(id:${orderIdLower})`) ||
     desc.includes(`(#${orderIdLower})`) ||
-    desc.includes(orderIdLower)
+    (orderIdLower.length >= 4 && desc.includes(orderIdLower))
   ) {
     return true;
   }
 
   // If another order ID is explicitly in description, do not match this order
-  const idMatch = desc.match(/\bord-[a-z0-9]+/i);
+  const idMatch = desc.match(/\b(ord-[a-z0-9-]+|spk-[a-z0-9-]+)\b/i);
   if (idMatch && idMatch[0].toLowerCase() !== orderIdLower) {
     return false;
   }
 
   // 3. Fallback for legacy records without orderId or ID marker in description:
   const cleanPoName = (order.namaPo || '').toLowerCase().trim();
-  if (!cleanPoName || !desc.includes(cleanPoName)) {
+  if (!cleanPoName || cleanPoName.length < 3 || !desc.includes(cleanPoName)) {
     return false;
   }
 
@@ -499,24 +499,68 @@ export async function safeHtml2canvas(element: HTMLElement, options: any = {}): 
  * Reads an image file as a Data URL retaining 100% losslessly uncompressed HD quality.
  */
 export function compressImage(
-  file: File, 
-  maxWidth: number = 3840, 
-  maxHeight: number = 3840, 
-  quality: number = 0.98
+  file: File | Blob, 
+  maxWidth: number = 2200, 
+  maxHeight: number = 2200, 
+  quality: number = 0.90
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (result) {
-        resolve(result);
-      } else {
-        reject(new Error("Gagal membaca berkas gambar"));
+    if (file.type === 'image/svg+xml' || file.size < 600 * 1024) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
+        if (result) {
+          resolve(result);
+        } else {
+          reject(new Error("Gagal membaca berkas gambar"));
+        }
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxWidth || height > maxHeight) {
+        if (width > height) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        } else {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
       }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = (err) => reject(err);
+        reader.readAsDataURL(file);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      const isPng = file.type === 'image/png';
+      const mime = isPng ? 'image/png' : 'image/jpeg';
+      const outputQuality = isPng ? 0.92 : quality;
+      resolve(canvas.toDataURL(mime, outputQuality));
     };
-    reader.onerror = (err) => {
-      reject(err);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
     };
-    reader.readAsDataURL(file);
+    img.src = objectUrl;
   });
 }

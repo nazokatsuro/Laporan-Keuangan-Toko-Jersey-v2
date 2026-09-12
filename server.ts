@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 
@@ -441,14 +442,25 @@ async function setupServer() {
     app.get('*all', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
-    // Extra fallback for any unmatched requests
-    app.use((req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running at http://0.0.0.0:${PORT}`);
+  });
+
+  // Graceful shutdown for Cloud Run deployment rollouts and traffic shifting
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received: closing HTTP server gracefully...');
+    server.close(() => {
+      console.log('HTTP server closed.');
+      process.exit(0);
+    });
+  });
+
+  process.on('SIGINT', () => {
+    server.close(() => {
+      process.exit(0);
+    });
   });
 }
 

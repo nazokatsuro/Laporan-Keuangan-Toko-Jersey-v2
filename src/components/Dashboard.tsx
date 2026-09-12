@@ -137,7 +137,7 @@ export default function Dashboard({
         : (item.qty * (item.jahitPerPcs || 0));
 
       if (jahitCost > 0) {
-        const hasPaidJahit = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isJahitPaid;
+        const hasPaidJahit = item.statusBayarJahit === 'Lunas' || (item.statusBayarJahit !== 'Belum Lunas' && checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isJahitPaid);
 
         if (!hidePaidChecklist || !hasPaidJahit) {
           listJahit.push({
@@ -155,7 +155,7 @@ export default function Dashboard({
         : (item.qty * (item.printPerPcs || 0));
 
       if (sublimCost > 0) {
-        const hasPaidSublim = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isSublimPaid;
+        const hasPaidSublim = item.statusBayarSublim === 'Lunas' || (item.statusBayarSublim !== 'Belum Lunas' && checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isSublimPaid);
 
         if (!hidePaidChecklist || !hasPaidSublim) {
           listSublim.push({
@@ -179,7 +179,7 @@ export default function Dashboard({
         : 0;
 
       if (komisiCost > 0 && hasPenerimaKomisi) {
-        const hasPaidKomisi = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isKomisiPaid;
+        const hasPaidKomisi = item.statusBayarKomisi === 'Lunas' || (item.statusBayarKomisi !== 'Belum Lunas' && checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isKomisiPaid);
 
         if (!hidePaidChecklist || !hasPaidKomisi) {
           listKomisi.push({
@@ -318,6 +318,8 @@ export default function Dashboard({
 
       onUpdatePesananList(updatedList);
     } else {
+      const newStatus: 'Lunas' | 'Belum Lunas' = isCurrentlyPaid ? 'Belum Lunas' : 'Lunas';
+
       if (isCurrentlyPaid) {
         // Mark as UNPAID: remove corresponding log from cashflow for THIS specific order
         const updatedLogs = (settings.cashFlowList || []).filter(cf => {
@@ -361,6 +363,26 @@ export default function Dashboard({
 
         const updatedLogs = [...(settings.cashFlowList || []), newItem];
         onUpdateSettings({ cashFlowList: updatedLogs });
+      }
+
+      // Also update pesananList order statusBayar* for bidirectional sync
+      if (onUpdatePesananList) {
+        const updatedOrders = pesananList.map(p => {
+          if (p.id !== item.id) return p;
+          return {
+            ...p,
+            ...(type === 'jahit' ? { statusBayarJahit: newStatus } : {}),
+            ...(type === 'sublim' ? { statusBayarSublim: newStatus } : {}),
+            ...(type === 'komisi' ? { statusBayarKomisi: newStatus } : {}),
+            items: p.items?.map(it => ({
+              ...it,
+              ...(type === 'jahit' ? { statusBayarJahit: newStatus } : {}),
+              ...(type === 'sublim' ? { statusBayarSublim: newStatus } : {}),
+              ...(type === 'komisi' ? { statusBayarKomisi: newStatus } : {})
+            }))
+          };
+        });
+        onUpdatePesananList(updatedOrders);
       }
     }
   };

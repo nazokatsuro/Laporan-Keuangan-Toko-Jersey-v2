@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Pesanan, PesananItem, StatusProduksi, ShopSettings, PembayaranMasuk } from '../types';
 import { generateId, formatRupiah, compressImage } from '../utils';
 import { orderToSpkData, syncSpkToOrder } from '../utils/spkSync';
@@ -31,7 +31,10 @@ import {
   Clock,
   RefreshCw,
   Tag,
-  AlertCircle
+  AlertCircle,
+  ClipboardPaste,
+  Copy,
+  Check
 } from 'lucide-react';
 
 interface OrderFormProps {
@@ -174,10 +177,190 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
   // Mockup image URL (base64 string)
   const [mockupUrl, setMockupUrl] = useState('');
   const [isCompressing, setIsCompressing] = useState(false);
+  const [isDraggingMockup, setIsDraggingMockup] = useState(false);
+  const mockupFileInputRef = useRef<HTMLInputElement>(null);
 
   // Collar image URL (base64 string)
   const [fotoKerahUrl, setFotoKerahUrl] = useState('');
   const [isCompressingKerah, setIsCompressingKerah] = useState(false);
+  const [isDraggingKerah, setIsDraggingKerah] = useState(false);
+  const kerahFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Non-blocking in-app notification toast (replaces blocking/sandboxed window.alert)
+  const [formToast, setFormToast] = useState<{ message: string; type: 'info' | 'success' | 'warning' } | null>(null);
+
+  const showToast = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
+    setFormToast({ message, type });
+    setTimeout(() => {
+      setFormToast((prev) => (prev?.message === message ? null : prev));
+    }, 4500);
+  };
+
+  // Safe image downscaling & loader to prevent browser Out-of-Memory (OOM) renderer crashes
+  const optimizeAndLoadImage = async (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (blob.type === 'image/svg+xml' || blob.size < 600 * 1024) {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = (err) => reject(err);
+        reader.readAsDataURL(blob);
+        return;
+      }
+
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(blob);
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const MAX_DIM = 2200;
+        let w = img.width;
+        let h = img.height;
+        if (w > MAX_DIM || h > MAX_DIM) {
+          if (w > h) {
+            h = Math.round((h * MAX_DIM) / w);
+            w = MAX_DIM;
+          } else {
+            w = Math.round((w * MAX_DIM) / h);
+            h = MAX_DIM;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.readAsDataURL(blob);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        const isPng = blob.type === 'image/png';
+        const mime = isPng ? 'image/png' : 'image/jpeg';
+        const quality = isPng ? 0.92 : 0.88;
+        const dataUrl = canvas.toDataURL(mime, quality);
+        resolve(dataUrl);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = (err) => reject(err);
+        reader.readAsDataURL(blob);
+      };
+      img.src = objectUrl;
+    });
+  };
+
+  // Helper to process image Blob / File safely
+  const processImageBlob = async (
+    blob: Blob,
+    setter: (url: string) => void,
+    setLoading: (loading: boolean) => void,
+    fieldLabel: string
+  ) => {
+    if (blob.size > 25 * 1024 * 1024) {
+      showToast("Ukuran berkas melebihi batas 25MB", "warning");
+      return;
+    }
+    setLoading(true);
+    try {
+      const dataUrl = await optimizeAndLoadImage(blob);
+      setter(dataUrl);
+      showToast(`Gambar ${fieldLabel} berhasil dimuat!`, "success");
+    } catch (err) {
+      console.error(`Gagal memproses gambar ${fieldLabel}:`, err);
+      showToast(`Gagal memuat gambar ${fieldLabel}`, "warning");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper to paste image from clipboard via Clipboard API
+  const handleClipboardPaste = async (
+    setter: (url: string) => void,
+    setLoading: (loading: boolean) => void,
+    fieldLabel: string
+  ) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const item of clipboardItems) {
+          const imageType = item.types.find(t => t.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            await processImageBlob(blob, setter, setLoading, fieldLabel);
+            return;
+          }
+        }
+        showToast(`Tidak ada gambar di clipboard untuk ${fieldLabel}. Silakan Copy gambar dulu lalu tekan Ctrl+V.`, "info");
+      } else {
+        showToast(`Klik area ${fieldLabel} lalu gunakan shortcut keyboard Ctrl+V.`, "info");
+      }
+    } catch (err: any) {
+      console.warn("Clipboard access notice:", err);
+      showToast(`Akses clipboard otomatis dibatasi. Klik area ${fieldLabel} dan tekan Ctrl+V di keyboard.`, "info");
+    }
+  };
+
+  // Helper to handle onPaste event from keyboard
+  const handleElementPaste = (
+    e: React.ClipboardEvent,
+    setter: (url: string) => void,
+    setLoading: (loading: boolean) => void,
+    fieldLabel: string
+  ) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          e.stopPropagation();
+          processImageBlob(file, setter, setLoading, fieldLabel);
+          return;
+        }
+      }
+    }
+  };
+
+  // Helper to copy dataUrl to clipboard
+  const handleCopyImageToClipboard = async (dataUrl: string, fieldLabel: string) => {
+    try {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      if (blob.type === 'image/png') {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        showToast(`Gambar ${fieldLabel} berhasil disalin ke clipboard!`, "success");
+      } else {
+        const img = new Image();
+        img.src = dataUrl;
+        await new Promise(resolve => { img.onload = resolve; });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0);
+        canvas.toBlob(async (pngBlob) => {
+          if (pngBlob) {
+            try {
+              await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': pngBlob })
+              ]);
+              showToast(`Gambar ${fieldLabel} berhasil disalin ke clipboard!`, "success");
+            } catch {
+              showToast(`Gagal menyalin gambar ${fieldLabel}`, "warning");
+            }
+          }
+        }, 'image/png');
+      }
+    } catch (err) {
+      console.warn("Gagal menyalin gambar:", err);
+      showToast(`Gagal menyalin gambar ${fieldLabel} ke clipboard`, "warning");
+    }
+  };
 
   // Multiple product items inside this 1 PO
   const [items, setItems] = useState<PesananItem[]>([]);
@@ -667,7 +850,29 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto animate-fade-in">
+    <div className="space-y-6 max-w-4xl mx-auto animate-fade-in relative">
+      {/* Non-intrusive in-app Notification Toast */}
+      {formToast && (
+        <div className="fixed top-5 right-5 z-50 max-w-md animate-bounce-short shadow-2xl">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold backdrop-blur-md border ${
+            formToast.type === 'success' 
+              ? 'bg-emerald-950/90 text-emerald-200 border-emerald-500/40 shadow-emerald-950/30' 
+              : formToast.type === 'warning'
+              ? 'bg-amber-950/90 text-amber-200 border-amber-500/40 shadow-amber-950/30'
+              : 'bg-slate-900/90 text-indigo-200 border-indigo-500/40 shadow-slate-950/40'
+          }`}>
+            <span className="flex-1">{formToast.message}</span>
+            <button 
+              type="button" 
+              onClick={() => setFormToast(null)}
+              className="p-1 hover:bg-white/10 rounded-lg transition"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <button 
@@ -1644,19 +1849,71 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
 
         {/* Step 4: Mockup Desain Pesanan */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/80 p-5 shadow-sm space-y-4">
-          <h3 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2 border-b border-slate-50 dark:border-slate-700 pb-2">
-            <ImageIcon className="h-4 w-4 text-indigo-500" />
-            Mockup Desain / Gambar Pesanan (Opsional)
-          </h3>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-50 dark:border-slate-700 pb-2">
+            <h3 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <ImageIcon className="h-4 w-4 text-indigo-500" />
+              Mockup Desain / Gambar Pesanan (Opsional)
+            </h3>
+            <button
+              type="button"
+              onClick={() => handleClipboardPaste(setMockupUrl, setIsCompressing, "Mockup Desain")}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-200 dark:border-indigo-700/50 transition cursor-pointer shadow-2xs"
+              title="Tempel gambar mockup dari clipboard (Ctrl+V)"
+            >
+              <ClipboardPaste className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Paste Mockup (Ctrl+V)</span>
+            </button>
+          </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Unggah gambar desain mockup jersey PO ini untuk dilampirkan langsung di dalam nota transaksi.
+            Unggah atau paste gambar desain mockup jersey PO ini untuk dilampirkan langsung di dalam nota transaksi dan SPK.
           </p>
 
           <div className="flex flex-col md:flex-row gap-6 items-center">
             {/* Upload Area */}
             <div className="w-full md:flex-1">
-              <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 rounded-2xl cursor-pointer transition group">
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+              <input 
+                ref={mockupFileInputRef}
+                id="file-upload-mockup"
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                disabled={isCompressing}
+                onClick={(e) => e.stopPropagation()}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    processImageBlob(file, setMockupUrl, setIsCompressing, "Mockup Desain");
+                  }
+                  e.target.value = '';
+                }}
+              />
+              <div 
+                tabIndex={0}
+                onPaste={(e) => handleElementPaste(e, setMockupUrl, setIsCompressing, "Mockup Desain")}
+                onDragOver={(e) => { e.preventDefault(); setIsDraggingMockup(true); }}
+                onDragLeave={() => setIsDraggingMockup(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingMockup(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file && file.type.startsWith('image/')) {
+                    processImageBlob(file, setMockupUrl, setIsCompressing, "Mockup Desain");
+                  }
+                }}
+                className={`flex flex-col items-center justify-center w-full min-h-36 p-4 border-2 border-dashed rounded-2xl cursor-pointer transition group outline-none focus:ring-2 focus:ring-indigo-500/30 ${
+                  isDraggingMockup 
+                    ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30' 
+                    : 'border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 focus:border-indigo-500'
+                }`}
+                onClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  if (target.closest('button') || target.tagName === 'INPUT') {
+                    return;
+                  }
+                  mockupFileInputRef.current?.click();
+                }}
+              >
+                <div className="flex flex-col items-center justify-center text-center">
                   {isCompressing ? (
                     <>
                       <Loader2 className="h-8 w-8 text-indigo-500 animate-spin mb-2" />
@@ -1664,54 +1921,37 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                         Mengunggah gambar HD...
                       </p>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        Menyimpan gambar resolusi asli (Tanpa Kompresi)
+                        Memproses gambar resolusi tajam
                       </p>
                     </>
                   ) : (
                     <>
-                      <Upload className="h-8 w-8 text-slate-400 group-hover:text-indigo-500 transition mb-2" />
-                      <p className="text-xs font-bold text-slate-700 dark:text-slate-350">
-                        Klik atau seret gambar HD ke sini
+                      <Upload className="h-7 w-7 text-slate-400 group-hover:text-indigo-500 transition mb-1.5" />
+                      <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                        Klik untuk upload, seret file, atau <span className="text-indigo-600 dark:text-indigo-400 underline decoration-dotted">tekan Ctrl+V</span> di sini
                       </p>
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        Format PNG, JPG, JPEG (Max. 15MB - Kualitas HD)
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Format PNG, JPG, JPEG (Maks. 25MB - Resolusi Tajam)
                       </p>
+                      <div className="flex items-center gap-2 mt-2.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleClipboardPaste(setMockupUrl, setIsCompressing, "Mockup Desain");
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold shadow-2xs transition"
+                        >
+                          <ClipboardPaste className="h-3 w-3" />
+                          <span>Paste dari Clipboard</span>
+                        </button>
+                        <span className="text-[10px] text-slate-400 font-medium">atau Ctrl + V</span>
+                      </div>
                     </>
                   )}
                 </div>
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  className="hidden" 
-                  disabled={isCompressing}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      if (file.size > 15 * 1024 * 1024) {
-                        alert("Ukuran gambar maksimal adalah 15MB");
-                        return;
-                      }
-                      setIsCompressing(true);
-                      try {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                          if (event.target?.result) {
-                            setMockupUrl(event.target.result as string);
-                          }
-                          setIsCompressing(false);
-                        };
-                        reader.onerror = () => {
-                          setIsCompressing(false);
-                        };
-                        reader.readAsDataURL(file);
-                      } catch (err: any) {
-                        console.error("Gagal mengunggah gambar mockup:", err);
-                        setIsCompressing(false);
-                      }
-                    }
-                  }}
-                />
-              </label>
+              </div>
             </div>
 
             {/* Preview Section */}
@@ -1728,14 +1968,24 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                   className="max-h-full max-w-full object-contain rounded-lg shadow-2xs"
                   referrerPolicy="no-referrer"
                 />
-                <button
-                  type="button"
-                  onClick={() => setMockupUrl('')}
-                  className="absolute top-2 right-2 p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full shadow-md opacity-90 hover:opacity-100 transition duration-150"
-                  title="Hapus gambar mockup"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                <div className="absolute top-2 right-2 flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyImageToClipboard(mockupUrl, "Mockup Desain")}
+                    className="p-1.5 bg-slate-900/80 hover:bg-slate-900 text-white rounded-full shadow-md transition"
+                    title="Salin (Copy) gambar ke clipboard"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMockupUrl('')}
+                    className="p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full shadow-md opacity-90 hover:opacity-100 transition duration-150"
+                    title="Hapus gambar mockup"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="w-full max-w-[200px] h-36 border border-dashed border-slate-200 dark:border-slate-750 rounded-2xl flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-900/20 text-xs">
@@ -1748,19 +1998,71 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
 
         {/* Step 3.5.2: Gambar Bentuk Kerah */}
         <div id="upload_collar_image" className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/80 p-5 shadow-sm space-y-4">
-          <h3 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2 border-b border-slate-50 dark:border-slate-700 pb-2">
-            <Layers className="h-4 w-4 text-violet-500" />
-            Foto / Gambar Bentuk Kerah Custom (Opsional)
-          </h3>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-50 dark:border-slate-700 pb-2">
+            <h3 className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <Layers className="h-4 w-4 text-violet-500" />
+              Foto / Gambar Bentuk Kerah Custom (Opsional)
+            </h3>
+            <button
+              type="button"
+              onClick={() => handleClipboardPaste(setFotoKerahUrl, setIsCompressingKerah, "Foto Kerah")}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-50 hover:bg-violet-100 dark:bg-violet-900/40 dark:hover:bg-violet-900/60 text-violet-700 dark:text-violet-300 text-xs font-bold border border-violet-200 dark:border-violet-700/50 transition cursor-pointer shadow-2xs"
+              title="Tempel gambar kerah dari clipboard (Ctrl+V)"
+            >
+              <ClipboardPaste className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+              <span>Paste Kerah (Ctrl+V)</span>
+            </button>
+          </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Unggah gambar atau bentuk kerah yang diinginkan pelanggan untuk panduan pengerjaan tukang jahit di SPK.
+            Unggah atau paste gambar bentuk kerah yang diinginkan pelanggan untuk panduan pengerjaan tukang jahit di SPK.
           </p>
 
           <div className="flex flex-col md:flex-row gap-6 items-center">
             {/* Upload Area */}
             <div className="w-full md:flex-1">
-              <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-violet-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 rounded-2xl cursor-pointer transition group">
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+              <input 
+                ref={kerahFileInputRef}
+                id="file-upload-kerah"
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                disabled={isCompressingKerah}
+                onClick={(e) => e.stopPropagation()}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    processImageBlob(file, setFotoKerahUrl, setIsCompressingKerah, "Foto Kerah");
+                  }
+                  e.target.value = '';
+                }}
+              />
+              <div 
+                tabIndex={0}
+                onPaste={(e) => handleElementPaste(e, setFotoKerahUrl, setIsCompressingKerah, "Foto Kerah")}
+                onDragOver={(e) => { e.preventDefault(); setIsDraggingKerah(true); }}
+                onDragLeave={() => setIsDraggingKerah(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingKerah(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file && file.type.startsWith('image/')) {
+                    processImageBlob(file, setFotoKerahUrl, setIsCompressingKerah, "Foto Kerah");
+                  }
+                }}
+                className={`flex flex-col items-center justify-center w-full min-h-36 p-4 border-2 border-dashed rounded-2xl cursor-pointer transition group outline-none focus:ring-2 focus:ring-violet-500/30 ${
+                  isDraggingKerah 
+                    ? 'border-violet-500 bg-violet-50/50 dark:bg-violet-950/30' 
+                    : 'border-slate-200 dark:border-slate-700 hover:border-violet-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 focus:border-violet-500'
+                }`}
+                onClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  if (target.closest('button') || target.tagName === 'INPUT') {
+                    return;
+                  }
+                  kerahFileInputRef.current?.click();
+                }}
+              >
+                <div className="flex flex-col items-center justify-center text-center">
                   {isCompressingKerah ? (
                     <>
                       <Loader2 className="h-8 w-8 text-violet-500 animate-spin mb-2" />
@@ -1768,54 +2070,37 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                         Mengunggah gambar kerah HD...
                       </p>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        Menyimpan gambar resolusi asli (Tanpa Kompresi)
+                        Memproses gambar resolusi tajam
                       </p>
                     </>
                   ) : (
                     <>
-                      <Upload className="h-8 w-8 text-slate-400 group-hover:text-violet-500 transition mb-2" />
-                      <p className="text-xs font-bold text-slate-700 dark:text-slate-350">
-                        Klik atau seret gambar kerah HD ke sini
+                      <Upload className="h-7 w-7 text-slate-400 group-hover:text-violet-500 transition mb-1.5" />
+                      <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                        Klik untuk upload, seret file, atau <span className="text-violet-600 dark:text-violet-400 underline decoration-dotted">tekan Ctrl+V</span> di sini
                       </p>
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        Format PNG, JPG, JPEG (Max. 15MB - Kualitas HD)
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Format PNG, JPG, JPEG (Maks. 25MB - Resolusi Tajam)
                       </p>
+                      <div className="flex items-center gap-2 mt-2.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleClipboardPaste(setFotoKerahUrl, setIsCompressingKerah, "Foto Kerah");
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold shadow-2xs transition"
+                        >
+                          <ClipboardPaste className="h-3 w-3" />
+                          <span>Paste dari Clipboard</span>
+                        </button>
+                        <span className="text-[10px] text-slate-400 font-medium">atau Ctrl + V</span>
+                      </div>
                     </>
                   )}
                 </div>
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  className="hidden" 
-                  disabled={isCompressingKerah}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      if (file.size > 15 * 1024 * 1024) {
-                        alert("Ukuran gambar maksimal adalah 15MB");
-                        return;
-                      }
-                      setIsCompressingKerah(true);
-                      try {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                          if (event.target?.result) {
-                            setFotoKerahUrl(event.target.result as string);
-                          }
-                          setIsCompressingKerah(false);
-                        };
-                        reader.onerror = () => {
-                          setIsCompressingKerah(false);
-                        };
-                        reader.readAsDataURL(file);
-                      } catch (err: any) {
-                        console.error("Gagal mengunggah gambar kerah:", err);
-                        setIsCompressingKerah(false);
-                      }
-                    }
-                  }}
-                />
-              </label>
+              </div>
             </div>
 
             {/* Preview Section */}
@@ -1832,14 +2117,24 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
                   className="max-h-full max-w-full object-contain rounded-lg shadow-2xs"
                   referrerPolicy="no-referrer"
                 />
-                <button
-                  type="button"
-                  onClick={() => setFotoKerahUrl('')}
-                  className="absolute top-2 right-2 p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full shadow-md opacity-90 hover:opacity-100 transition duration-150"
-                  title="Hapus gambar kerah"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                <div className="absolute top-2 right-2 flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyImageToClipboard(fotoKerahUrl, "Foto Kerah")}
+                    className="p-1.5 bg-slate-900/80 hover:bg-slate-900 text-white rounded-full shadow-md transition"
+                    title="Salin (Copy) gambar ke clipboard"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFotoKerahUrl('')}
+                    className="p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full shadow-md opacity-90 hover:opacity-100 transition duration-150"
+                    title="Hapus gambar kerah"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="w-full max-w-[200px] h-36 border border-dashed border-slate-200 dark:border-slate-750 rounded-2xl flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-900/20 text-xs">

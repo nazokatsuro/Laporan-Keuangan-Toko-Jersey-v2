@@ -5,7 +5,7 @@
 
 import React, { forwardRef } from 'react';
 import { Pesanan, ShopSettings } from '../../types';
-import { formatRupiah } from '../../utils';
+import { formatRupiah, checkOrderPaymentStatus } from '../../utils';
 import { 
   Scissors, 
   Layers, 
@@ -125,9 +125,13 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
           const vendorSublim = item.vendorSublim || order.vendorSublim || 'Vendor Print Sublim';
           const penerimaKomisi = item.penerimaKomisi || order.penerimaKomisi || 'Penerima Komisi';
 
-          const isJahitLunas = item.statusBayarJahit === 'Lunas' || order.statusBayarJahit === 'Lunas';
-          const isSublimLunas = item.statusBayarSublim === 'Lunas' || order.statusBayarSublim === 'Lunas';
-          const isKomisiLunas = item.statusBayarKomisi === 'Lunas' || order.statusBayarKomisi === 'Lunas';
+          const paymentStatus = checkOrderPaymentStatus(order, settings.cashFlowList, orders);
+          const isJahitLunas = item.statusBayarJahit === 'Lunas' 
+            || (item.statusBayarJahit !== 'Belum Lunas' && (order.statusBayarJahit === 'Lunas' || (order.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid)));
+          const isSublimLunas = item.statusBayarSublim === 'Lunas' 
+            || (item.statusBayarSublim !== 'Belum Lunas' && (order.statusBayarSublim === 'Lunas' || (order.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid)));
+          const isKomisiLunas = item.statusBayarKomisi === 'Lunas' 
+            || (item.statusBayarKomisi !== 'Belum Lunas' && (order.statusBayarKomisi === 'Lunas' || (order.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid)));
 
           // Category-specific calculation
           let cost = 0;
@@ -204,9 +208,10 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
         const vendorSublim = order.vendorSublim || 'Vendor Print Sublim';
         const penerimaKomisi = order.penerimaKomisi || 'Penerima Komisi';
 
-        const isJahitLunas = order.statusBayarJahit === 'Lunas';
-        const isSublimLunas = order.statusBayarSublim === 'Lunas';
-        const isKomisiLunas = order.statusBayarKomisi === 'Lunas';
+        const paymentStatus = checkOrderPaymentStatus(order, settings.cashFlowList, orders);
+        const isJahitLunas = order.statusBayarJahit === 'Lunas' || (order.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid);
+        const isSublimLunas = order.statusBayarSublim === 'Lunas' || (order.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid);
+        const isKomisiLunas = order.statusBayarKomisi === 'Lunas' || (order.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid);
 
         let cost = 0;
         let paid = 0;

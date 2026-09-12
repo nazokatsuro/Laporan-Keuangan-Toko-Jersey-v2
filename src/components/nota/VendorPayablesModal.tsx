@@ -5,7 +5,7 @@
 
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { Pesanan, ShopSettings } from '../../types';
-import { formatRupiah } from '../../utils';
+import { formatRupiah, checkOrderPaymentStatus } from '../../utils';
 import { VendorPayablesCard, VendorPayableCategory, VendorStatusFilter } from './VendorPayablesCard';
 import { 
   Printer, 
@@ -185,9 +185,10 @@ export function VendorPayablesModal({
         const sCost = q * (Number(it.printPerPcs ?? order.printPerPcs) || 0);
         const kCost = q * (Number(it.komisiPerPcs ?? order.komisiPerPcs) || 0);
 
-        const isJLunas = it.statusBayarJahit === 'Lunas' || order.statusBayarJahit === 'Lunas';
-        const isSLunas = it.statusBayarSublim === 'Lunas' || order.statusBayarSublim === 'Lunas';
-        const isKLunas = it.statusBayarKomisi === 'Lunas' || order.statusBayarKomisi === 'Lunas';
+        const paymentStatus = checkOrderPaymentStatus(order, settings.cashFlowList, localOrders);
+        const isJLunas = it.statusBayarJahit === 'Lunas' || (it.statusBayarJahit !== 'Belum Lunas' && (order.statusBayarJahit === 'Lunas' || (order.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid)));
+        const isSLunas = it.statusBayarSublim === 'Lunas' || (it.statusBayarSublim !== 'Belum Lunas' && (order.statusBayarSublim === 'Lunas' || (order.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid)));
+        const isKLunas = it.statusBayarKomisi === 'Lunas' || (it.statusBayarKomisi !== 'Belum Lunas' && (order.statusBayarKomisi === 'Lunas' || (order.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid)));
 
         if (category === 'jahit') {
           orderBiaya += jCost;
@@ -227,25 +228,29 @@ export function VendorPayablesModal({
       paidOrdersCount,
       unpaidOrdersCount
     };
-  }, [activeOrders, category]);
+  }, [activeOrders, category, settings.cashFlowList, localOrders]);
 
   // Quick toggle payment status for an order
   const handleToggleOrderPayment = (orderId: string, type: 'jahit' | 'sublim' | 'komisi') => {
     const next = localOrders.map(o => {
       if (o.id !== orderId) return o;
+      const paymentStatus = checkOrderPaymentStatus(o, settings.cashFlowList, localOrders);
 
       if (type === 'jahit') {
-        const newStatus = o.statusBayarJahit === 'Lunas' ? 'Belum Lunas' : 'Lunas';
+        const currentLunas = o.statusBayarJahit === 'Lunas' || (o.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid);
+        const newStatus = currentLunas ? 'Belum Lunas' : 'Lunas';
         const newItems = o.items?.map(it => ({ ...it, statusBayarJahit: newStatus }));
         return { ...o, statusBayarJahit: newStatus, items: newItems };
       }
       if (type === 'sublim') {
-        const newStatus = o.statusBayarSublim === 'Lunas' ? 'Belum Lunas' : 'Lunas';
+        const currentLunas = o.statusBayarSublim === 'Lunas' || (o.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid);
+        const newStatus = currentLunas ? 'Belum Lunas' : 'Lunas';
         const newItems = o.items?.map(it => ({ ...it, statusBayarSublim: newStatus }));
         return { ...o, statusBayarSublim: newStatus, items: newItems };
       }
       if (type === 'komisi') {
-        const newStatus = o.statusBayarKomisi === 'Lunas' ? 'Belum Lunas' : 'Lunas';
+        const currentLunas = o.statusBayarKomisi === 'Lunas' || (o.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid);
+        const newStatus = currentLunas ? 'Belum Lunas' : 'Lunas';
         const newItems = o.items?.map(it => ({ ...it, statusBayarKomisi: newStatus }));
         return { ...o, statusBayarKomisi: newStatus, items: newItems };
       }
@@ -455,9 +460,10 @@ export function VendorPayablesModal({
         const sCost = Number(item.printPerPcs ?? o.printPerPcs ?? 0) * q;
         const kCost = Number(item.komisiPerPcs ?? o.komisiPerPcs ?? 0) * q;
 
-        const isJL = item.statusBayarJahit === 'Lunas' || o.statusBayarJahit === 'Lunas';
-        const isSL = item.statusBayarSublim === 'Lunas' || o.statusBayarSublim === 'Lunas';
-        const isKL = item.statusBayarKomisi === 'Lunas' || o.statusBayarKomisi === 'Lunas';
+        const paymentStatus = checkOrderPaymentStatus(o, settings.cashFlowList, localOrders);
+        const isJL = item.statusBayarJahit === 'Lunas' || (item.statusBayarJahit !== 'Belum Lunas' && (o.statusBayarJahit === 'Lunas' || (o.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid)));
+        const isSL = item.statusBayarSublim === 'Lunas' || (item.statusBayarSublim !== 'Belum Lunas' && (o.statusBayarSublim === 'Lunas' || (o.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid)));
+        const isKL = item.statusBayarKomisi === 'Lunas' || (item.statusBayarKomisi !== 'Belum Lunas' && (o.statusBayarKomisi === 'Lunas' || (o.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid)));
 
         let costDetail = '';
         let statusBadge = '';
@@ -499,9 +505,10 @@ export function VendorPayablesModal({
           const sCost = Number(item.printPerPcs ?? o.printPerPcs ?? 0) * q;
           const kCost = Number(item.komisiPerPcs ?? o.komisiPerPcs ?? 0) * q;
 
-          const isJL = item.statusBayarJahit === 'Lunas' || o.statusBayarJahit === 'Lunas';
-          const isSL = item.statusBayarSublim === 'Lunas' || o.statusBayarSublim === 'Lunas';
-          const isKL = item.statusBayarKomisi === 'Lunas' || o.statusBayarKomisi === 'Lunas';
+          const paymentStatus = checkOrderPaymentStatus(o, settings.cashFlowList, localOrders);
+          const isJL = item.statusBayarJahit === 'Lunas' || (item.statusBayarJahit !== 'Belum Lunas' && (o.statusBayarJahit === 'Lunas' || (o.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid)));
+          const isSL = item.statusBayarSublim === 'Lunas' || (item.statusBayarSublim !== 'Belum Lunas' && (o.statusBayarSublim === 'Lunas' || (o.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid)));
+          const isKL = item.statusBayarKomisi === 'Lunas' || (item.statusBayarKomisi !== 'Belum Lunas' && (o.statusBayarKomisi === 'Lunas' || (o.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid)));
 
           let itCost = 0;
           let itPaid = 0;
@@ -915,9 +922,10 @@ export function VendorPayablesModal({
 
               <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                 {activeOrders.map(order => {
-                  const isJL = order.statusBayarJahit === 'Lunas';
-                  const isSL = order.statusBayarSublim === 'Lunas';
-                  const isKL = order.statusBayarKomisi === 'Lunas';
+                  const paymentStatus = checkOrderPaymentStatus(order, settings.cashFlowList, localOrders);
+                  const isJL = order.statusBayarJahit === 'Lunas' || (order.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid);
+                  const isSL = order.statusBayarSublim === 'Lunas' || (order.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid);
+                  const isKL = order.statusBayarKomisi === 'Lunas' || (order.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid);
 
                   return (
                     <div key={order.id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">

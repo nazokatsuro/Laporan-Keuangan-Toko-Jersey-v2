@@ -30,7 +30,10 @@ import {
   RotateCcw,
   RotateCw,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  ClipboardPaste,
+  Copy,
+  X
 } from 'lucide-react';
 
 interface SpkEditorProps {
@@ -396,32 +399,153 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
     });
   }, []);
 
-  // Image Upload Handlers
-  const handleUploadCollar = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setLocalData(prev => ({
-          ...prev,
-          collarImage: reader.result as string,
-          updatedAt: new Date().toISOString()
-        }));
-      };
-      reader.readAsDataURL(file);
-    }
+  // Non-blocking in-app notification toast (replaces blocking alert)
+  const [spkToast, setSpkToast] = useState<{ message: string; type: 'info' | 'success' | 'warning' } | null>(null);
+
+  const showToast = useCallback((message: string, type: 'info' | 'success' | 'warning' = 'info') => {
+    setSpkToast({ message, type });
+    setTimeout(() => {
+      setSpkToast(prev => (prev?.message === message ? null : prev));
+    }, 4500);
   }, []);
 
-  const handleUploadJersey = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // Safe image downscaling & loader to prevent browser Out-of-Memory (OOM) renderer crashes
+  const optimizeSpkImage = useCallback(async (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (blob.type === 'image/svg+xml' || blob.size < 600 * 1024) {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = (err) => reject(err);
+        reader.readAsDataURL(blob);
+        return;
+      }
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(blob);
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const MAX_DIM = 2200;
+        let w = img.width;
+        let h = img.height;
+        if (w > MAX_DIM || h > MAX_DIM) {
+          if (w > h) {
+            h = Math.round((h * MAX_DIM) / w);
+            w = MAX_DIM;
+          } else {
+            w = Math.round((w * MAX_DIM) / h);
+            h = MAX_DIM;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.readAsDataURL(blob);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        const isPng = blob.type === 'image/png';
+        const mime = isPng ? 'image/png' : 'image/jpeg';
+        const quality = isPng ? 0.92 : 0.88;
+        resolve(canvas.toDataURL(mime, quality));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = (err) => reject(err);
+        reader.readAsDataURL(blob);
+      };
+      img.src = objectUrl;
+    });
+  }, []);
+
+  // Image Upload Handlers
+  const handleUploadCollar = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
+      try {
+        const dataUrl = await optimizeSpkImage(file);
+        setLocalData(prev => ({
+          ...prev,
+          collarImage: dataUrl,
+          updatedAt: new Date().toISOString()
+        }));
+        showToast("Gambar kerah berhasil diupload!", "success");
+      } catch (err) {
+        console.error("Gagal memproses gambar kerah:", err);
+        showToast("Gagal memuat gambar kerah", "warning");
+      }
+      e.target.value = '';
+    }
+  }, [optimizeSpkImage, showToast]);
+
+  const handlePasteCollar = useCallback(async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const item of clipboardItems) {
+          const imageType = item.types.find(t => t.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            const dataUrl = await optimizeSpkImage(blob);
+            setLocalData(prev => ({
+              ...prev,
+              collarImage: dataUrl,
+              updatedAt: new Date().toISOString()
+            }));
+            showToast("Gambar kerah berhasil ditempel (Paste)!", "success");
+            return;
+          }
+        }
+        showToast("Tidak ada gambar di clipboard. Copy gambar kerah dulu lalu klik tombol ini.", "info");
+      } else {
+        showToast("Klik area Kerah dan gunakan tombol Ctrl+V (atau Cmd+V).", "info");
+      }
+    } catch (err) {
+      console.warn("Clipboard access notice:", err);
+      showToast("Akses clipboard otomatis dibatasi. Klik kotak Kerah dan tekan Ctrl+V.", "info");
+    }
+  }, [optimizeSpkImage, showToast]);
+
+  const handleCollarPasteEvent = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            const dataUrl = await optimizeSpkImage(file);
+            setLocalData(prev => ({
+              ...prev,
+              collarImage: dataUrl,
+              updatedAt: new Date().toISOString()
+            }));
+            showToast("Gambar kerah berhasil ditempel!", "success");
+          } catch (err) {
+            console.error("Gagal paste gambar kerah:", err);
+          }
+          return;
+        }
+      }
+    }
+  }, [optimizeSpkImage, showToast]);
+
+  const handleUploadJersey = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        const dataUrl = await optimizeSpkImage(file);
         setLocalData(prev => {
           const newImg: SPKJerseyImage = {
             id: `jimg-${Date.now()}`,
             title: `Desain Mockup #${(prev.jerseyImages || []).length + 1}`,
-            url: reader.result as string,
+            url: dataUrl,
             includedInSpk: true,
             zoom: 1,
             posX: 0,
@@ -436,10 +560,133 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
             updatedAt: new Date().toISOString()
           };
         });
-      };
-      reader.readAsDataURL(file);
+        showToast("Mockup jersey berhasil diupload!", "success");
+      } catch (err) {
+        console.error("Gagal upload mockup:", err);
+        showToast("Gagal memuat file gambar mockup", "warning");
+      }
+      e.target.value = '';
     }
-  }, []);
+  }, [optimizeSpkImage, showToast]);
+
+  const handlePasteJersey = useCallback(async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const item of clipboardItems) {
+          const imageType = item.types.find(t => t.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            const dataUrl = await optimizeSpkImage(blob);
+            setLocalData(prev => {
+              const newImg: SPKJerseyImage = {
+                id: `jimg-${Date.now()}`,
+                title: `Desain Mockup #${(prev.jerseyImages || []).length + 1}`,
+                url: dataUrl,
+                includedInSpk: true,
+                zoom: 1,
+                posX: 0,
+                posY: 0,
+                rotation: 90,
+                opacity: 1,
+                fitMode: 'contain'
+              };
+              return {
+                ...prev,
+                jerseyImages: [...(prev.jerseyImages || []), newImg],
+                updatedAt: new Date().toISOString()
+              };
+            });
+            showToast("Mockup jersey berhasil ditempel (Paste)!", "success");
+            return;
+          }
+        }
+        showToast("Tidak ada gambar di clipboard. Copy gambar mockup dulu lalu klik tombol ini.", "info");
+      } else {
+        showToast("Klik area galeri mockup dan tekan shortcut Ctrl+V.", "info");
+      }
+    } catch (err) {
+      console.warn("Clipboard access notice:", err);
+      showToast("Akses clipboard otomatis dibatasi. Klik area mockup dan tekan Ctrl+V.", "info");
+    }
+  }, [optimizeSpkImage, showToast]);
+
+  const handleJerseyPasteEvent = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            const dataUrl = await optimizeSpkImage(file);
+            setLocalData(prev => {
+              const newImg: SPKJerseyImage = {
+                id: `jimg-${Date.now()}`,
+                title: `Desain Mockup #${(prev.jerseyImages || []).length + 1}`,
+                url: dataUrl,
+                includedInSpk: true,
+                zoom: 1,
+                posX: 0,
+                posY: 0,
+                rotation: 90,
+                opacity: 1,
+                fitMode: 'contain'
+              };
+              return {
+                ...prev,
+                jerseyImages: [...(prev.jerseyImages || []), newImg],
+                updatedAt: new Date().toISOString()
+              };
+            });
+            showToast("Mockup jersey berhasil ditempel!", "success");
+          } catch (err) {
+            console.error("Gagal paste mockup:", err);
+          }
+          return;
+        }
+      }
+    }
+  }, [optimizeSpkImage, showToast]);
+
+  const handleCopyImage = useCallback(async (dataUrl: string, label: string) => {
+    try {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      if (blob.type === 'image/png') {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        showToast(`Gambar ${label} berhasil disalin ke clipboard!`, "success");
+      } else {
+        const img = new Image();
+        img.src = dataUrl;
+        await new Promise(resolve => { img.onload = resolve; });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0);
+        canvas.toBlob(async (pngBlob) => {
+          if (pngBlob) {
+            try {
+              await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': pngBlob })
+              ]);
+              showToast(`Gambar ${label} berhasil disalin ke clipboard!`, "success");
+            } catch {
+              showToast(`Gagal menyalin gambar ${label}`, "warning");
+            }
+          }
+        }, 'image/png');
+      }
+    } catch (err) {
+      console.warn("Gagal menyalin gambar:", err);
+      showToast(`Gagal menyalin gambar ${label} ke clipboard`, "warning");
+    }
+  }, [showToast]);
 
   const handleQuickRotateMockup = useCallback((id: string, customDeg?: number) => {
     setLocalData(prev => {
@@ -558,7 +805,28 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
+      {/* Floating Notification Toast */}
+      {spkToast && (
+        <div className="fixed top-5 right-5 z-50 max-w-md animate-bounce-short shadow-2xl">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold backdrop-blur-md border ${
+            spkToast.type === 'success' 
+              ? 'bg-emerald-950/90 text-emerald-200 border-emerald-500/40 shadow-emerald-950/30' 
+              : spkToast.type === 'warning'
+              ? 'bg-amber-950/90 text-amber-200 border-amber-500/40 shadow-amber-950/30'
+              : 'bg-slate-900/90 text-emerald-200 border-emerald-500/40 shadow-slate-950/40'
+          }`}>
+            <span className="flex-1">{spkToast.message}</span>
+            <button 
+              type="button" 
+              onClick={() => setSpkToast(null)}
+              className="p-1 hover:bg-white/10 rounded-lg transition"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* Top Workspace Action Toolbar */}
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
@@ -1064,29 +1332,44 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
             <div className="space-y-4 animate-fadeIn text-xs">
               
               {/* Collar Preview Box */}
-              <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3 bg-slate-50/40 dark:bg-slate-900/40">
+              <div 
+                tabIndex={0}
+                onPaste={handleCollarPasteEvent}
+                className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3 bg-slate-50/40 dark:bg-slate-900/40 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition"
+              >
                 <div className="flex items-center justify-between">
                   <span className="font-black text-slate-900 dark:text-white uppercase tracking-wider block">
                     1. Preview Gambar Kerah
                   </span>
                   {localData.collarImage && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveImageEditor({
-                        isOpen: true,
-                        type: 'collar',
-                        url: localData.collarImage || '',
-                        title: 'Gambar Kerah',
-                        zoom: localData.collarZoom || 1,
-                        posX: localData.collarPosX || 0,
-                        posY: localData.collarPosY || 0,
-                        rotation: localData.collarRotation || 0
-                      })}
-                      className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <Sliders className="h-3.5 w-3.5" />
-                      <span>Edit Posisi & Zoom</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyImage(localData.collarImage!, 'Kerah')}
+                        className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center gap-1 cursor-pointer"
+                        title="Salin (Copy) gambar kerah ke clipboard"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        <span>Copy Kerah</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveImageEditor({
+                          isOpen: true,
+                          type: 'collar',
+                          url: localData.collarImage || '',
+                          title: 'Gambar Kerah',
+                          zoom: localData.collarZoom || 1,
+                          posX: localData.collarPosX || 0,
+                          posY: localData.collarPosY || 0,
+                          rotation: localData.collarRotation || 0
+                        })}
+                        className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Sliders className="h-3.5 w-3.5" />
+                        <span>Edit Posisi & Zoom</span>
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -1113,19 +1396,32 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                       />
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-[#00805F] hover:bg-[#006B50] text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs">
                         <Upload className="h-3.5 w-3.5" />
                         <span>Ganti Gambar Kerah</span>
                         <input type="file" accept="image/*" onChange={handleUploadCollar} className="hidden" />
                       </label>
+                      <button
+                        type="button"
+                        onClick={handlePasteCollar}
+                        className="cursor-pointer px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors"
+                        title="Tempel gambar kerah dari clipboard (Ctrl+V)"
+                      >
+                        <ClipboardPaste className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>Paste Kerah (Ctrl+V)</span>
+                      </button>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Jersey Mockups Gallery Box */}
-              <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3.5 bg-slate-50/50 dark:bg-slate-900/50">
+              <div 
+                tabIndex={0}
+                onPaste={handleJerseyPasteEvent}
+                className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3.5 bg-slate-50/50 dark:bg-slate-900/50 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition"
+              >
                 {/* Header Title & Badge */}
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -1142,16 +1438,26 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
 
                 {/* Full-width Explanatory Text */}
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed m-0">
-                  Default orientasi lembar SPK: <strong className="text-[#00805F] dark:text-emerald-400 font-bold">90° (Vertikal)</strong>. Anda dapat menggeser posisi X/Y, zoom, atau memutar sudut mockup secara langsung.
+                  Default orientasi lembar SPK: <strong className="text-[#00805F] dark:text-emerald-400 font-bold">90° (Vertikal)</strong>. Anda dapat upload, paste gambar (Ctrl+V), geser posisi X/Y, zoom, atau memutar sudut mockup secara langsung.
                 </p>
                 
                 {/* Action Buttons Row */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-0.5">
                   <label className="cursor-pointer px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors select-none">
                     <Upload className="h-4 w-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
                     <span>Upload Mockup Baru</span>
                     <input type="file" accept="image/*" onChange={handleUploadJersey} className="hidden" />
                   </label>
+
+                  <button
+                    type="button"
+                    onClick={handlePasteJersey}
+                    className="cursor-pointer px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 shadow-2xs transition-colors"
+                    title="Tempel gambar mockup baru dari clipboard (Ctrl+V)"
+                  >
+                    <ClipboardPaste className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span>Paste Mockup (Ctrl+V)</span>
+                  </button>
 
                   {(localData.jerseyImages || []).length > 0 && (
                     <button
@@ -1245,15 +1551,27 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                             </div>
                           </div>
 
-                          {/* Delete Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteJerseyImage(img.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer transition-colors shrink-0"
-                            title="Hapus mockup ini"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Copy Image Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyImage(img.url, img.title)}
+                              className="p-1.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/30 cursor-pointer transition-colors"
+                              title="Salin (Copy) gambar mockup ini ke clipboard"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </button>
+
+                            {/* Delete Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteJerseyImage(img.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer transition-colors"
+                              title="Hapus mockup ini"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Bottom Row: Control Toolbar */}
