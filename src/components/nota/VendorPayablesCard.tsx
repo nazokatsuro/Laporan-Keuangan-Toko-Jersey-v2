@@ -32,6 +32,7 @@ export interface VendorPayablesCardProps {
   customNotes?: string;
   className?: string;
   id?: string;
+  compact?: boolean;
 }
 
 export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardProps>(
@@ -45,7 +46,8 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
       documentNumber,
       customNotes,
       className = '',
-      id
+      id,
+      compact = false
     },
     ref
   ) {
@@ -429,11 +431,11 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
       <div 
         ref={ref}
         id={id}
-        className={`bg-white text-slate-900 w-[840px] min-w-[840px] max-w-[840px] mx-auto p-6 sm:p-8 rounded-2xl shadow-lg border border-slate-200 print:shadow-none print:border-none print:p-6 print:max-w-none print:w-full print:min-w-0 ${className}`}
+        className={`bg-white text-slate-900 w-[840px] min-w-[840px] max-w-[840px] mx-auto ${compact ? 'p-4 sm:p-5' : 'p-6 sm:p-8'} rounded-2xl shadow-lg border border-slate-200 print:shadow-none print:border-none ${compact ? 'print:p-3' : 'print:p-5'} print:max-w-none print:w-full print:min-w-0 nota-print-target ${className}`}
         style={{ colorScheme: 'light', boxSizing: 'border-box' }}
       >
         {/* Header Toko & Dokumen */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-5 border-b-2 border-slate-800">
+        <div className={`rekap-header-block break-inside-avoid print:break-inside-avoid flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${compact ? 'pb-3' : 'pb-5'} border-b-2 border-slate-800`}>
           
           {/* Logo & Identitas Toko */}
           <div className="flex items-center gap-3.5">
@@ -441,17 +443,17 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
               <img 
                 src={settings.logoUrl} 
                 alt={settings.namaToko} 
-                className="h-14 w-14 object-contain rounded-xl border border-slate-200 p-1 bg-white shrink-0"
+                className={`${compact ? 'h-11 w-11' : 'h-14 w-14'} object-contain rounded-xl border border-slate-200 p-1 bg-white shrink-0`}
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="h-14 w-14 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-xl tracking-tighter shrink-0">
+              <div className={`${compact ? 'h-11 w-11 text-lg' : 'h-14 w-14 text-xl'} rounded-xl bg-slate-900 text-white flex items-center justify-center font-black tracking-tighter shrink-0`}>
                 {(settings.namaToko || 'NA').substring(0, 2).toUpperCase()}
               </div>
             )}
             
             <div>
-              <h2 className="text-xl font-black text-slate-950 tracking-tight leading-tight">
+              <h2 className={`${compact ? 'text-lg' : 'text-xl'} font-black text-slate-950 tracking-tight leading-tight`}>
                 {settings.namaToko || 'Nomaden Apparel'}
               </h2>
               {settings.taglineToko && (
@@ -512,11 +514,11 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
         </div>
 
         {/* 4-KPI Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-4 mb-5">
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+        <div className={`rekap-kpi-block break-inside-avoid print:break-inside-avoid grid grid-cols-2 sm:grid-cols-4 ${compact ? 'gap-2 my-2.5 mb-3' : 'gap-3 my-4 mb-5'}`}>
+          <div className={`bg-slate-50 ${compact ? 'p-2' : 'p-3'} rounded-xl border border-slate-200`}>
             <span className="text-[9.5px] uppercase font-bold text-slate-400 block tracking-wider">Total Pesanan (PO)</span>
             <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-lg font-black text-slate-900 font-mono">{totalOrdersCount}</span>
+              <span className={`${compact ? 'text-base' : 'text-lg'} font-black text-slate-900 font-mono`}>{totalOrdersCount}</span>
               <span className="text-[11px] text-slate-500">PO ({totalPcsAll} Pcs)</span>
             </div>
             <div className="flex items-center gap-1.5 mt-1 text-[10px] font-semibold">
@@ -531,46 +533,46 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
             </div>
           </div>
 
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div className={`bg-slate-50 ${compact ? 'p-2' : 'p-3'} rounded-xl border border-slate-200`}>
             <span className="text-[9.5px] uppercase font-bold text-slate-400 block tracking-wider">Total Nilai Transaksi</span>
-            <span className="text-base font-black text-slate-900 font-mono block mt-0.5">
+            <span className={`${compact ? 'text-sm' : 'text-base'} font-black text-slate-900 font-mono block mt-0.5`}>
               {formatRupiah(grandTotalCost)}
             </span>
-            <span className="text-[9.5px] text-slate-400 block mt-0.5">Akumulasi seluruh pesanan</span>
+            <span className="text-[9px] text-slate-400 block mt-0.5">Akumulasi seluruh pesanan</span>
           </div>
 
-          <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+          <div className={`bg-emerald-50/70 ${compact ? 'p-2' : 'p-3'} rounded-xl border border-emerald-200`}>
             <span className="text-[9.5px] uppercase font-bold text-emerald-700 block tracking-wider">Sudah Lunas / Dibayar</span>
-            <span className="text-base font-black text-emerald-700 font-mono block mt-0.5">
+            <span className={`${compact ? 'text-sm' : 'text-base'} font-black text-emerald-700 font-mono block mt-0.5`}>
               {formatRupiah(grandTotalPaid)}
             </span>
-            <span className="text-[9.5px] text-emerald-600 font-medium block mt-0.5">
+            <span className="text-[9px] text-emerald-600 font-medium block mt-0.5">
               {grandTotalCost > 0 ? `${Math.round((grandTotalPaid / grandTotalCost) * 100)}% dari transaksi` : '-'}
             </span>
           </div>
 
-          <div className={`p-3 rounded-xl border ${grandTotalUnpaid <= 0 ? 'bg-emerald-50/50 border-emerald-200' : 'bg-rose-50/70 border-rose-200'}`}>
+          <div className={`${compact ? 'p-2' : 'p-3'} rounded-xl border ${grandTotalUnpaid <= 0 ? 'bg-emerald-50/50 border-emerald-200' : 'bg-rose-50/70 border-rose-200'}`}>
             <span className={`text-[9.5px] uppercase font-bold block tracking-wider ${grandTotalUnpaid <= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
               Sisa Tagihan (Kewajiban)
             </span>
-            <span className={`text-base font-black font-mono block mt-0.5 ${grandTotalUnpaid <= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+            <span className={`${compact ? 'text-sm' : 'text-base'} font-black font-mono block mt-0.5 ${grandTotalUnpaid <= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
               {grandTotalUnpaid <= 0 ? 'LUNAS (Rp 0)' : formatRupiah(grandTotalUnpaid)}
             </span>
-            <span className={`text-[9.5px] font-medium block mt-0.5 ${grandTotalUnpaid <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+            <span className={`text-[9px] font-medium block mt-0.5 ${grandTotalUnpaid <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
               {grandTotalUnpaid <= 0 ? 'Semua tagihan lunas' : `${unpaidOrdersCount} PO belum lunas`}
             </span>
           </div>
         </div>
 
         {/* Tabel Rincian Per PO & Item */}
-        <div className="rounded-xl border border-slate-300 shadow-2xs mb-5 overflow-hidden">
+        <div className={`rounded-xl border border-slate-300 shadow-2xs ${compact ? 'mb-3' : 'mb-5'} overflow-hidden`}>
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-slate-100 text-slate-800 font-extrabold uppercase text-[10px] border-b border-slate-300">
-                <th className="py-2.5 px-2 text-center w-8 border-r border-slate-200">No</th>
-                <th className="py-2.5 px-2.5 w-40 border-r border-slate-200">Nama PO / Pemesan</th>
-                <th className="py-2.5 px-2.5 w-36 border-r border-slate-200">Rincian Item</th>
-                <th className="py-2.5 px-2 text-center w-12 border-r border-slate-200">Qty</th>
+                <th className={`${compact ? 'py-1.5' : 'py-2.5'} px-2 text-center w-8 border-r border-slate-200`}>No</th>
+                <th className={`${compact ? 'py-1.5' : 'py-2.5'} px-2.5 w-40 border-r border-slate-200`}>Nama PO / Pemesan</th>
+                <th className={`${compact ? 'py-1.5' : 'py-2.5'} px-2.5 w-36 border-r border-slate-200`}>Rincian Item</th>
+                <th className={`${compact ? 'py-1.5' : 'py-2.5'} px-2 text-center w-12 border-r border-slate-200`}>Qty</th>
                 
                 {category === 'jahit' && (
                   <>
@@ -630,15 +632,16 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                         return (
                           <tr 
                             key={`${group.orderId}-${item.itemId}-${itemIdx}`} 
-                            className={`hover:bg-slate-50/80 transition-colors ${
-                              isLastItem ? 'border-b-2 border-slate-300' : 'border-b border-slate-100'
+                            className={`rekap-row break-inside-avoid print:break-inside-avoid hover:bg-slate-50/80 transition-colors ${
+                              isLastItem ? 'border-b-2 border-slate-300 rekap-po-boundary' : 'border-b border-slate-100'
                             }`}
+                            data-po-boundary={isLastItem ? 'true' : undefined}
                           >
                             {/* Column 1: No PO (Rowspanned per PO) */}
                             {isFirstItem && (
                               <td 
                                 rowSpan={itemCount} 
-                                className="py-2.5 px-2 text-center font-black text-slate-900 border-r border-slate-200 bg-slate-50/40 align-top text-xs"
+                                className={`${compact ? 'py-1.5' : 'py-2.5'} px-2 text-center font-black text-slate-900 border-r border-slate-200 bg-slate-50/40 align-top text-xs`}
                               >
                                 {poNumber}
                               </td>
@@ -648,7 +651,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                             {isFirstItem && (
                               <td 
                                 rowSpan={itemCount} 
-                                className="py-2.5 px-2.5 border-r border-slate-200 break-words bg-slate-50/30 align-top"
+                                className={`${compact ? 'py-1.5' : 'py-2.5'} px-2.5 border-r border-slate-200 break-words bg-slate-50/30 align-top`}
                               >
                                 <p className="font-extrabold text-slate-950 text-[11.5px] leading-tight">
                                   {group.namaPo}
@@ -848,26 +851,29 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
 
             {/* Total Footer Row */}
             <tfoot>
-              <tr className="bg-slate-100 font-extrabold border-t-2 border-slate-300 text-xs">
-                <td colSpan={3} className="py-3 px-2.5 text-right uppercase tracking-wider border-r border-slate-200 text-slate-900 font-black">
+              <tr 
+                className={`rekap-tfoot-row rekap-po-boundary break-inside-avoid print:break-inside-avoid bg-slate-100 font-extrabold border-t-2 border-slate-300 ${compact ? 'text-[11px]' : 'text-xs'}`}
+                data-po-boundary="true"
+              >
+                <td colSpan={3} className={`${compact ? 'py-2 px-2' : 'py-3 px-2.5'} text-right uppercase tracking-wider border-r border-slate-200 text-slate-900 font-black`}>
                   TOTAL KESELURUHAN ({totalOrdersCount} PO)
                 </td>
-                <td className="py-3 px-2 text-center font-black border-r border-slate-200 font-mono text-indigo-950">
+                <td className={`${compact ? 'py-2 px-1.5' : 'py-3 px-2'} text-center font-black border-r border-slate-200 font-mono text-indigo-950`}>
                   {totalPcsAll} <span className="text-[8.5px] font-normal text-slate-500">Pcs</span>
                 </td>
 
                 {category === 'jahit' && (
                   <>
-                    <td colSpan={2} className="py-3 px-2.5 text-right uppercase text-[9.5px] text-slate-500 border-r border-slate-200 font-bold">
+                    <td colSpan={2} className={`${compact ? 'py-2 px-2' : 'py-3 px-2.5'} text-right uppercase text-[9.5px] text-slate-500 border-r border-slate-200 font-bold`}>
                       Lunas: {formatRupiah(grandTotalPaid)}
                     </td>
-                    <td className="py-3 px-2 text-center border-r border-slate-200 font-bold text-[9.5px] text-slate-700">
+                    <td className={`${compact ? 'py-2 px-1.5' : 'py-3 px-2'} text-center border-r border-slate-200 font-bold text-[9.5px] text-slate-700`}>
                       {paidOrdersCount}L / {unpaidOrdersCount}B
                     </td>
-                    <td className="py-3 px-2.5 text-right font-mono font-black text-slate-900 border-r border-slate-200">
+                    <td className={`${compact ? 'py-2 px-2' : 'py-3 px-2.5'} text-right font-mono font-black text-slate-900 border-r border-slate-200`}>
                       {formatRupiah(grandTotalCost)}
                     </td>
-                    <td className="py-3 px-2.5 text-right font-mono font-black text-rose-700 bg-rose-100/70 text-sm">
+                    <td className={`${compact ? 'py-2 px-2 text-xs' : 'py-3 px-2.5 text-sm'} text-right font-mono font-black text-rose-700 bg-rose-100/70`}>
                       {grandTotalUnpaid <= 0 ? 'Rp 0 (LUNAS)' : formatRupiah(grandTotalUnpaid)}
                     </td>
                   </>
@@ -875,16 +881,16 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
 
                 {category === 'sublim' && (
                   <>
-                    <td colSpan={2} className="py-3 px-2.5 text-right uppercase text-[9.5px] text-slate-500 border-r border-slate-200 font-bold">
+                    <td colSpan={2} className={`${compact ? 'py-2 px-2' : 'py-3 px-2.5'} text-right uppercase text-[9.5px] text-slate-500 border-r border-slate-200 font-bold`}>
                       Lunas: {formatRupiah(grandTotalPaid)}
                     </td>
-                    <td className="py-3 px-2 text-center border-r border-slate-200 font-bold text-[9.5px] text-slate-700">
+                    <td className={`${compact ? 'py-2 px-1.5' : 'py-3 px-2'} text-center border-r border-slate-200 font-bold text-[9.5px] text-slate-700`}>
                       {paidOrdersCount}L / {unpaidOrdersCount}B
                     </td>
-                    <td className="py-3 px-2.5 text-right font-mono font-black text-slate-900 border-r border-slate-200">
+                    <td className={`${compact ? 'py-2 px-2' : 'py-3 px-2.5'} text-right font-mono font-black text-slate-900 border-r border-slate-200`}>
                       {formatRupiah(grandTotalCost)}
                     </td>
-                    <td className="py-3 px-2.5 text-right font-mono font-black text-sky-900 bg-sky-100/70 text-sm">
+                    <td className={`${compact ? 'py-2 px-2 text-xs' : 'py-3 px-2.5 text-sm'} text-right font-mono font-black text-sky-900 bg-sky-100/70`}>
                       {grandTotalUnpaid <= 0 ? 'Rp 0 (LUNAS)' : formatRupiah(grandTotalUnpaid)}
                     </td>
                   </>
@@ -892,16 +898,16 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
 
                 {category === 'komisi' && (
                   <>
-                    <td colSpan={2} className="py-3 px-2.5 text-right uppercase text-[9.5px] text-slate-500 border-r border-slate-200 font-bold">
+                    <td colSpan={2} className={`${compact ? 'py-2 px-2' : 'py-3 px-2.5'} text-right uppercase text-[9.5px] text-slate-500 border-r border-slate-200 font-bold`}>
                       Lunas: {formatRupiah(grandTotalPaid)}
                     </td>
-                    <td className="py-3 px-2 text-center border-r border-slate-200 font-bold text-[9.5px] text-slate-700">
+                    <td className={`${compact ? 'py-2 px-1.5' : 'py-3 px-2'} text-center border-r border-slate-200 font-bold text-[9.5px] text-slate-700`}>
                       {paidOrdersCount}L / {unpaidOrdersCount}B
                     </td>
-                    <td className="py-3 px-2.5 text-right font-mono font-black text-slate-900 border-r border-slate-200">
+                    <td className={`${compact ? 'py-2 px-2' : 'py-3 px-2.5'} text-right font-mono font-black text-slate-900 border-r border-slate-200`}>
                       {formatRupiah(grandTotalCost)}
                     </td>
-                    <td className="py-3 px-2.5 text-right font-mono font-black text-emerald-900 bg-emerald-100/70 text-sm">
+                    <td className={`${compact ? 'py-2 px-2 text-xs' : 'py-3 px-2.5 text-sm'} text-right font-mono font-black text-emerald-900 bg-emerald-100/70`}>
                       {grandTotalUnpaid <= 0 ? 'Rp 0 (LUNAS)' : formatRupiah(grandTotalUnpaid)}
                     </td>
                   </>
@@ -909,25 +915,25 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
 
                 {category === 'semua' && (
                   <>
-                    <td className="py-3 px-2 text-right font-mono text-[10.5px] font-bold text-amber-900 border-r border-slate-200">
+                    <td className={`${compact ? 'py-2 px-1.5' : 'py-3 px-2'} text-right font-mono text-[10.5px] font-bold text-amber-900 border-r border-slate-200`}>
                       <div>{formatRupiah(grandSumJahit)}</div>
                       <div className="text-[8.5px] text-slate-500 font-normal">Sisa: {formatRupiah(grandSumJahitUnpaid)}</div>
                     </td>
-                    <td className="py-3 px-2 text-right font-mono text-[10.5px] font-bold text-sky-900 border-r border-slate-200">
+                    <td className={`${compact ? 'py-2 px-1.5' : 'py-3 px-2'} text-right font-mono text-[10.5px] font-bold text-sky-900 border-r border-slate-200`}>
                       <div>{formatRupiah(grandSumSublim)}</div>
                       <div className="text-[8.5px] text-slate-500 font-normal">Sisa: {formatRupiah(grandSumSublimUnpaid)}</div>
                     </td>
-                    <td className="py-3 px-2 text-right font-mono text-[10.5px] font-bold text-emerald-900 border-r border-slate-200">
+                    <td className={`${compact ? 'py-2 px-1.5' : 'py-3 px-2'} text-right font-mono text-[10.5px] font-bold text-emerald-900 border-r border-slate-200`}>
                       <div>{formatRupiah(grandSumKomisi)}</div>
                       <div className="text-[8.5px] text-slate-500 font-normal">Sisa: {formatRupiah(grandSumKomisiUnpaid)}</div>
                     </td>
-                    <td className="py-3 px-2.5 text-right font-mono font-black text-slate-900 border-r border-slate-200 text-xs">
+                    <td className={`${compact ? 'py-2 px-2' : 'py-3 px-2.5'} text-right font-mono font-black text-slate-900 border-r border-slate-200 text-xs`}>
                       {formatRupiah(grandTotalCost)}
                     </td>
-                    <td className="py-3 px-2 text-center border-r border-slate-200 text-[9.5px] font-bold text-slate-700">
+                    <td className={`${compact ? 'py-2 px-1.5' : 'py-3 px-2'} text-center border-r border-slate-200 text-[9.5px] font-bold text-slate-700`}>
                       {paidOrdersCount}L / {unpaidOrdersCount}B
                     </td>
-                    <td className="py-3 px-2.5 text-right font-mono font-black text-rose-700 bg-rose-100/70 text-sm">
+                    <td className={`${compact ? 'py-2 px-2 text-xs' : 'py-3 px-2.5 text-sm'} text-right font-mono font-black text-rose-700 bg-rose-100/70`}>
                       {grandTotalUnpaid <= 0 ? 'Rp 0 (LUNAS)' : formatRupiah(grandTotalUnpaid)}
                     </td>
                   </>
@@ -938,26 +944,26 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
         </div>
 
         {/* Ringkasan Akumulasi & Grand Total Card */}
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mb-6">
+        <div className={`rekap-summary-block break-inside-avoid print:break-inside-avoid grid grid-cols-1 sm:grid-cols-12 ${compact ? 'gap-2.5 mb-3' : 'gap-4 mb-6'}`}>
           
           {/* Summary KPI Badges */}
-          <div className="sm:col-span-7 bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+          <div className={`sm:col-span-7 bg-slate-50 ${compact ? 'p-3' : 'p-4'} rounded-xl border border-slate-200 space-y-2`}>
             <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
               <ShieldCheck className="h-4 w-4 text-indigo-600" />
               <span>Rincian Rekapitulasi Pembayaran Vendor</span>
             </h4>
             <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-              <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
-                <span className="text-[9.5px] text-slate-500 font-medium block">Total Transaksi</span>
-                <span className="text-xs font-black text-slate-900">{formatRupiah(grandTotalCost)}</span>
+              <div className={`bg-white ${compact ? 'p-1.5' : 'p-2'} rounded-lg border border-slate-200 shadow-2xs`}>
+                <span className="text-[9px] text-slate-500 font-medium block">Total Transaksi</span>
+                <span className={`${compact ? 'text-[11px]' : 'text-xs'} font-black text-slate-900`}>{formatRupiah(grandTotalCost)}</span>
               </div>
-              <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
-                <span className="text-[9.5px] text-emerald-600 font-medium block">Sudah Lunas</span>
-                <span className="text-xs font-black text-emerald-700">{formatRupiah(grandTotalPaid)}</span>
+              <div className={`bg-white ${compact ? 'p-1.5' : 'p-2'} rounded-lg border border-slate-200 shadow-2xs`}>
+                <span className="text-[9px] text-emerald-600 font-medium block">Sudah Lunas</span>
+                <span className={`${compact ? 'text-[11px]' : 'text-xs'} font-black text-emerald-700`}>{formatRupiah(grandTotalPaid)}</span>
               </div>
-              <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
-                <span className="text-[9.5px] text-rose-600 font-medium block">Sisa Tagihan</span>
-                <span className="text-xs font-black text-rose-700">{formatRupiah(grandTotalUnpaid)}</span>
+              <div className={`bg-white ${compact ? 'p-1.5' : 'p-2'} rounded-lg border border-slate-200 shadow-2xs`}>
+                <span className="text-[9px] text-rose-600 font-medium block">Sisa Tagihan</span>
+                <span className={`${compact ? 'text-[11px]' : 'text-xs'} font-black text-rose-700`}>{formatRupiah(grandTotalUnpaid)}</span>
               </div>
             </div>
 
@@ -974,12 +980,12 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
           </div>
 
           {/* Grand Total Sisa Tagihan Highlight */}
-          <div className="sm:col-span-5 bg-linear-to-br from-slate-900 to-slate-950 text-white p-4 rounded-xl shadow-xs flex flex-col justify-between">
+          <div className={`sm:col-span-5 bg-linear-to-br from-slate-900 to-slate-950 text-white ${compact ? 'p-3' : 'p-4'} rounded-xl shadow-xs flex flex-col justify-between`}>
             <div>
               <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider block">
                 Total Sisa Tagihan (Kewajiban Belum Lunas):
               </span>
-              <p className="font-mono text-2xl font-black text-amber-300 mt-1">
+              <p className={`font-mono ${compact ? 'text-xl' : 'text-2xl'} font-black text-amber-300 mt-1`}>
                 {grandTotalUnpaid <= 0 ? 'LUNAS (Rp 0)' : formatRupiah(grandTotalUnpaid)}
               </p>
               <div className="flex items-center gap-3 text-[10.5px] text-slate-300 mt-1 pt-1 border-t border-slate-800">
@@ -988,7 +994,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
                 <span>Lunas: <strong className="text-emerald-400 font-mono">{formatRupiah(grandTotalPaid)}</strong></span>
               </div>
             </div>
-            <p className="text-[9.5px] text-slate-400 mt-2 italic leading-tight">
+            <p className="text-[9px] text-slate-400 mt-2 italic leading-tight">
               *Rincian resmi di atas mencantumkan daftar pesanan yang sudah lunas dan yang belum lunas per tanggal cetak.
             </p>
           </div>
@@ -996,11 +1002,11 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
         </div>
 
         {/* Dual Signatures / Tanda Tangan Validasi */}
-        <div className="pt-4 border-t-2 border-slate-200">
-          <div className="grid grid-cols-2 gap-8 text-center text-xs">
+        <div className={`rekap-signatures-block break-inside-avoid print:break-inside-avoid ${compact ? 'pt-2.5' : 'pt-4'} border-t-2 border-slate-200`}>
+          <div className={`grid grid-cols-2 gap-8 text-center ${compact ? 'text-[11px]' : 'text-xs'}`}>
             
             {/* Tanda Tangan Yang Menagihkan / Vendor / Penjahit / Komisi */}
-            <div className="space-y-16">
+            <div className={compact ? 'space-y-10' : 'space-y-16'}>
               <div>
                 <p className="font-bold text-slate-700">Yang Menagihkan / Mitra,</p>
                 <p className="text-[10px] text-slate-500">({titleConfig.roleSignLeft})</p>
@@ -1011,7 +1017,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
             </div>
 
             {/* Tanda Tangan Mengetahui Toko */}
-            <div className="space-y-16">
+            <div className={compact ? 'space-y-10' : 'space-y-16'}>
               <div>
                 <p className="font-bold text-slate-700">Mengetahui & Menyetujui,</p>
                 <p className="text-[10px] text-slate-500">({titleConfig.roleSignRight})</p>
@@ -1023,7 +1029,7 @@ export const VendorPayablesCard = forwardRef<HTMLDivElement, VendorPayablesCardP
 
           </div>
 
-          <div className="mt-6 pt-3 border-t border-slate-200 text-center text-[10px] text-slate-400">
+          <div className={`${compact ? 'mt-3 pt-2' : 'mt-6 pt-3'} border-t border-slate-200 text-center text-[10px] text-slate-400`}>
             Dokumen Nota Rincian Tagihan Produksi & Mitra • {settings.namaToko || 'Nomaden Apparel'} • {dateFormatted}
           </div>
         </div>

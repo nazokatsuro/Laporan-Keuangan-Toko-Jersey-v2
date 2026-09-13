@@ -93,11 +93,12 @@ export function generateDirectVectorPdf(spk: SPKData): void {
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.text('NO', 12, 65);
-  doc.text('NAMA PEMAIN', 20, 65);
-  doc.text('SZ', 65, 65);
-  doc.text('NOP', 75, 65);
-  doc.text('MODEL', 90, 65);
-  doc.text('KET', 110, 65);
+  doc.text('NAMA PEMAIN', 18, 65);
+  doc.text('QTY', 52, 65);
+  doc.text('SZ', 60, 65);
+  doc.text('NOP', 68, 65);
+  doc.text('MODEL', 78, 65);
+  doc.text('KETERANGAN', 94, 65);
 
   // Player Rows
   doc.setTextColor(30, 41, 59);
@@ -112,12 +113,13 @@ export function generateDirectVectorPdf(spk: SPKData): void {
     doc.setFontSize(7.5);
     doc.text(String(idx + 1), 12, y);
     doc.setFont('helvetica', 'bold');
-    doc.text(p.name ? p.name.substring(0, 24) : '-', 20, y);
+    doc.text(p.name ? p.name.substring(0, 20) : '-', 18, y);
     doc.setFont('helvetica', 'normal');
-    doc.text(p.size || 'L', 65, y);
-    doc.text(p.number || '-', 75, y);
-    doc.text(p.model || 'PENDEK', 90, y);
-    doc.text(p.notes || '-', 110, y);
+    doc.text(String(p.qty || 1), 53, y);
+    doc.text(p.size || 'L', 60, y);
+    doc.text(p.number || '-', 68, y);
+    doc.text(p.model ? (p.model.length > 8 ? p.model.substring(0, 8) : p.model) : 'PENDEK', 78, y);
+    doc.text(p.notes || '-', 94, y);
     y += 6;
   });
 

@@ -10,8 +10,9 @@ import { SpkQuickInputModal } from './SpkQuickInputModal';
 import { SpkImageEditorModal } from './SpkImageEditorModal';
 import { SpkValidationModal } from './SpkValidationModal';
 import { SpkFullscreenModal } from './SpkFullscreenModal';
-import { validateSpkData, normalizeSize } from '../../utils/spkParser';
+import { validateSpkData, normalizeSize, mergeDuplicatePlayers } from '../../utils/spkParser';
 import { exportSpkPdf, exportSpkImage, printSpkDocument } from '../../utils/spkExport';
+import { compressImage } from '../../utils';
 import { 
   Sparkles, 
   Plus, 
@@ -69,9 +70,37 @@ const MemoizedPlayerRow = React.memo<PlayerRowProps>(({ player, index, onUpdate,
         <input
           type="text"
           value={player.name}
-          onChange={(e) => onUpdate(player.id, 'name', e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            // Detect if user typed e.g. "5pcs", "5 pcs" into the name
+            const pcsMatch = val.match(/^(\d+)\s*pcs?$/i);
+            if (pcsMatch) {
+              const detected = parseInt(pcsMatch[1], 10);
+              if (!isNaN(detected) && detected > 0) {
+                onUpdate(player.id, 'qty', detected);
+                onUpdate(player.id, 'name', '-');
+                return;
+              }
+            }
+            onUpdate(player.id, 'name', val);
+          }}
           placeholder="Nama Pemain"
           className="w-full px-2 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-black text-slate-900 dark:text-white"
+        />
+      </td>
+
+      {/* QTY */}
+      <td className="py-1 px-1 text-center w-14">
+        <input
+          type="number"
+          min="1"
+          value={player.qty || 1}
+          onChange={(e) => {
+            const val = parseInt(e.target.value, 10);
+            onUpdate(player.id, 'qty', isNaN(val) || val < 1 ? 1 : val);
+          }}
+          className="w-full px-1 py-1 text-xs text-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-black text-emerald-700 dark:text-emerald-400"
+          title="Jumlah pcs untuk baris ini"
         />
       </td>
 
@@ -113,10 +142,10 @@ const MemoizedPlayerRow = React.memo<PlayerRowProps>(({ player, index, onUpdate,
       <td className="py-1 px-1">
         <input
           type="text"
-          value={player.notes || '-'}
+          value={player.notes === '-' ? '' : (player.notes || '')}
           onChange={(e) => onUpdate(player.id, 'notes', e.target.value)}
-          placeholder="Keterangan"
-          className="w-full px-1.5 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-bold"
+          placeholder="Keterangan (misal: Kiper)"
+          className="w-full px-2 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-bold"
         />
       </td>
 
@@ -183,6 +212,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
   const [saveToast, setSaveToast] = useState(false);
 
   const totalPlayers = localData.players?.length || 0;
+  const totalRosterPcs = useMemo(() => {
+    return (localData.players || []).reduce((sum, p) => sum + (p.qty && p.qty > 0 ? p.qty : 1), 0);
+  }, [localData.players]);
   const rawMaxPage1 = localData.layout?.maxPlayersPerPage;
   const maxPage1Rows = typeof rawMaxPage1 === 'number' && rawMaxPage1 >= 20 ? rawMaxPage1 : 50;
 
@@ -215,16 +247,35 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
 
   // Form Field Updates (Pure state updates without side-effects inside updater)
   const updateField = useCallback((field: keyof SPKData, value: any) => {
-    setLocalData(prev => ({
-      ...prev,
-      [field]: value,
-      updatedAt: new Date().toISOString()
-    }));
+    setLocalData(prev => {
+      const nextNotes = { ...prev.notes };
+      // Two-way synchronization of material, sleeve, collar, and sewing to notes
+      if (field === 'material') {
+        nextNotes.bahan = value;
+      } else if (field === 'sleeveModel') {
+        nextNotes.tangan = value;
+      } else if (field === 'collarModel') {
+        nextNotes.kerah = value;
+      } else if (field === 'sewingModel') {
+        nextNotes.jahit = value;
+      }
+
+      return {
+        ...prev,
+        [field]: value,
+        notes: nextNotes,
+        updatedAt: new Date().toISOString()
+      };
+    });
   }, []);
 
   const updateNotesField = useCallback((field: string, value: string) => {
     setLocalData(prev => ({
       ...prev,
+      material: field === 'bahan' ? value : prev.material,
+      sleeveModel: field === 'tangan' ? value : prev.sleeveModel,
+      sewingModel: field === 'jahit' ? value : prev.sewingModel,
+      collarModel: field === 'kerah' ? value : prev.collarModel,
       notes: {
         ...prev.notes,
         [field]: value
@@ -250,6 +301,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
         id: `p-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
         no: (prev.players?.length || 0) + 1,
         name: '',
+        qty: 1,
         size: 'L',
         number: '',
         model: prev.sleeveModel || 'PENDEK',
@@ -359,6 +411,18 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
     });
   }, []);
 
+  const handleMergeDuplicateRoster = useCallback(() => {
+    setLocalData(prev => {
+      const merged = mergeDuplicatePlayers(prev.players || []);
+      const reindexed = merged.map((p, idx) => ({ ...p, no: idx + 1 }));
+      return {
+        ...prev,
+        players: reindexed,
+        updatedAt: new Date().toISOString()
+      };
+    });
+  }, []);
+
   const handleApplyQuickInput = useCallback((newPlayers: SPKPlayer[], appendMode: boolean, detectedHeader?: Partial<SPKData>) => {
     setLocalData(prev => {
       let finalPlayers: SPKPlayer[];
@@ -367,7 +431,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
       } else {
         finalPlayers = newPlayers;
       }
-      finalPlayers = finalPlayers.map((p, idx) => ({ ...p, no: idx + 1 }));
+      finalPlayers = mergeDuplicatePlayers(finalPlayers).map((p, idx) => ({ ...p, no: idx + 1 }));
 
       const updatedData: SPKData = {
         ...prev,
@@ -409,57 +473,9 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
     }, 4500);
   }, []);
 
-  // Safe image downscaling & loader to prevent browser Out-of-Memory (OOM) renderer crashes
+  // Safe image downscaling & loader to prevent browser Out-of-Memory (OOM) renderer crashes and speed up saving
   const optimizeSpkImage = useCallback(async (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      if (blob.type === 'image/svg+xml' || blob.size < 600 * 1024) {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = (err) => reject(err);
-        reader.readAsDataURL(blob);
-        return;
-      }
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(blob);
-      img.onload = () => {
-        URL.revokeObjectURL(objectUrl);
-        const MAX_DIM = 2200;
-        let w = img.width;
-        let h = img.height;
-        if (w > MAX_DIM || h > MAX_DIM) {
-          if (w > h) {
-            h = Math.round((h * MAX_DIM) / w);
-            w = MAX_DIM;
-          } else {
-            w = Math.round((w * MAX_DIM) / h);
-            h = MAX_DIM;
-          }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(blob);
-          return;
-        }
-        ctx.drawImage(img, 0, 0, w, h);
-        const isPng = blob.type === 'image/png';
-        const mime = isPng ? 'image/png' : 'image/jpeg';
-        const quality = isPng ? 0.92 : 0.88;
-        resolve(canvas.toDataURL(mime, quality));
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = (err) => reject(err);
-        reader.readAsDataURL(blob);
-      };
-      img.src = objectUrl;
-    });
+    return compressImage(blob, 1600, 1600, 0.85);
   }, []);
 
   // Image Upload Handlers
@@ -1217,10 +1233,10 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <span className="font-black text-slate-900 dark:text-white text-sm block">
-                    Daftar Pemain / Roster ({(localData.players || []).length} Pemain)
+                    Daftar Pemain / Roster ({(localData.players || []).length} Baris &bull; {totalRosterPcs} Pcs)
                   </span>
                   <span className="text-[11px] text-slate-500">
-                    Ketik langsung di baris pemain — responsif dan instan.
+                    Ketik langsung di baris pemain — isi QTY jika ada nama/ukuran yang sama.
                   </span>
                 </div>
 
@@ -1245,13 +1261,21 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                 </div>
               </div>
 
-              {/* Quick Sorting Toolbar */}
+              {/* Quick Sorting & Aggregating Toolbar */}
               {(localData.players || []).length > 1 && (
                 <div className="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                   <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                    Urutkan Roster:
+                    Kelola Roster:
                   </span>
                   <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleMergeDuplicateRoster}
+                      className="px-2 py-1 rounded-lg bg-emerald-100/80 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-200/80 text-emerald-900 dark:text-emerald-200 font-black text-[10px] cursor-pointer shadow-2xs transition-colors flex items-center gap-1"
+                      title="Gabungkan baris yang memiliki nama, ukuran, nomor, dan model sama ke kolom QTY"
+                    >
+                      ⚡ Gabung Duplikat (Qty)
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleSortRoster('size_asc')}
@@ -1294,11 +1318,12 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
                   <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] uppercase font-black z-10">
                     <tr>
                       <th className="py-2 px-2 text-center w-8">#</th>
-                      <th className="py-2 px-2">NAMA</th>
+                      <th className="py-2 px-2 min-w-[130px]">NAMA</th>
+                      <th className="py-2 px-1 text-center w-12">QTY</th>
                       <th className="py-2 px-1 text-center w-14">SIZE</th>
-                      <th className="py-2 px-1 text-center w-14">NO</th>
+                      <th className="py-2 px-1 text-center w-12">NO</th>
                       <th className="py-2 px-1 w-24">MODEL</th>
-                      <th className="py-2 px-1 w-20">KET</th>
+                      <th className="py-2 px-2 min-w-[140px]">KETERANGAN</th>
                       <th className="py-2 px-1 text-center w-8">AKSI</th>
                     </tr>
                   </thead>
@@ -1315,7 +1340,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
 
                     {(localData.players || []).length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-slate-400 dark:text-slate-500 italic">
+                        <td colSpan={8} className="py-8 text-center text-slate-400 dark:text-slate-500 italic">
                           Belum ada pemain di roster. Klik "Input Data Cepat" atau "Tambah Baris".
                         </td>
                       </tr>
@@ -1653,7 +1678,7 @@ export const SpkEditor: React.FC<SpkEditorProps> = ({
               
               <div className="border border-amber-300 dark:border-amber-900/60 rounded-2xl p-4 space-y-3 bg-amber-50/30 dark:bg-amber-950/20">
                 <span className="font-black text-amber-900 dark:text-amber-300 uppercase tracking-wider block">
-                  Catatan Khusus Penjahit & QC
+                  Catatan Khusus Penjahit
                 </span>
 
                 <div>

@@ -58,12 +58,12 @@ export const NotaCard = forwardRef<HTMLDivElement, NotaCardProps>(function NotaC
     <div 
       ref={ref}
       id={id || `nota-card-${order.id}`}
-      className={`w-[840px] min-w-[840px] max-w-[840px] min-h-[1188px] p-8 sm:p-10 bg-white text-slate-900 shadow-xl border border-slate-200/90 font-sans flex flex-col justify-between relative overflow-hidden nota-print-target print:shadow-none print:border-none print:p-8 print:m-0 print:w-full print:min-w-0 print:max-w-none print:min-h-0 ${className}`}
+      className={`w-[840px] min-w-[840px] max-w-[840px] min-h-[1188px] p-8 sm:p-10 bg-white text-slate-900 shadow-xl border border-slate-200/90 font-sans flex flex-col justify-between relative overflow-hidden nota-print-target print:shadow-none print:border-none print:p-6 print:m-0 print:w-full print:min-w-0 print:max-w-none print:min-h-0 print:overflow-visible print:break-inside-avoid break-inside-avoid ${className}`}
       style={{ colorScheme: 'light', boxSizing: 'border-box' }}
     >
       <div className="space-y-6">
         {/* Header Store & Invoice Metadata */}
-        <div className="flex flex-row items-center justify-between gap-4 border-b-2 border-indigo-600/30 pb-5">
+        <div className="flex flex-row items-center justify-between gap-4 border-b-2 border-indigo-600/30 pb-5 break-inside-avoid print:break-inside-avoid">
           
           {/* Store Info */}
           <div className="flex items-center gap-4">
@@ -134,7 +134,7 @@ export const NotaCard = forwardRef<HTMLDivElement, NotaCardProps>(function NotaC
         </div>
 
         {/* Invoice Meta Grid */}
-        <div className="grid grid-cols-4 gap-4 bg-slate-50/90 p-4 rounded-xl border border-slate-200/80 text-xs">
+        <div className="grid grid-cols-4 gap-4 bg-slate-50/90 p-4 rounded-xl border border-slate-200/80 text-xs break-inside-avoid print:break-inside-avoid">
           <div className="space-y-0.5">
             <span className="text-slate-400 font-bold block text-[10px] uppercase tracking-wider">Pemesan</span>
             <span className="font-bold text-slate-900 text-sm block truncate">{order.namaPemesan}</span>
@@ -165,7 +165,7 @@ export const NotaCard = forwardRef<HTMLDivElement, NotaCardProps>(function NotaC
         </div>
 
         {/* Order Items Table Section with Dedicated TOTAL QTY */}
-        <div className="space-y-2.5">
+        <div className="space-y-2.5 break-inside-avoid print:break-inside-avoid">
           <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
               <FileText className="h-3.5 w-3.5 text-indigo-600" />
@@ -231,7 +231,7 @@ export const NotaCard = forwardRef<HTMLDivElement, NotaCardProps>(function NotaC
         </div>
 
         {/* Side-by-Side: Mockup & Kerah (LEFT) vs Ringkasan Pembayaran (RIGHT) */}
-        <div className="grid grid-cols-12 gap-5 pt-1">
+        <div className="grid grid-cols-12 gap-5 pt-1 break-inside-avoid print:break-inside-avoid">
           
           {/* LEFT SIDE: Mockup Jersey & Model Kerah */}
           <div className={`${(order.mockupUrl || order.fotoKerahUrl) ? 'col-span-7' : 'col-span-6'} space-y-3`}>
@@ -369,7 +369,7 @@ export const NotaCard = forwardRef<HTMLDivElement, NotaCardProps>(function NotaC
 
         {/* Clean Payment Channel: Bank Transfer (Left) + QRIS (Right) */}
         {!hidePaymentInfo && (
-          <div className="bg-linear-to-r from-slate-50 via-indigo-50/30 to-slate-50 rounded-2xl border border-indigo-100 p-4 shadow-2xs space-y-3">
+          <div className="bg-linear-to-r from-slate-50 via-indigo-50/30 to-slate-50 rounded-2xl border border-indigo-100 p-4 shadow-2xs space-y-3 break-inside-avoid print:break-inside-avoid">
             
             <div className="flex items-center gap-2 border-b border-indigo-100 pb-2">
               <div className="h-6 w-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
@@ -449,7 +449,7 @@ export const NotaCard = forwardRef<HTMLDivElement, NotaCardProps>(function NotaC
       </div>
 
       {/* Footer Signatures & Terms */}
-      <div className="pt-6 mt-4 border-t border-slate-200 flex flex-row justify-between items-end gap-4 text-xs text-slate-600">
+      <div className="pt-6 mt-4 border-t border-slate-200 flex flex-row justify-between items-end gap-4 text-xs text-slate-600 break-inside-avoid print:break-inside-avoid">
         <div className="space-y-1">
           <p className="font-bold text-slate-700 flex items-center gap-1">
             <ShieldCheck className="h-3.5 w-3.5 text-indigo-600" />

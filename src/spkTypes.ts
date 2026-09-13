@@ -14,6 +14,7 @@ export interface SPKPlayer {
   model: string; // "PENDEK" | "LENGAN PANJANG" | etc.
   notes: string; // "KIPER" | "KAPTEN" | "-"
   qc: boolean;
+  qty?: number; // Quantity in pcs for this row (defaults to 1, e.g. for duplicates or batches)
 }
 
 export interface SPKJerseyImage {

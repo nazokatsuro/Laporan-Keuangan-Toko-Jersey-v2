@@ -10,6 +10,7 @@
  */
 
 import { Pesanan, ShopSettings } from './types';
+import { SPKData } from './spkTypes';
 
 const DB_NAME = 'LaporanJerseyDB';
 const DB_VERSION = 1;
@@ -17,6 +18,8 @@ const STORE_NAME = 'app_cache';
 
 const KEY_ORDERS = 'laporan_jersey_data';
 const KEY_SETTINGS = 'laporan_jersey_settings';
+export const STORAGE_KEY_SPK_STANDALONE = 'nomaden_spk_standalone_v1';
+export const STORAGE_KEY_SPK_LIST = 'nomaden_spk_list_v1';
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
@@ -152,11 +155,9 @@ export function safeLocalStorageSet(key: string, value: string): boolean {
     
     if (isQuota) {
       console.warn(`[Storage] localStorage quota exceeded for key "${key}". Data is safely persisted in IndexedDB.`);
-      // If setting orders failed because localStorage is full, remove the old bulky key
-      // so other lightweight keys (preferences, filters, tokens) can continue to save.
-      if (key === KEY_ORDERS) {
+      if (key === KEY_ORDERS || key === STORAGE_KEY_SPK_STANDALONE || key === STORAGE_KEY_SPK_LIST) {
         try {
-          localStorage.removeItem(KEY_ORDERS);
+          localStorage.removeItem(key);
         } catch {}
       }
     } else {
@@ -167,20 +168,148 @@ export function safeLocalStorageSet(key: string, value: string): boolean {
 }
 
 /**
- * Persists the entire order list into IndexedDB (primary high-quota storage)
- * and attempts saving to localStorage as a fast synchronous cache.
+ * Strips bulky base64 data URLs from orders to produce a featherlight cache for localStorage.
+ * Full images remain safely persisted in IndexedDB.
+ */
+function createLightweightOrderCache(orders: Pesanan[]): any[] {
+  return orders.map(o => {
+    const light: any = { ...o };
+    if (light.mockupUrl && light.mockupUrl.length > 20000) {
+      light.mockupUrl = '';
+    }
+    if (light.fotoKerahUrl && light.fotoKerahUrl.length > 20000) {
+      light.fotoKerahUrl = '';
+    }
+    if (light.detailSizeNamaGambarUrl && light.detailSizeNamaGambarUrl.length > 20000) {
+      light.detailSizeNamaGambarUrl = '';
+    }
+    if (light.spkData) {
+      light.spkData = {
+        ...light.spkData,
+        jerseyImages: (light.spkData.jerseyImages || []).map((img: any) => ({
+          ...img,
+          url: img.url && img.url.length > 20000 ? '' : img.url
+        })),
+        collarImage: light.spkData.collarImage && light.spkData.collarImage.length > 20000 ? '' : light.spkData.collarImage,
+        logoImage: light.spkData.logoImage && light.spkData.logoImage.length > 20000 ? '' : light.spkData.logoImage
+      };
+    }
+    return light;
+  });
+}
+
+function createLightweightSpkCache(spks: SPKData[]): any[] {
+  return spks.map(s => {
+    const light: any = { ...s };
+    light.jerseyImages = (light.jerseyImages || []).map((img: any) => ({
+      ...img,
+      url: img.url && img.url.length > 20000 ? '' : img.url
+    }));
+    if (light.collarImage && light.collarImage.length > 20000) light.collarImage = '';
+    if (light.logoImage && light.logoImage.length > 20000) light.logoImage = '';
+    return light;
+  });
+}
+
+// Write-coalescing and micro-debounce queue to eliminate duplicate I/O storms and UI freezes
+let pendingOrders: Pesanan[] | null = null;
+let orderSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let isOrderSaveActive = false;
+
+async function flushOrders(): Promise<void> {
+  if (!pendingOrders) return;
+  const toSave = pendingOrders;
+  pendingOrders = null;
+  isOrderSaveActive = true;
+
+  try {
+    // 1. Always save complete payload to IndexedDB (asynchronous, non-blocking, multi-MB quota)
+    await idbSet(KEY_ORDERS, toSave);
+
+    // 2. Sync ultra-fast lightweight cache to localStorage in idle callback (never blocks user interactions)
+    if (typeof window !== 'undefined') {
+      const scheduleIdle = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 20));
+      scheduleIdle(() => {
+        try {
+          const lightweight = createLightweightOrderCache(toSave);
+          safeLocalStorageSet(KEY_ORDERS, JSON.stringify(lightweight));
+        } catch (e) {
+          console.warn('[Storage] Notice writing lightweight order cache:', e);
+        }
+      });
+    }
+  } finally {
+    isOrderSaveActive = false;
+    // If more orders arrived while writing, flush again
+    if (pendingOrders) {
+      flushOrders();
+    }
+  }
+}
+
+/**
+ * Persists orders with write-coalescing micro-debounce.
+ * Returns immediately for the UI while guaranteeing complete persistence.
  */
 export async function persistOrders(orders: Pesanan[]): Promise<void> {
-  // 1. Always save full payload to IndexedDB (virtually unlimited quota)
-  await idbSet(KEY_ORDERS, orders);
-
-  // 2. Try to sync to localStorage for fast sync-first boot
-  try {
-    const serialized = JSON.stringify(orders);
-    safeLocalStorageSet(KEY_ORDERS, serialized);
-  } catch (e) {
-    console.warn('[Storage] Serialization or storage notice for orders:', e);
+  pendingOrders = orders;
+  if (orderSaveTimer) {
+    clearTimeout(orderSaveTimer);
   }
+
+  // Use 300ms debounce to allow seamless typing and clicking without I/O thrashing
+  orderSaveTimer = setTimeout(() => {
+    orderSaveTimer = null;
+    if (!isOrderSaveActive) {
+      flushOrders();
+    }
+  }, 300);
+}
+
+// Write-coalescing for standalone SPKs
+let pendingStandaloneSpks: SPKData[] | null = null;
+let standaloneSpkTimer: ReturnType<typeof setTimeout> | null = null;
+let isStandaloneSpkSaveActive = false;
+
+async function flushStandaloneSpks(): Promise<void> {
+  if (!pendingStandaloneSpks) return;
+  const toSave = pendingStandaloneSpks;
+  pendingStandaloneSpks = null;
+  isStandaloneSpkSaveActive = true;
+
+  try {
+    await idbSet(STORAGE_KEY_SPK_STANDALONE, toSave);
+    if (typeof window !== 'undefined') {
+      const scheduleIdle = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 20));
+      scheduleIdle(() => {
+        try {
+          const lightweight = createLightweightSpkCache(toSave);
+          safeLocalStorageSet(STORAGE_KEY_SPK_STANDALONE, JSON.stringify(lightweight));
+        } catch (e) {
+          console.warn('[Storage] Notice writing lightweight standalone SPK cache:', e);
+        }
+      });
+    }
+  } finally {
+    isStandaloneSpkSaveActive = false;
+    if (pendingStandaloneSpks) {
+      flushStandaloneSpks();
+    }
+  }
+}
+
+export async function persistStandaloneSpks(spks: SPKData[]): Promise<void> {
+  pendingStandaloneSpks = spks;
+  if (standaloneSpkTimer) {
+    clearTimeout(standaloneSpkTimer);
+  }
+
+  standaloneSpkTimer = setTimeout(() => {
+    standaloneSpkTimer = null;
+    if (!isStandaloneSpkSaveActive) {
+      flushStandaloneSpks();
+    }
+  }, 300);
 }
 
 /**
@@ -220,6 +349,33 @@ export async function loadOrdersFromStorage(): Promise<Pesanan[] | null> {
       }
     } catch (e) {
       console.warn('[Storage] Failed to read orders from localStorage:', e);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Loads standalone SPKs from IndexedDB, falling back to localStorage.
+ */
+export async function loadStandaloneSpksFromStorage(): Promise<SPKData[] | null> {
+  const idbSpks = await idbGet<SPKData[]>(STORAGE_KEY_SPK_STANDALONE);
+  if (Array.isArray(idbSpks) && idbSpks.length > 0) {
+    return idbSpks;
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_SPK_STANDALONE);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          idbSet(STORAGE_KEY_SPK_STANDALONE, parsed).catch(() => {});
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('[Storage] Failed to read standalone SPKs from localStorage:', e);
     }
   }
 

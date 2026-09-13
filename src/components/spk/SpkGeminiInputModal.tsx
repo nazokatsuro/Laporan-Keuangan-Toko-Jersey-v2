@@ -115,13 +115,18 @@ export const SpkGeminiInputModal: React.FC<SpkGeminiInputModalProps> = ({
   const [hasProcessed, setHasProcessed] = useState(false);
   const [engineUsed, setEngineUsed] = useState<string | null>(null);
 
-  // Quick Recap summary
+  // Quick Recap summary with quantity support
   const sizeSummary = React.useMemo(() => {
     const counts: { [key: string]: number } = {};
     parsedPlayers.forEach(p => {
-      counts[p.size] = (counts[p.size] || 0) + 1;
+      const q = p.qty && p.qty > 0 ? p.qty : 1;
+      counts[p.size] = (counts[p.size] || 0) + q;
     });
     return counts;
+  }, [parsedPlayers]);
+
+  const totalParsedPcs = React.useMemo(() => {
+    return parsedPlayers.reduce((sum, p) => sum + (p.qty && p.qty > 0 ? p.qty : 1), 0);
   }, [parsedPlayers]);
 
   if (!isOpen) return null;
@@ -553,13 +558,18 @@ export const SpkGeminiInputModal: React.FC<SpkGeminiInputModalProps> = ({
 
             {/* Quick Size Summary Chips */}
             {parsedPlayers.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] font-bold text-slate-500">Rekap Ukuran:</span>
-                {Object.entries(sizeSummary).map(([sz, count]) => (
-                  <span key={sz} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-black text-slate-800 dark:text-slate-200">
-                    {sz}: <b className="text-emerald-600 dark:text-emerald-400">{count}</b>
-                  </span>
-                ))}
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-bold text-slate-500">Rekap Ukuran:</span>
+                  {Object.entries(sizeSummary).map(([sz, count]) => (
+                    <span key={sz} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-black text-slate-800 dark:text-slate-200">
+                      {sz}: <b className="text-emerald-600 dark:text-emerald-400">{count}</b>
+                    </span>
+                  ))}
+                </div>
+                <div className="text-[11px] font-black text-emerald-700 dark:text-emerald-400">
+                  Total: {totalParsedPcs} Pcs ({parsedPlayers.length} Baris)
+                </div>
               </div>
             )}
 
@@ -570,6 +580,7 @@ export const SpkGeminiInputModal: React.FC<SpkGeminiInputModalProps> = ({
                   <tr>
                     <th className="py-2.5 px-2 text-center w-9">#</th>
                     <th className="py-2.5 px-3">NAMA PEMAIN</th>
+                    <th className="py-2.5 px-1 text-center w-14">QTY</th>
                     <th className="py-2.5 px-2 text-center w-16">SIZE</th>
                     <th className="py-2.5 px-2 text-center w-16">NOP</th>
                     <th className="py-2.5 px-2 w-32">MODEL</th>
@@ -600,6 +611,19 @@ export const SpkGeminiInputModal: React.FC<SpkGeminiInputModalProps> = ({
                             onChange={(e) => handleUpdatePlayerRow(p.id, 'name', e.target.value)}
                             className="w-full px-2 py-1 text-xs rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-emerald-500 font-black text-slate-900 dark:text-white bg-transparent"
                             placeholder="Nama Pemain"
+                          />
+                        </td>
+                        <td className="py-1 px-1 text-center w-14">
+                          <input
+                            type="number"
+                            min="1"
+                            value={p.qty || 1}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              handleUpdatePlayerRow(p.id, 'qty', isNaN(val) || val < 1 ? 1 : val);
+                            }}
+                            className="w-full px-1 py-1 text-xs text-center rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-emerald-500 font-mono font-black text-emerald-700 dark:text-emerald-400 bg-transparent"
+                            title="Jumlah pcs"
                           />
                         </td>
                         <td className="py-1 px-1 text-center">

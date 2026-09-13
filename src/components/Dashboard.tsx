@@ -5,7 +5,13 @@
 
 import React, { useMemo, useState } from 'react';
 import { Pesanan, StatusProduksi } from '../types';
-import { formatRupiah, isTransactionForOrder, checkOrderPaymentStatus } from '../utils';
+import { 
+  formatRupiah, 
+  isTransactionForOrder, 
+  checkOrderPaymentStatus, 
+  getBatchOrderPaymentStatus, 
+  DEFAULT_ORDER_PAYMENT_STATUS 
+} from '../utils';
 import { 
   TrendingUp, 
   DollarSign, 
@@ -76,6 +82,8 @@ export default function Dashboard({
 
   // Payment quick checklists local states (persistent using localStorage)
   const [checklistSearch, setChecklistSearch] = useState(() => localStorage.getItem('laporan_jersey_clk_search') || '');
+  const deferredChecklistSearch = React.useDeferredValue ? React.useDeferredValue(checklistSearch) : checklistSearch;
+
   const [showAllChecklistPeriods, setShowAllChecklistPeriods] = useState(() => {
     const saved = localStorage.getItem('laporan_jersey_clk_all_periods');
     return saved !== 'false'; // default to true
@@ -88,9 +96,12 @@ export default function Dashboard({
     return (localStorage.getItem('laporan_jersey_clk_tab') as any) || 'semua';
   });
 
-  // Sync to localStorage
+  // Sync to localStorage (debounced for search input)
   React.useEffect(() => {
-    localStorage.setItem('laporan_jersey_clk_search', checklistSearch);
+    const timer = setTimeout(() => {
+      localStorage.setItem('laporan_jersey_clk_search', checklistSearch);
+    }, 300);
+    return () => clearTimeout(timer);
   }, [checklistSearch]);
 
   React.useEffect(() => {
@@ -104,6 +115,11 @@ export default function Dashboard({
   React.useEffect(() => {
     localStorage.setItem('laporan_jersey_clk_tab', activeChecklistTab);
   }, [activeChecklistTab]);
+
+  // Shared batch payment status map for optimal render performance
+  const batchPaymentStatusMap = useMemo(() => {
+    return getBatchOrderPaymentStatus(pesananList, settings.cashFlowList);
+  }, [pesananList, settings.cashFlowList]);
 
   // Process the checklist data
   const paymentChecklists = useMemo(() => {
@@ -126,10 +142,12 @@ export default function Dashboard({
       // Apply search term if any
       const cleanPoName = (item.namaPo || '').toLowerCase().trim();
       const cleanPemesan = (item.namaPemesan || '').toLowerCase().trim();
-      const sTerm = checklistSearch.toLowerCase().trim();
+      const sTerm = deferredChecklistSearch.toLowerCase().trim();
       if (sTerm && !cleanPoName.includes(sTerm) && !cleanPemesan.includes(sTerm)) {
         return;
       }
+
+      const pStatus = batchPaymentStatusMap.get(item.id) || DEFAULT_ORDER_PAYMENT_STATUS;
 
       // 1. Jahit Calculation & Status Check
       const jahitCost = item.items && item.items.length > 0
@@ -137,7 +155,7 @@ export default function Dashboard({
         : (item.qty * (item.jahitPerPcs || 0));
 
       if (jahitCost > 0) {
-        const hasPaidJahit = item.statusBayarJahit === 'Lunas' || (item.statusBayarJahit !== 'Belum Lunas' && checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isJahitPaid);
+        const hasPaidJahit = item.statusBayarJahit === 'Lunas' || (item.statusBayarJahit !== 'Belum Lunas' && pStatus.isJahitPaid);
 
         if (!hidePaidChecklist || !hasPaidJahit) {
           listJahit.push({
@@ -155,7 +173,7 @@ export default function Dashboard({
         : (item.qty * (item.printPerPcs || 0));
 
       if (sublimCost > 0) {
-        const hasPaidSublim = item.statusBayarSublim === 'Lunas' || (item.statusBayarSublim !== 'Belum Lunas' && checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isSublimPaid);
+        const hasPaidSublim = item.statusBayarSublim === 'Lunas' || (item.statusBayarSublim !== 'Belum Lunas' && pStatus.isSublimPaid);
 
         if (!hidePaidChecklist || !hasPaidSublim) {
           listSublim.push({
@@ -179,7 +197,7 @@ export default function Dashboard({
         : 0;
 
       if (komisiCost > 0 && hasPenerimaKomisi) {
-        const hasPaidKomisi = item.statusBayarKomisi === 'Lunas' || (item.statusBayarKomisi !== 'Belum Lunas' && checkOrderPaymentStatus(item, settings.cashFlowList, pesananList).isKomisiPaid);
+        const hasPaidKomisi = item.statusBayarKomisi === 'Lunas' || (item.statusBayarKomisi !== 'Belum Lunas' && pStatus.isKomisiPaid);
 
         if (!hidePaidChecklist || !hasPaidKomisi) {
           listKomisi.push({
@@ -221,7 +239,7 @@ export default function Dashboard({
       komisi: listKomisi,
       tagihan: listTagihan
     };
-  }, [pesananList, settings.cashFlowList, showAllChecklistPeriods, selectedMonth, selectedYear, checklistSearch, hidePaidChecklist]);
+  }, [pesananList, settings.cashFlowList, showAllChecklistPeriods, selectedMonth, selectedYear, deferredChecklistSearch, hidePaidChecklist, batchPaymentStatusMap]);
 
   const checklistUnpaidSums = useMemo(() => {
     const jahit = paymentChecklists.jahit.filter(x => !x.isPaid).reduce((sum, x) => sum + x.cost, 0);
@@ -505,7 +523,7 @@ export default function Dashboard({
             : item.qty * baseKomisi)
         : 0;
 
-      const paymentStatus = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList);
+      const paymentStatus = batchPaymentStatusMap.get(item.id) || DEFAULT_ORDER_PAYMENT_STATUS;
 
       // All-time debt tracking across whole dataset
       if (sublimCost > 0 && !paymentStatus.isSublimPaid) {

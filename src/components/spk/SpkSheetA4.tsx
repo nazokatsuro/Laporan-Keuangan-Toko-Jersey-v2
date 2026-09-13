@@ -6,7 +6,7 @@
 import React, { useMemo } from 'react';
 import { SPKData, SPKPlayer } from '../../spkTypes';
 import { calculateSizeRecap } from '../../utils/spkParser';
-import { AlertTriangle, CheckSquare, Square, ShieldCheck, FileCheck, Layers, ClipboardCheck, Sparkles } from 'lucide-react';
+import { AlertTriangle, FileCheck, Layers, ClipboardCheck, Sparkles } from 'lucide-react';
 
 interface SpkSheetA4Props {
   data: SPKData;
@@ -55,7 +55,9 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
     layout
   } = data;
 
-  const totalPcs = players.length;
+  const totalPcs = useMemo(() => {
+    return players.reduce((sum, p) => sum + (p.qty && p.qty > 0 ? p.qty : 1), 0);
+  }, [players]);
   const recap = useMemo(() => calculateSizeRecap(players), [players]);
 
   // Dynamic Pagination Logic:
@@ -160,8 +162,24 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
         </td>
 
         {/* NAMA */}
-        <td className={`font-black text-slate-900 border-r border-slate-200 truncate ${pyClass} px-1.5 ${nameSz}`}>
+        <td 
+          title={p.name}
+          className={`font-black text-slate-900 border-r border-slate-200 ${pyClass} px-1.5 ${nameSz} leading-tight break-words`}
+        >
           {p.name}
+        </td>
+
+        {/* QTY */}
+        <td className={`text-center border-r border-slate-200 ${pyClass} px-0.5 ${textSz}`}>
+          {(p.qty && p.qty > 1) ? (
+            <span className={`inline-block font-black text-emerald-800 bg-emerald-100 border border-emerald-300 rounded ${
+              isUltraDensity ? 'px-0.5 py-0 text-[7px]' : isHighDensity ? 'px-1 py-0 text-[7.5px]' : 'px-1 py-0.2 text-[8.5px]'
+            }`}>
+              {p.qty}
+            </span>
+          ) : (
+            <span className="font-bold text-slate-700">{p.qty || 1}</span>
+          )}
         </td>
 
         {/* SZ (Size) */}
@@ -214,25 +232,13 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
         </td>
 
         {/* KETERANGAN */}
-        <td className={`font-bold border-r border-slate-200 truncate ${pyClass} px-1.5 ${textSz} ${
-          isKiper ? 'text-amber-800 bg-amber-50/60 font-black' : 'text-slate-600'
-        }`}>
+        <td 
+          title={p.notes && p.notes !== '-' ? p.notes : undefined}
+          className={`font-bold ${pyClass} px-1.5 ${textSz} leading-tight break-words whitespace-normal ${
+            isKiper ? 'text-amber-800 bg-amber-50/60 font-black' : 'text-slate-600'
+          }`}
+        >
           {p.notes || '-'}
-        </td>
-
-        {/* QC Checkbox */}
-        <td className={`text-center ${pyClass} px-1`}>
-          <button
-            type="button"
-            onClick={() => onToggleQc && onToggleQc(p.id)}
-            className="inline-flex items-center justify-center cursor-pointer text-slate-400 hover:text-emerald-600 transition-colors"
-          >
-            {p.qc ? (
-              <CheckSquare className={`${isHighDensity ? 'h-3 w-3' : 'h-3.5 w-3.5'} text-[#00805F] fill-emerald-100`} />
-            ) : (
-              <Square className={`${isHighDensity ? 'h-3 w-3' : 'h-3.5 w-3.5'} text-slate-400`} />
-            )}
-          </button>
         </td>
       </tr>
     );
@@ -353,59 +359,59 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                 <div className="grid grid-cols-2 gap-x-8 gap-y-1">
                   {/* Left Column */}
                   <div className="space-y-0.5">
-                    <div className="flex items-center">
-                      <span className="w-28 font-bold text-slate-600">NO. SPK</span>
-                      <span className="font-bold text-slate-900">: {spkNumber || 'SPK-2026-006'}</span>
+                    <div className="flex items-start">
+                      <span className="w-28 shrink-0 font-bold text-slate-600">NO. SPK</span>
+                      <span className="font-bold text-slate-900 break-words">: {spkNumber || 'SPK-2026-006'}</span>
                     </div>
-                    <div className="flex items-center">
-                      <span className="w-28 font-bold text-slate-600">NAMA PO</span>
-                      <span className="font-black text-slate-900">: {poName || 'SOLIDARITAS'}</span>
+                    <div className="flex items-start">
+                      <span className="w-28 shrink-0 font-bold text-slate-600">NAMA PO</span>
+                      <span className="font-black text-slate-900 break-words">: {poName || 'SOLIDARITAS'}</span>
                     </div>
-                    <div className="flex items-center">
-                      <span className="w-28 font-bold text-slate-600">MODEL KERAH</span>
-                      <span className="font-bold text-slate-900">: {collarModel || 'V DATAR + LIDAH'}</span>
+                    <div className="flex items-start">
+                      <span className="w-28 shrink-0 font-bold text-slate-600">MODEL KERAH</span>
+                      <span className="font-bold text-slate-900 break-words">: {collarModel || 'V DATAR + LIDAH'}</span>
                     </div>
-                    <div className="flex items-center">
-                      <span className="w-28 font-bold text-slate-600">MODEL PESANAN</span>
-                      <span className="font-bold text-slate-900">: {productModel || 'SETELAN'}</span>
+                    <div className="flex items-start">
+                      <span className="w-28 shrink-0 font-bold text-slate-600">MODEL PESANAN</span>
+                      <span className="font-bold text-slate-900 break-words">: {productModel || 'SETELAN'}</span>
                     </div>
-                    <div className="flex items-center">
-                      <span className="w-28 font-bold text-slate-600">BAHAN</span>
-                      <span className="font-bold text-slate-900">: {material || 'WAFFLE'}</span>
+                    <div className="flex items-start">
+                      <span className="w-28 shrink-0 font-bold text-slate-600">BAHAN</span>
+                      <span className="font-bold text-slate-900 break-words">: {material || 'WAFFLE'}</span>
                     </div>
                     {(data.vendorJahit || data.mitraJahit) && (
-                      <div className="flex items-center">
-                        <span className="w-28 font-bold text-slate-600">MITRA JAHIT</span>
-                        <span className="font-black text-indigo-700">: {data.vendorJahit || data.mitraJahit}</span>
+                      <div className="flex items-start">
+                        <span className="w-28 shrink-0 font-bold text-slate-600">MITRA JAHIT</span>
+                        <span className="font-black text-indigo-700 break-words">: {data.vendorJahit || data.mitraJahit}</span>
                       </div>
                     )}
                   </div>
 
                   {/* Right Column */}
                   <div className="space-y-0.5">
-                    <div className="flex items-center">
-                      <span className="w-36 font-bold text-slate-600">MODEL TANGAN</span>
-                      <span className="font-bold text-slate-900">: {sleeveModel || 'PENDEK'}</span>
+                    <div className="flex items-start">
+                      <span className="w-36 shrink-0 font-bold text-slate-600">MODEL TANGAN</span>
+                      <span className="font-bold text-slate-900 break-words">: {sleeveModel || 'PENDEK'}</span>
+                    </div>
+                    <div className="flex items-start">
+                      <span className="w-36 shrink-0 font-bold text-slate-600">MODEL JAHITAN</span>
+                      <span className="font-bold text-slate-900 break-words">: {sewingModel || 'FULL STIK'}</span>
                     </div>
                     <div className="flex items-center">
-                      <span className="w-36 font-bold text-slate-600">MODEL JAHITAN</span>
-                      <span className="font-bold text-slate-900">: {sewingModel || 'FULL STIK'}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="w-36 font-bold text-slate-600">STATUS</span>
+                      <span className="w-36 shrink-0 font-bold text-slate-600">STATUS</span>
                       <span className="flex items-center gap-1">
                         : <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${statusStyle.bg} ${statusStyle.text}`}>
                           {status || 'NORMAL'}
                         </span>
                       </span>
                     </div>
-                    <div className="flex items-center">
-                      <span className="w-36 font-bold text-slate-600">TGL PRODUKSI</span>
-                      <span className="font-bold text-slate-900">: {productionDate || '-'}</span>
+                    <div className="flex items-start">
+                      <span className="w-36 shrink-0 font-bold text-slate-600">TGL PRODUKSI</span>
+                      <span className="font-bold text-slate-900 break-words">: {productionDate || '-'}</span>
                     </div>
-                    <div className="flex items-center">
-                      <span className="w-36 font-bold text-slate-600">TGL KIRIM / DEADLINE</span>
-                      <span className="font-black text-rose-600">: {deadline || '-'}</span>
+                    <div className="flex items-start">
+                      <span className="w-36 shrink-0 font-bold text-slate-600">TGL KIRIM / DEADLINE</span>
+                      <span className="font-black text-rose-600 break-words">: {deadline || '-'}</span>
                     </div>
                   </div>
                 </div>
@@ -428,13 +434,13 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                             className="text-white text-[9.5px] uppercase font-black"
                             style={{ backgroundColor: companySettings.darkColor || '#006B50' }}
                           >
-                            <th className="py-1 px-1.5 text-center w-8 border-r border-emerald-700/50">NO</th>
-                            <th className="py-1 px-2 border-r border-emerald-700/50">NAMA</th>
-                            <th className="py-1 px-1.5 text-center w-8 border-r border-emerald-700/50">SZ</th>
-                            <th className="py-1 px-2 text-center w-12 border-r border-emerald-700/50">NOP</th>
-                            <th className="py-1 px-2 text-center w-20 border-r border-emerald-700/50">MODEL</th>
-                            <th className="py-1 px-2 border-r border-emerald-700/50">KETERANGAN</th>
-                            <th className="py-1 px-1 text-center w-7">QC</th>
+                            <th className="py-1 px-1 text-center w-6 border-r border-emerald-700/50">NO</th>
+                            <th className="py-1 px-1.5 border-r border-emerald-700/50 w-[30%]">NAMA</th>
+                            <th className="py-1 px-0.5 text-center w-7 border-r border-emerald-700/50">QTY</th>
+                            <th className="py-1 px-1 text-center w-7 border-r border-emerald-700/50">SZ</th>
+                            <th className="py-1 px-1 text-center w-8 border-r border-emerald-700/50">NOP</th>
+                            <th className="py-1 px-1 text-center w-14 border-r border-emerald-700/50">MODEL</th>
+                            <th className="py-1 px-1.5 w-[35%]">KETERANGAN</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 text-[9px]">
@@ -455,19 +461,26 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
 
                     {/* Table Footer: Roster Subtotal / Total */}
                     <div className="border-x border-b border-[#CBD5E1] rounded-b-md px-3 py-1.5 flex items-center justify-between bg-slate-50 shrink-0">
-                      <span className="text-[9.5px] font-black text-slate-800 tracking-wider uppercase">
-                        {totalPages > 1 ? `SUBTOTAL HAL. 1 (${pagesData[0]?.players.length || 0} PCS):` : 'TOTAL PEMAIN / ROSTER:'}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {totalPages > 1 && (
-                          <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded">
-                            Lanjut Hal. 2 ➔
-                          </span>
-                        )}
-                        <span className="text-xs font-black text-[#00805F]">
-                          {totalPages > 1 ? `${pagesData[0]?.players.length || 0} / ${totalPcs}` : totalPcs} <span className="text-[9px] font-bold">PCS</span>
-                        </span>
-                      </div>
+                      {(() => {
+                        const page1Pcs = (pagesData[0]?.players || []).reduce((sum, p) => sum + (p.qty && p.qty > 0 ? p.qty : 1), 0);
+                        return (
+                          <>
+                            <span className="text-[9.5px] font-black text-slate-800 tracking-wider uppercase">
+                              {totalPages > 1 ? `SUBTOTAL HAL. 1 (${page1Pcs} PCS):` : 'TOTAL PEMAIN / ROSTER:'}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {totalPages > 1 && (
+                                <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded">
+                                  Lanjut Hal. 2 ➔
+                                </span>
+                              )}
+                              <span className="text-xs font-black text-[#00805F]">
+                                {totalPages > 1 ? `${page1Pcs} / ${totalPcs}` : totalPcs} <span className="text-[9px] font-bold">PCS</span>
+                              </span>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
 
                   </div>
@@ -596,17 +609,25 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                         <span className="bg-amber-500 text-white px-1 py-0.2 rounded font-black text-[7.5px] flex items-center gap-0.5">
                           <AlertTriangle className="h-2.5 w-2.5" /> CATATAN PENJAHIT
                         </span>
-                        <span className="tracking-tight uppercase">INSTRUKSI JAHIT & QC</span>
+                        <span className="tracking-tight uppercase">INSTRUKSI JAHIT</span>
                       </div>
-                      <span className="text-amber-800 font-extrabold uppercase truncate max-w-[110px]">
+                      <span 
+                        className="text-amber-800 font-extrabold uppercase text-[7.5px] max-w-[150px] truncate"
+                        title={notes?.kerah || collarModel || 'V DATAR + LIDAH'}
+                      >
                         KERAH: {notes?.kerah || collarModel || 'V DATAR + LIDAH'}
                       </span>
                     </div>
 
                     <div className="p-1.5 space-y-1 text-[8.5px]">
-                      <p className="font-black text-slate-900 tracking-tight leading-tight">
+                      <p className="font-black text-slate-900 tracking-tight leading-tight break-words whitespace-pre-wrap">
                         {notes?.mainNote || 'TUTUP KERAH POLOS, FULL STIK'}
                       </p>
+                      {notes?.additionalNotes && (
+                        <p className="text-[7.5px] font-bold text-amber-900/90 pt-0.5 border-t border-amber-200/60 break-words leading-tight">
+                          <span className="text-slate-500 font-bold">Catatan:</span> {notes.additionalNotes}
+                        </p>
+                      )}
                       
                        <div className="grid grid-cols-3 gap-1 pt-0.5 border-t border-amber-200/60 text-[8px]">
                         <div>
@@ -702,7 +723,7 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                         </span>
                         <span className="text-slate-300">•</span>
                         <span className="px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[8px] font-black uppercase tracking-wider">
-                          LEMBAR {pageNum} — LAMPIRAN ROSTER {isLastPage ? `(SISA ${pagePlayers.length} PCS) & QC` : `(FULL ${pagePlayers.length} PCS)`}
+                          LEMBAR {pageNum} — LAMPIRAN ROSTER {isLastPage ? `(SISA ${pagePlayers.length} PCS)` : `(FULL ${pagePlayers.length} PCS)`}
                         </span>
                       </div>
                       <p className="text-[9px] font-bold text-slate-700">
@@ -715,7 +736,7 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                   <div className="flex items-center gap-2">
                     <div className="border border-slate-300 rounded-md px-3 py-1 text-center bg-slate-50 text-[9px]">
                       <span className="text-slate-500 font-bold block text-[7.5px]">ROSTER HAL. {pageNum}</span>
-                      <span className="font-black text-slate-900">{pagePlayers.length} PCS</span>
+                      <span className="font-black text-slate-900">{pagePlayers.reduce((sum, p) => sum + (p.qty && p.qty > 0 ? p.qty : 1), 0)} PCS</span>
                     </div>
 
                     <div className="rounded-md px-3 py-1 text-center bg-[#00805F] text-white text-[9px]">
@@ -727,7 +748,7 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                 </div>
               </header>
 
-              {/* 2. MAIN CONTENT: LEFT (ROSTER LANJUTAN) + RIGHT (MOCKUP & QC / PANDUAN) */}
+              {/* 2. MAIN CONTENT: LEFT (ROSTER LANJUTAN) + RIGHT (MOCKUP & PANDUAN) */}
               <div className="flex-1 grid grid-cols-12 gap-3 my-2 min-h-0 overflow-hidden">
                 
                 {/* LEFT COLUMN: ROSTER TABLE LANJUTAN (7 COLS) */}
@@ -741,13 +762,13 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                             className="text-white text-[9.5px] uppercase font-black"
                             style={{ backgroundColor: companySettings.darkColor || '#006B50' }}
                           >
-                            <th className="py-1 px-1.5 text-center w-8 border-r border-emerald-700/50">NO</th>
-                            <th className="py-1 px-2 border-r border-emerald-700/50">NAMA</th>
-                            <th className="py-1 px-1.5 text-center w-8 border-r border-emerald-700/50">SZ</th>
-                            <th className="py-1 px-2 text-center w-12 border-r border-emerald-700/50">NOP</th>
-                            <th className="py-1 px-2 text-center w-20 border-r border-emerald-700/50">MODEL</th>
-                            <th className="py-1 px-2 border-r border-emerald-700/50">KETERANGAN</th>
-                            <th className="py-1 px-1 text-center w-7">QC</th>
+                            <th className="py-1 px-1 text-center w-6 border-r border-emerald-700/50">NO</th>
+                            <th className="py-1 px-1.5 border-r border-emerald-700/50 w-[30%]">NAMA</th>
+                            <th className="py-1 px-0.5 text-center w-7 border-r border-emerald-700/50">QTY</th>
+                            <th className="py-1 px-1 text-center w-7 border-r border-emerald-700/50">SZ</th>
+                            <th className="py-1 px-1 text-center w-8 border-r border-emerald-700/50">NOP</th>
+                            <th className="py-1 px-1 text-center w-14 border-r border-emerald-700/50">MODEL</th>
+                            <th className="py-1 px-1.5 w-[35%]">KETERANGAN</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 text-[9px]">
@@ -778,7 +799,7 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                           </span>
                         )}
                         <span className="text-xs font-black text-[#00805F]">
-                          {pagePlayers.length} <span className="text-[9px] font-bold">PCS</span>
+                          {pagePlayers.reduce((sum, p) => sum + (p.qty && p.qty > 0 ? p.qty : 1), 0)} <span className="text-[9px] font-bold">PCS</span>
                         </span>
                       </div>
                     </div>
@@ -786,7 +807,7 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                   </div>
                 </div>
 
-                {/* RIGHT COLUMN: DETAIL MOCKUP & QC VERIFIKASI (5 COLS) */}
+                {/* RIGHT COLUMN: DETAIL MOCKUP & PENGESAHAN (5 COLS) */}
                 <div className="col-span-5 flex flex-col justify-between h-full gap-2.5 overflow-hidden">
                   
                   {/* PANEL 1: MOCKUP PRODUKSI FULL DISPLAY */}
@@ -830,20 +851,7 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                     </div>
                   </div>
 
-                  {/* PANEL 2: CATATAN TAMBAHAN & INSTRUKSI QC */}
-                  <div className="border border-indigo-200 rounded-md overflow-hidden bg-indigo-50/40 p-2 space-y-1 text-[8px] shrink-0">
-                    <div className="flex items-center gap-1 text-indigo-900 font-black uppercase text-[8.5px]">
-                      <ShieldCheck className="h-3 w-3 text-indigo-600" />
-                      <span>STANDAR QUALITY CONTROL & PACKING</span>
-                    </div>
-                    <ul className="list-disc list-inside space-y-0.5 text-slate-700 font-medium pl-1">
-                      <li>Cek kesesuaian Nomor Punggung & Nama Pemain sesuai daftar.</li>
-                      <li>Pastikan kerah model <strong>{collarModel || 'V DATAR + LIDAH'}</strong> terpasang presisi.</li>
-                      <li>Bersihkan sisa benang jahit & lakukan setrika uap sebelum packing plastik.</li>
-                    </ul>
-                  </div>
-
-                  {/* PANEL 3: LEMBAR PENGESAHAN & TANDA TANGAN (Terutama di Halaman Terakhir / QC) */}
+                  {/* PANEL 2: LEMBAR PENGESAHAN & TANDA TANGAN */}
                   <div className="border border-slate-300 rounded-md overflow-hidden bg-white p-2 shrink-0">
                     <div className="text-center font-black text-slate-800 text-[8.5px] uppercase tracking-wider mb-1.5 pb-1 border-b border-slate-200 flex items-center justify-between">
                       <span className="text-slate-500 font-bold text-[7.5px]">
@@ -851,7 +859,7 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                       </span>
                       <span>LEMBAR VERIFIKASI & SERAH TERIMA PRODUKSI</span>
                       <span className="text-slate-500 font-bold text-[7.5px]">
-                        QC PASS
+                        PENGESAHAN
                       </span>
                     </div>
 
@@ -870,11 +878,11 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                         <span className="font-bold text-slate-800">( Kepala Jahit )</span>
                       </div>
 
-                      {/* Sign 3: QC Pass */}
+                      {/* Sign 3: Finishing & Packing */}
                       <div className="border border-emerald-300 rounded p-1 flex flex-col justify-between h-18 bg-emerald-50/50">
-                        <span className="font-bold text-[#006B50] block">QC & PACKING:</span>
+                        <span className="font-bold text-[#006B50] block">FINISHING & PACKING:</span>
                         <div className="border-b border-dotted border-emerald-400 mx-2 my-1" />
-                        <span className="font-black text-[#006B50]">( QC Lulus )</span>
+                        <span className="font-black text-[#006B50]">( Finishing )</span>
                       </div>
                     </div>
                   </div>
@@ -889,7 +897,7 @@ export const SpkSheetA4: React.FC<SpkSheetA4Props> = React.memo(({
                   Lampiran resmi SPK {spkNumber || 'SPK-2026-006'} • {companySettings.name || 'Nomaden Apparel'}. Seluruh hak cipta dilindungi.
                 </span>
                 <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
-                  Halaman {pageNum} dari {totalPages} (Roster Lanjutan {isLastPage ? '& Verifikasi QC' : ''})
+                  Halaman {pageNum} dari {totalPages} (Roster Lanjutan {isLastPage ? '& Lembar Pengesahan' : ''})
                 </span>
               </div>
 

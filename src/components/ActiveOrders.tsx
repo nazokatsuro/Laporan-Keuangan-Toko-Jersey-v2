@@ -3,9 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useDeferredValue } from 'react';
 import { Pesanan, StatusProduksi, ShopSettings, CashFlowTransaction } from '../types';
-import { formatRupiah, checkOrderPaymentStatus, isTransactionForOrder } from '../utils';
+import { 
+  formatRupiah, 
+  checkOrderPaymentStatus, 
+  isTransactionForOrder, 
+  getBatchOrderPaymentStatus, 
+  DEFAULT_ORDER_PAYMENT_STATUS 
+} from '../utils';
 import { SPKData, SPKCompanySettings, SPKTemplate } from '../spkTypes';
 import { 
   DEFAULT_COMPANY_SETTINGS, 
@@ -28,7 +34,7 @@ import { BatchNotaModal } from './nota/BatchNotaModal';
 import { VendorPayablesModal } from './nota/VendorPayablesModal';
 import { VendorPayableCategory } from './nota/VendorPayablesCard';
 import { printSpkDocument } from '../utils/spkExport';
-import { persistOrders } from '../storageService';
+import { persistOrders, persistStandaloneSpks, loadStandaloneSpksFromStorage } from '../storageService';
 import { 
   Search, 
   Filter, 
@@ -217,7 +223,16 @@ export default function ActiveOrders({
   const [vendorPayablesInitialCategory, setVendorPayablesInitialCategory] = useState<VendorPayableCategory>('semua');
   const [actionNotification, setActionNotification] = useState<string | null>(null);
 
-  // Sync SPK states to LocalStorage
+  // Hydrate standalone SPKs from IndexedDB on startup
+  useEffect(() => {
+    loadStandaloneSpksFromStorage().then(spks => {
+      if (spks && spks.length > 0) {
+        setStandaloneSpkList(spks);
+      }
+    });
+  }, []);
+
+  // Sync SPK states to LocalStorage & IndexedDB
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_SPK_SETTINGS, JSON.stringify(companySettings));
   }, [companySettings]);
@@ -227,7 +242,7 @@ export default function ActiveOrders({
   }, [templates]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_SPK_STANDALONE, JSON.stringify(standaloneSpkList));
+    persistStandaloneSpks(standaloneSpkList);
   }, [standaloneSpkList]);
 
   useEffect(() => {
@@ -259,14 +274,17 @@ export default function ActiveOrders({
     }
   }, [pesananList]);
 
-  // Combined synchronized SPK list: All transactions mapped to SPK + any standalone SPKs
+  // Combined synchronized SPK list: Only map orders when SPK view is active to avoid lag on orders tab
   const combinedSpkList = useMemo<SPKData[]>(() => {
+    if (activeMainView !== 'spk') return standaloneSpkList;
     const fromOrders = pesananList.map(order => orderToSpkData(order, companySettings, settings));
     return [...fromOrders, ...standaloneSpkList];
-  }, [pesananList, companySettings, settings, standaloneSpkList]);
+  }, [pesananList, companySettings, settings, standaloneSpkList, activeMainView]);
 
   // Filters and Sort State for Transactions
   const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('laporan_jersey_tx_search') || '');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+
   const [progressFilter, setProgressFilter] = useState<string>(() => localStorage.getItem('laporan_jersey_tx_progress') || 'Semua');
   const [paymentFilter, setPaymentFilter] = useState<string>(() => localStorage.getItem('laporan_jersey_tx_payment') || 'Semua');
   const [deadlineFilter, setDeadlineFilter] = useState<string>(() => localStorage.getItem('laporan_jersey_tx_deadline') || 'Semua');
@@ -277,9 +295,12 @@ export default function ActiveOrders({
   const [sortBy, setSortBy] = useState<'deadline' | 'qty' | 'totalHarga' | 'sisaTagihan' | 'createdAt'>(() => (localStorage.getItem('laporan_jersey_tx_sort_by') as any) || 'deadline');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() => (localStorage.getItem('laporan_jersey_tx_sort_order') as any) || 'asc');
 
-  // Sync filter states to localStorage
+  // Debounced sync for search input to prevent main-thread freeze while typing
   useEffect(() => {
-    localStorage.setItem('laporan_jersey_tx_search', searchTerm);
+    const timer = setTimeout(() => {
+      localStorage.setItem('laporan_jersey_tx_search', searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
   }, [searchTerm]);
 
   useEffect(() => {
@@ -387,11 +408,9 @@ export default function ActiveOrders({
     } else {
       setStandaloneSpkList(prev => {
         const exists = prev.some(item => item.id === updatedWithCompany.id);
-        const nextList = exists 
+        return exists 
           ? prev.map(item => item.id === updatedWithCompany.id ? updatedWithCompany : item)
           : [updatedWithCompany, ...prev];
-        localStorage.setItem(STORAGE_KEY_SPK_STANDALONE, JSON.stringify(nextList));
-        return nextList;
       });
     }
   };
@@ -426,11 +445,9 @@ export default function ActiveOrders({
       // It's a standalone SPK
       setStandaloneSpkList(prev => {
         const exists = prev.some(item => item.id === updatedWithCompany.id);
-        const nextList = exists 
+        return exists 
           ? prev.map(item => item.id === updatedWithCompany.id ? updatedWithCompany : item)
           : [updatedWithCompany, ...prev];
-        localStorage.setItem(STORAGE_KEY_SPK_STANDALONE, JSON.stringify(nextList));
-        return nextList;
       });
     }
   };
@@ -452,11 +469,7 @@ export default function ActiveOrders({
       updatedAt: new Date().toISOString()
     };
 
-    setStandaloneSpkList(prev => {
-      const nextList = [newSpk, ...prev];
-      localStorage.setItem(STORAGE_KEY_SPK_STANDALONE, JSON.stringify(nextList));
-      return nextList;
-    });
+    setStandaloneSpkList(prev => [newSpk, ...prev]);
     setActiveSpk(newSpk);
     setLinkedOrderId(null);
     localStorage.setItem(STORAGE_KEY_SPK_ACTIVE_ID, newSpk.id);
@@ -484,11 +497,7 @@ export default function ActiveOrders({
       updatedAt: new Date().toISOString()
     };
 
-    setStandaloneSpkList(prev => {
-      const nextList = [duplicated, ...prev];
-      localStorage.setItem(STORAGE_KEY_SPK_STANDALONE, JSON.stringify(nextList));
-      return nextList;
-    });
+    setStandaloneSpkList(prev => [duplicated, ...prev]);
     setActiveSpk(duplicated);
     setLinkedOrderId(null);
     localStorage.setItem(STORAGE_KEY_SPK_ACTIVE_ID, duplicated.id);
@@ -646,13 +655,19 @@ export default function ActiveOrders({
     }
   };
 
+  // Shared batch payment status map for optimal UI responsiveness
+  const orderPaymentStatusMap = useMemo(() => {
+    return getBatchOrderPaymentStatus(pesananList, settings.cashFlowList);
+  }, [pesananList, settings.cashFlowList]);
+
   // Process sorting & filtering
   const filteredAndSortedList = useMemo(() => {
+    const safeSearch = (deferredSearchTerm || '').toLowerCase().trim();
+    const needsPaymentStatus = paymentFilter !== 'Semua' && paymentFilter !== 'Lunas' && paymentFilter !== 'Belum Lunas';
+
     return pesananList
       .filter(item => {
         // 1. Search term (case insensitive search matches multiple fields)
-        const safeSearch = searchTerm.toLowerCase().trim();
-        let matchesSearch = true;
         if (safeSearch) {
           const itemMatch = 
             (item.namaPemesan || '').toLowerCase().includes(safeSearch) ||
@@ -673,7 +688,7 @@ export default function ActiveOrders({
             (it.modelKerah || '').toLowerCase().includes(safeSearch)
           );
 
-          matchesSearch = itemMatch || !!itemsMatch;
+          if (!itemMatch && !itemsMatch) return false;
         }
 
         // 2. Month and Year from creation date
@@ -682,73 +697,75 @@ export default function ActiveOrders({
         const itemMonth = dtStr.substring(5, 7); // "MM"
 
         const yearMatches = tableYear === 'Semua' || itemYear === tableYear;
+        if (!yearMatches) return false;
+
         const monthMatches = tableMonth === 'Semua' || itemMonth === tableMonth;
+        if (!monthMatches) return false;
 
         // 3. Progress status filter
-        const matchesProgress = progressFilter === 'Semua' || item.statusProduksi === progressFilter;
-
-        // 4. Payment/Finance status filter
-        let matchesPayment = true;
-        const isFullyPaid = (Number(item.sisaTagihan) || 0) <= 0;
-
-        const sublimCost = item.items && item.items.length > 0
-          ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
-          : (item.qty * (item.printPerPcs || 0));
-
-        const jahitCost = item.items && item.items.length > 0
-          ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
-          : (item.qty * (item.jahitPerPcs || 0));
-
-        const baseKomisi = item.komisiPerPcs || 0;
-        const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
-        const komisiCost = hasPenerimaKomisi
-          ? (item.items && item.items.length > 0
-              ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
-              : item.qty * baseKomisi)
-          : 0;
-
-        const paymentStatus = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList);
-        const hasPaidSublim = item.statusBayarSublim === 'Lunas' || (item.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid);
-        const hasPaidJahit = item.statusBayarJahit === 'Lunas' || (item.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid);
-        const hasPaidKomisi = item.statusBayarKomisi === 'Lunas' || (item.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid);
-        const hasTakenProfit = paymentStatus.isProfitTaken;
-
-        if (paymentFilter === 'Lunas') {
-          matchesPayment = isFullyPaid;
-        } else if (paymentFilter === 'Belum Lunas') {
-          matchesPayment = !isFullyPaid;
-        } else if (paymentFilter === 'Belum Bayar Sublim') {
-          matchesPayment = !hasPaidSublim && sublimCost > 0;
-        } else if (paymentFilter === 'Belum Bayar Jahit') {
-          matchesPayment = !hasPaidJahit && jahitCost > 0;
-        } else if (paymentFilter === 'Belum Bayar Komisi') {
-          matchesPayment = !hasPaidKomisi && komisiCost > 0;
-        } else if (paymentFilter === 'Belum Ambil Keuntungan') {
-          matchesPayment = !hasTakenProfit && item.profit > 0;
-        } else if (paymentFilter === 'Sudah Ambil Keuntungan') {
-          matchesPayment = hasTakenProfit;
+        if (progressFilter !== 'Semua' && item.statusProduksi !== progressFilter) {
+          return false;
         }
 
-        // 5. Deadline status filter
-        let matchesDeadline = true;
+        // 4. Customer filter
+        if (customerFilter !== 'Semua' && (item.namaPemesan || '').trim() !== customerFilter) {
+          return false;
+        }
+
+        // 5. Payment/Finance status filter
+        if (paymentFilter !== 'Semua') {
+          const isFullyPaid = (Number(item.sisaTagihan) || 0) <= 0;
+          if (paymentFilter === 'Lunas') {
+            if (!isFullyPaid) return false;
+          } else if (paymentFilter === 'Belum Lunas') {
+            if (isFullyPaid) return false;
+          } else if (needsPaymentStatus) {
+            const sublimCost = item.items && item.items.length > 0
+              ? item.items.reduce((sum, it) => sum + (it.qty * (it.printPerPcs || 0)), 0)
+              : (item.qty * (item.printPerPcs || 0));
+
+            const jahitCost = item.items && item.items.length > 0
+              ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
+              : (item.qty * (item.jahitPerPcs || 0));
+
+            const baseKomisi = item.komisiPerPcs || 0;
+            const hasPenerimaKomisi = !!item.penerimaKomisi?.trim();
+            const komisiCost = hasPenerimaKomisi
+              ? (item.items && item.items.length > 0
+                  ? item.items.reduce((sum, it) => sum + (it.qty * (it.komisiPerPcs !== undefined ? it.komisiPerPcs : baseKomisi)), 0)
+                  : item.qty * baseKomisi)
+              : 0;
+
+            const paymentStatus = orderPaymentStatusMap.get(item.id) || DEFAULT_ORDER_PAYMENT_STATUS;
+            const hasPaidSublim = item.statusBayarSublim === 'Lunas' || (item.statusBayarSublim !== 'Belum Lunas' && paymentStatus.isSublimPaid);
+            const hasPaidJahit = item.statusBayarJahit === 'Lunas' || (item.statusBayarJahit !== 'Belum Lunas' && paymentStatus.isJahitPaid);
+            const hasPaidKomisi = item.statusBayarKomisi === 'Lunas' || (item.statusBayarKomisi !== 'Belum Lunas' && paymentStatus.isKomisiPaid);
+            const hasTakenProfit = paymentStatus.isProfitTaken;
+
+            if (paymentFilter === 'Belum Bayar Sublim' && (hasPaidSublim || sublimCost <= 0)) return false;
+            if (paymentFilter === 'Belum Bayar Jahit' && (hasPaidJahit || jahitCost <= 0)) return false;
+            if (paymentFilter === 'Belum Bayar Komisi' && (hasPaidKomisi || komisiCost <= 0)) return false;
+            if (paymentFilter === 'Belum Ambil Keuntungan' && (hasTakenProfit || item.profit <= 0)) return false;
+            if (paymentFilter === 'Sudah Ambil Keuntungan' && !hasTakenProfit) return false;
+          }
+        }
+
+        // 6. Deadline status filter
         if (deadlineFilter !== 'Semua') {
           const isFinished = item.statusProduksi === 'Beres';
           const diff = new Date(item.deadline).getTime() - new Date().getTime();
           const diffDays = Math.ceil(diff / (1000 * 60 * 60 * 24));
 
           if (deadlineFilter === 'Mendesak (≤ 3 Hari)') {
-            matchesDeadline = !isFinished && diffDays <= 3 && diffDays >= 0;
+            if (isFinished || diffDays > 3 || diffDays < 0) return false;
           } else if (deadlineFilter === 'Lewat Deadline') {
-            matchesDeadline = !isFinished && diffDays < 0;
+            if (isFinished || diffDays >= 0) return false;
           } else if (deadlineFilter === 'Aman (> 3 Hari)') {
-            matchesDeadline = !isFinished && diffDays > 3;
+            if (isFinished || diffDays <= 3) return false;
           }
         }
 
-        // 6. Customer filter
-        const matchesCustomer = customerFilter === 'Semua' || (item.namaPemesan && item.namaPemesan.trim() === customerFilter);
-
-        return matchesSearch && yearMatches && monthMatches && matchesProgress && matchesPayment && matchesDeadline && matchesCustomer;
+        return true;
       })
       .sort((a, b) => {
         let valueA: any = a[sortBy];
@@ -763,7 +780,7 @@ export default function ActiveOrders({
         if (valueA > valueB) return sortOrder === 'asc' ? 1 : -1;
         return 0;
       });
-  }, [pesananList, searchTerm, progressFilter, paymentFilter, deadlineFilter, customerFilter, tableMonth, tableYear, sortBy, sortOrder, settings.cashFlowList]);
+  }, [pesananList, deferredSearchTerm, progressFilter, paymentFilter, deadlineFilter, customerFilter, tableMonth, tableYear, sortBy, sortOrder, orderPaymentStatusMap]);
 
   // Color mapping function
   const getStatusStyle = (status: StatusProduksi) => {
@@ -1533,7 +1550,7 @@ export default function ActiveOrders({
                       : item.qty * baseKomisi)
                   : 0;
 
-                const paymentStatus = checkOrderPaymentStatus(item, settings.cashFlowList, pesananList);
+                const paymentStatus = orderPaymentStatusMap.get(item.id) || DEFAULT_ORDER_PAYMENT_STATUS;
                 const hasPaidSublim = paymentStatus.isSublimPaid;
                 const hasPaidJahit = paymentStatus.isJahitPaid;
                 const hasPaidKomisi = paymentStatus.isKomisiPaid;

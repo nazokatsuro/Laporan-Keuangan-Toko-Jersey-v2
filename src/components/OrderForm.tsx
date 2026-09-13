@@ -196,59 +196,9 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
     }, 4500);
   };
 
-  // Safe image downscaling & loader to prevent browser Out-of-Memory (OOM) renderer crashes
+  // Safe image downscaling & loader to prevent browser Out-of-Memory (OOM) renderer crashes and ensure rapid saving
   const optimizeAndLoadImage = async (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      if (blob.type === 'image/svg+xml' || blob.size < 600 * 1024) {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = (err) => reject(err);
-        reader.readAsDataURL(blob);
-        return;
-      }
-
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(blob);
-      img.onload = () => {
-        URL.revokeObjectURL(objectUrl);
-        const MAX_DIM = 2200;
-        let w = img.width;
-        let h = img.height;
-        if (w > MAX_DIM || h > MAX_DIM) {
-          if (w > h) {
-            h = Math.round((h * MAX_DIM) / w);
-            w = MAX_DIM;
-          } else {
-            w = Math.round((w * MAX_DIM) / h);
-            h = MAX_DIM;
-          }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(blob);
-          return;
-        }
-        ctx.drawImage(img, 0, 0, w, h);
-        const isPng = blob.type === 'image/png';
-        const mime = isPng ? 'image/png' : 'image/jpeg';
-        const quality = isPng ? 0.92 : 0.88;
-        const dataUrl = canvas.toDataURL(mime, quality);
-        resolve(dataUrl);
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = (err) => reject(err);
-        reader.readAsDataURL(blob);
-      };
-      img.src = objectUrl;
-    });
+    return compressImage(blob, 1600, 1600, 0.85);
   };
 
   // Helper to process image Blob / File safely
@@ -381,6 +331,14 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
   const [catatanPenjahitJahit, setCatatanPenjahitJahit] = useState('BIASA');
   const [catatanPenjahitBahan, setCatatanPenjahitBahan] = useState('');
   const [catatanPenjahitTangan, setCatatanPenjahitTangan] = useState('PENDEK');
+
+  // Aggregated material name from items for real-time synchronization
+  const currentItemsBahan = useMemo(() => {
+    if (items.length === 0) return '';
+    return items.length === 1 
+      ? (items[0].bahan || '')
+      : items.map(item => item.bahan).filter(Boolean).filter((v, idx, arr) => arr.indexOf(v) === idx).join(', ');
+  }, [items]);
 
   // Memoized lists of collars combining baseline and custom ones
   const availableCollars = useMemo(() => {
@@ -574,6 +532,18 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
       updated[index] = { ...updated[index], [field]: value };
       return updated;
     });
+
+    // Auto-sync material to Catatan Khusus Penjahit & QC Bahan when user types or changes bahan
+    if (field === 'bahan') {
+      const valStr = String(value || '');
+      setCatatanPenjahitBahan(prev => {
+        // Automatically sync if first item, or if empty, or if previously in sync with the item's previous value
+        if (index === 0 || !prev || prev === items[index]?.bahan) {
+          return valStr;
+        }
+        return prev;
+      });
+    }
   };
 
   const addNewItem = () => {
@@ -1785,12 +1755,12 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
             </div>
           </div>
 
-          {/* Catatan Khusus Penjahit & QC Block (Gambar 1) */}
+          {/* Catatan Khusus Penjahit Block (Gambar 1) */}
           <div className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 p-4 rounded-xl space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-black text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5 uppercase tracking-wider">
                 <Scissors className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                CATATAN KHUSUS PENJAHIT & QC (SESUAI DOKUMEN SPK)
+                CATATAN KHUSUS PENJAHIT (SESUAI DOKUMEN SPK)
               </h4>
               <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
                 Tercetak di Kotak Kuning / Biru SPK
@@ -1823,7 +1793,21 @@ export default function OrderForm({ pesananToEdit, onSave, onCancel, onLogToCash
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Bahan</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                    Bahan <span className="text-emerald-600 dark:text-emerald-400 font-normal lowercase">(otomatis sinkron)</span>
+                  </label>
+                  {currentItemsBahan && currentItemsBahan !== catatanPenjahitBahan && (
+                    <button
+                      type="button"
+                      onClick={() => setCatatanPenjahitBahan(currentItemsBahan)}
+                      className="text-[9px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
+                      title="Samakan dengan bahan di rincian produk atas"
+                    >
+                      ↻ Samakan ({currentItemsBahan.slice(0, 15)})
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={catatanPenjahitBahan}

@@ -11,7 +11,9 @@ import {
   generateId, 
   formatRupiah,
   calculateCashFlowAkhir,
-  checkOrderPaymentStatus 
+  checkOrderPaymentStatus,
+  getBatchOrderPaymentStatus,
+  DEFAULT_ORDER_PAYMENT_STATUS
 } from './utils';
 
 // Import Modular Components
@@ -600,6 +602,7 @@ export default function App() {
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     const cfList = settings.cashFlowList || [];
+    const paymentStatusMap = getBatchOrderPaymentStatus(pesananList, cfList);
 
     pesananList.forEach(item => {
       // 1. Unpaid debt alert
@@ -653,7 +656,7 @@ export default function App() {
         ? item.items.reduce((sum, it) => sum + (it.qty * (it.jahitPerPcs || 0)), 0)
         : (item.qty * (item.jahitPerPcs || 0));
 
-      const paymentStatus = checkOrderPaymentStatus(item, cfList, pesananList);
+      const paymentStatus = paymentStatusMap.get(item.id) || DEFAULT_ORDER_PAYMENT_STATUS;
       const isSublimUnpaid = sublimCost > 0 && !paymentStatus.isSublimPaid;
       const isJahitUnpaid = jahitCost > 0 && !paymentStatus.isJahitPaid;
 

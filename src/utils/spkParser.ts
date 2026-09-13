@@ -95,6 +95,22 @@ export function parseRosterLine(rawLine: string, lineIndex: number, defaultModel
   // 2. Clean out redundant separator keywords: "no. 25", "no 25", "nomor 25", "num 25", "#25" -> "25"
   line = line.replace(/\b(no\.|no|nomor|number|num|#)\s*(\d+)\b/gi, '$2');
 
+  let qty = 1;
+
+  // 2.5 Extract explicit quantity keywords (e.g. "6pcs", "6 pcs", "6pc", "6bh", "6 stel", "6 pasang", "6x", "x6", "qty: 6", "(6 pcs)")
+  const qtyPattern = /\b(?:qty[:\s]*)?(\d{1,4})\s*(?:pcs|pc|bh|buah|pasang|stel|lembar|x)\b/i;
+  const qtyPrefixPattern = /\b(?:x|\*)\s*(\d{1,4})\b/i;
+  const qtyBracketPattern = /\((\d{1,4})\s*(?:pcs|pc|x)?\)/i;
+  
+  const qMatch = line.match(qtyPattern) || line.match(qtyPrefixPattern) || line.match(qtyBracketPattern);
+  if (qMatch) {
+    const parsedQ = parseInt(qMatch[1], 10);
+    if (!isNaN(parsedQ) && parsedQ > 0) {
+      qty = parsedQ;
+      line = line.replace(qMatch[0], ' ').trim();
+    }
+  }
+
   let model = defaultModel;
   let notes = '-';
 
@@ -162,19 +178,69 @@ export function parseRosterLine(rawLine: string, lineIndex: number, defaultModel
     }
   }
 
+  // If name is just "6pcs" or similar pure quantity text, convert to standard empty/polos
+  if (name && /^\s*(\d+)\s*pcs?\s*$/i.test(name)) {
+    const m = name.match(/\d+/);
+    if (m) {
+      qty = parseInt(m[0], 10);
+      name = '-';
+    }
+  }
+
   // Final sanity check
-  if (!name && !foundNum) return null;
+  if (!name && !foundNum && !foundSize) return null;
 
   return {
     id: `player-${Date.now()}-${lineIndex}-${Math.random().toString(36).substring(2, 6)}`,
     no: lineIndex + 1,
-    name: name || `Pemain ${lineIndex + 1}`,
+    name: name || (qty > 1 ? `Polos (${qty} pcs)` : `Pemain ${lineIndex + 1}`),
     size: foundSize || 'L',
     number: foundNum || '-',
     model: model || defaultModel,
     notes: notes || '-',
-    qc: false
+    qc: false,
+    qty: qty > 0 ? qty : 1
   };
+}
+
+/**
+ * Merges duplicate players (same name, size, number, model) into a single row with accumulated quantity.
+ * When there are duplicate names/products, they aggregate into QTY first, then propagate to size recap.
+ */
+export function mergeDuplicatePlayers(players: SPKPlayer[]): SPKPlayer[] {
+  const merged: SPKPlayer[] = [];
+  const map = new Map<string, SPKPlayer>();
+
+  players.forEach(p => {
+    const normName = (p.name || '').trim().toLowerCase();
+    const normSize = normalizeSize(p.size || 'L');
+    const normNum = (p.number || '-').trim();
+    const normModel = (p.model || 'PENDEK').trim().toUpperCase();
+    
+    // Key based on player identity & product spec
+    const key = `${normName}|${normSize}|${normNum}|${normModel}`;
+    const pQty = typeof p.qty === 'number' && p.qty > 0 ? p.qty : 1;
+
+    if (map.has(key)) {
+      const existing = map.get(key)!;
+      existing.qty = (existing.qty || 1) + pQty;
+      // Merge notes if different and not '-'
+      if (p.notes && p.notes !== '-' && !existing.notes.includes(p.notes)) {
+        existing.notes = existing.notes === '-' ? p.notes : `${existing.notes}, ${p.notes}`;
+      }
+    } else {
+      const cloned = { ...p, qty: pQty };
+      map.set(key, cloned);
+      merged.push(cloned);
+    }
+  });
+
+  // Re-index row numbers
+  merged.forEach((p, idx) => {
+    p.no = idx + 1;
+  });
+
+  return merged;
 }
 
 /**
@@ -182,7 +248,7 @@ export function parseRosterLine(rawLine: string, lineIndex: number, defaultModel
  */
 export function parseRawRosterText(rawText: string, defaultModel = 'PENDEK'): ParseResult {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const players: SPKPlayer[] = [];
+  let players: SPKPlayer[] = [];
   const warnings: string[] = [];
   const errors: string[] = [];
 
@@ -203,10 +269,8 @@ export function parseRawRosterText(rawText: string, defaultModel = 'PENDEK'): Pa
     }
   });
 
-  // Re-index row numbers
-  players.forEach((p, idx) => {
-    p.no = idx + 1;
-  });
+  // Automatically merge duplicates into QTY per user requirement
+  players = mergeDuplicatePlayers(players);
 
   // Validation Warnings:
   // 1. Check duplicate numbers
@@ -342,11 +406,18 @@ export function calculateSizeRecap(players: SPKPlayer[]): { rows: SizeRecapRow[]
     let pjgCount = 0;
 
     matchingPlayers.forEach(p => {
+      let pQty = typeof p.qty === 'number' && p.qty > 0 ? p.qty : 1;
+      // Fallback: if player name was literally typed as "6pcs" or contains "6pcs" and p.qty was 1
+      if (pQty === 1 && p.name && /^\s*(\d+)\s*pcs?\s*$/i.test(p.name)) {
+        const m = p.name.match(/\d+/);
+        if (m) pQty = parseInt(m[0], 10);
+      }
+      
       const mod = (p.model || '').toUpperCase();
       if (mod.includes('PANJANG') || mod.includes('PJG') || mod === 'LS') {
-        pjgCount++;
+        pjgCount += pQty;
       } else {
-        pendekCount++;
+        pendekCount += pQty;
       }
     });
 

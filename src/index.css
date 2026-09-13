@@ -107,15 +107,15 @@
   }
 
   .nota-print-modal {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
-    z-index: 999999 !important;
+    z-index: auto !important;
     overflow: visible !important;
     display: block !important;
   }
@@ -124,12 +124,49 @@
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 auto !important;
-    padding: 20px !important;
+    padding: 16px !important;
     border: none !important;
     box-shadow: none !important;
     background: #ffffff !important;
     color: #000000 !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+
+  .nota-print-target table {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+
+  .nota-print-target thead {
+    display: table-header-group !important;
+  }
+
+  .nota-print-target tfoot {
+    display: table-row-group !important;
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .nota-print-target tr,
+  .rekap-row {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .rekap-summary-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .rekap-signatures-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .rekap-header-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
 

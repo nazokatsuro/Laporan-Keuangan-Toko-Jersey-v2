@@ -32,8 +32,10 @@ export function getSyncedCompanySettings(
   };
 }
 
+const orderSpkCache = new WeakMap<Pesanan, { key: string; data: SPKData }>();
+
 /**
- * Converts a Pesanan transaction into a full SPKData object
+ * Converts a Pesanan transaction into a full SPKData object (with WeakMap memoization)
  */
 export function orderToSpkData(
   order: Pesanan,
@@ -41,6 +43,12 @@ export function orderToSpkData(
   shopSettings?: ShopSettings
 ): SPKData {
   const mergedCompany = getSyncedCompanySettings(shopSettings, companySettings);
+  const cacheKey = `${mergedCompany.name}_${mergedCompany.wa}_${order.spkStatus || ''}_${order.nomorSpk || ''}`;
+
+  const cached = orderSpkCache.get(order);
+  if (cached && cached.key === cacheKey) {
+    return cached.data;
+  }
 
   const primaryCollar = order.modelKerah || order.items?.[0]?.modelKerah || 'O-Neck (Standar)';
   const primaryBahan = order.bahan || order.items?.[0]?.bahan || 'WAFFLE';
@@ -80,7 +88,7 @@ export function orderToSpkData(
 
   // If order already has cached SPK data, reuse and freshen header & tailoring info
   if (order.spkData) {
-    return {
+    const existingSpk: SPKData = {
       ...order.spkData,
       id: order.spkData.id || `spk-ord-${order.id}`,
       spkNumber: order.nomorSpk || order.spkData.spkNumber || defaultSpkNum,
@@ -109,6 +117,8 @@ export function orderToSpkData(
       companySettings: mergedCompany,
       updatedAt: order.spkData.updatedAt || new Date().toISOString()
     };
+    orderSpkCache.set(order, { key: cacheKey, data: existingSpk });
+    return existingSpk;
   }
 
   // Parse player roster from detailSizeNama
@@ -134,7 +144,7 @@ export function orderToSpkData(
             size: 'L',
             number: String(counter).padStart(2, '0'),
             model: it.modelLengan || primaryLengan || 'PENDEK',
-            notes: it.keterangan ? it.keterangan.slice(0, 15) : '-',
+            notes: it.keterangan ? it.keterangan.trim() : '-',
             qc: false
           });
           counter++;
@@ -160,7 +170,7 @@ export function orderToSpkData(
   const collarImg = order.fotoKerahUrl || DEFAULT_COLLAR_SVG;
   const jerseyImgUrl = order.mockupUrl || DEFAULT_JERSEY_MOCKUP_SVG;
 
-  return {
+  const resultSpk: SPKData = {
     id: `spk-ord-${order.id}`,
     spkNumber: defaultSpkNum,
     customer: order.namaPemesan || 'KONSUMEN',
@@ -232,6 +242,9 @@ export function orderToSpkData(
     createdAt: order.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
+
+  orderSpkCache.set(order, { key: cacheKey, data: resultSpk });
+  return resultSpk;
 }
 
 /**
