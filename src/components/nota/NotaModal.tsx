@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { toPng, toJpeg, toCanvas } from 'html-to-image';
 import { jsPDF } from 'jspdf';
+import { saveElementToSmartMultiPagePdf } from '../../utils/pdfExportHelper';
 
 interface NotaModalProps {
   order: Pesanan;
@@ -98,84 +99,13 @@ export function NotaModal({ order, settings, onClose }: NotaModalProps) {
     if (!notaRef.current) return;
     setIsExportingPdf(true);
     try {
-      const canvas = await toCanvas(notaRef.current, {
-        quality: 1.0,
+      await saveElementToSmartMultiPagePdf(notaRef.current, {
+        filename: `NOTA-${order.id}-${cleanPoName}.pdf`,
         pixelRatio: 2.2,
-        backgroundColor: '#ffffff',
-        cacheBust: true,
-        skipFonts: false,
-        style: {
-          transform: 'none',
-          width: '840px',
-          minWidth: '840px',
-          maxWidth: '840px',
-          margin: '0',
-        }
+        pdfQuality: 0.98,
+        marginMm: 8,
+        elementWidthPx: 840,
       });
-
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-        compress: true
-      });
-
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 8;
-      const contentWidth = pageWidth - (margin * 2);
-      const contentHeightPerPage = pageHeight - (margin * 2);
-
-      const totalHeightMm = (canvas.height / canvas.width) * contentWidth;
-
-      if (totalHeightMm <= contentHeightPerPage) {
-        const imgData = canvas.toDataURL('image/jpeg', 0.98);
-        pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, totalHeightMm, undefined, 'FAST');
-      } else {
-        const sliceHeightPx = Math.floor((contentHeightPerPage / contentWidth) * canvas.width);
-        let renderedY = 0;
-        let pageIndex = 0;
-
-        while (renderedY < canvas.height) {
-          const remainingHeightPx = canvas.height - renderedY;
-          const currentSliceHeightPx = Math.min(sliceHeightPx, remainingHeightPx);
-
-          const sliceCanvas = document.createElement('canvas');
-          sliceCanvas.width = canvas.width;
-          sliceCanvas.height = currentSliceHeightPx;
-
-          const sliceCtx = sliceCanvas.getContext('2d');
-          if (sliceCtx) {
-            sliceCtx.fillStyle = '#ffffff';
-            sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-            sliceCtx.drawImage(
-              canvas,
-              0,
-              renderedY,
-              canvas.width,
-              currentSliceHeightPx,
-              0,
-              0,
-              canvas.width,
-              currentSliceHeightPx
-            );
-          }
-
-          const sliceDataUrl = sliceCanvas.toDataURL('image/jpeg', 0.98);
-          const currentHeightMm = (currentSliceHeightPx / canvas.width) * contentWidth;
-
-          if (pageIndex > 0) {
-            pdf.addPage('a4', 'portrait');
-          }
-
-          pdf.addImage(sliceDataUrl, 'JPEG', margin, margin, contentWidth, currentHeightMm, undefined, 'FAST');
-
-          renderedY += currentSliceHeightPx;
-          pageIndex++;
-        }
-      }
-
-      pdf.save(`NOTA-${order.id}-${cleanPoName}.pdf`);
     } catch (e) {
       console.error('Gagal mengunduh PDF nota:', e);
       alert('Gagal mengunduh PDF nota. Silakan coba lagi.');

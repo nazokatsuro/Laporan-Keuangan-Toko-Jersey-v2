@@ -31,6 +31,7 @@ import {
 import { toJpeg, toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
+import { appendSmartElementToPdf } from '../../utils/pdfExportHelper';
 
 interface BatchNotaModalProps {
   orders: Pesanan[];
@@ -132,67 +133,31 @@ export function BatchNotaModal({ orders, settings, onClose }: BatchNotaModalProp
         const elem = cardRefs.current.get(order.id);
         if (!elem) continue;
 
-        const imgData = await toJpeg(elem, {
-          quality: 0.96,
-          pixelRatio: 2.2,
-          backgroundColor: '#ffffff',
-          cacheBust: true,
-          skipFonts: false
-        });
-
-        const img = new Image();
-        img.src = imgData;
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-        });
-
-        const imgWidth = img.naturalWidth || img.width;
-        const imgHeight = img.naturalHeight || img.height;
-        const ratio = Math.min(maxPdfWidth / imgWidth, maxPdfHeight / imgHeight);
-
-        const finalWidth = imgWidth * ratio;
-        const finalHeight = imgHeight * ratio;
-        const posX = margin + (maxPdfWidth - finalWidth) / 2;
-        const posY = margin + (maxPdfHeight - finalHeight) / 2;
-
         if (i > 0) {
           pdf.addPage('a4', 'portrait');
         }
 
-        pdf.addImage(imgData, 'JPEG', posX, posY, finalWidth, finalHeight, undefined, 'FAST');
+        await appendSmartElementToPdf(pdf, elem, {
+          marginMm: margin,
+          pixelRatio: 2.2,
+          pdfQuality: 0.96,
+          elementWidthPx: 840,
+        });
       }
 
       // 2. Process the Final Summary Sheet (Rekapitulasi Tiap PO & Grand Total)
       const rekapElem = cardRefs.current.get('batch-rekap');
       if (rekapElem) {
         setExportProgress('Memproses lembar rekapitulasi akhir batch...');
-        const rekapImgData = await toJpeg(rekapElem, {
-          quality: 0.96,
+        if (activeOrders.length > 0) {
+          pdf.addPage('a4', 'portrait');
+        }
+        await appendSmartElementToPdf(pdf, rekapElem, {
+          marginMm: margin,
           pixelRatio: 2.2,
-          backgroundColor: '#ffffff',
-          cacheBust: true,
-          skipFonts: false
+          pdfQuality: 0.96,
+          elementWidthPx: 840,
         });
-
-        const rImg = new Image();
-        rImg.src = rekapImgData;
-        await new Promise((resolve, reject) => {
-          rImg.onload = resolve;
-          rImg.onerror = reject;
-        });
-
-        const rImgWidth = rImg.naturalWidth || rImg.width;
-        const rImgHeight = rImg.naturalHeight || rImg.height;
-        const rRatio = Math.min(maxPdfWidth / rImgWidth, maxPdfHeight / rImgHeight);
-
-        const rFinalWidth = rImgWidth * rRatio;
-        const rFinalHeight = rImgHeight * rRatio;
-        const rPosX = margin + (maxPdfWidth - rFinalWidth) / 2;
-        const rPosY = margin + (maxPdfHeight - rFinalHeight) / 2;
-
-        pdf.addPage('a4', 'portrait');
-        pdf.addImage(rekapImgData, 'JPEG', rPosX, rPosY, rFinalWidth, rFinalHeight, undefined, 'FAST');
       }
 
       const dateStr = new Date().toISOString().slice(0, 10);

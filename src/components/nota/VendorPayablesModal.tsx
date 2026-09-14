@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { toCanvas } from 'html-to-image';
 import { jsPDF } from 'jspdf';
+import { saveElementToSmartMultiPagePdf } from '../../utils/pdfExportHelper';
 
 interface VendorPayablesModalProps {
   orders: Pesanan[];
@@ -341,85 +342,16 @@ export function VendorPayablesModal({
     if (!cardRef.current) return;
     setIsExportingPdf(true);
     try {
-      const canvas = await toCanvas(cardRef.current, {
-        quality: 1.0,
-        pixelRatio: 2.2,
-        backgroundColor: '#ffffff',
-        cacheBust: true,
-        skipFonts: false,
-        style: {
-          transform: 'none',
-          width: '840px',
-          minWidth: '840px',
-          maxWidth: '840px',
-          margin: '0',
-        }
-      });
-
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-        compress: true
-      });
-
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 8;
-      const contentWidth = pageWidth - (margin * 2);
-      const contentHeightPerPage = pageHeight - (margin * 2);
-
-      const totalHeightMm = (canvas.height / canvas.width) * contentWidth;
-
-      if (totalHeightMm <= contentHeightPerPage) {
-        const imgData = canvas.toDataURL('image/jpeg', 0.98);
-        pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, totalHeightMm, undefined, 'FAST');
-      } else {
-        const sliceHeightPx = Math.floor((contentHeightPerPage / contentWidth) * canvas.width);
-        let renderedY = 0;
-        let pageIndex = 0;
-
-        while (renderedY < canvas.height) {
-          const remainingHeightPx = canvas.height - renderedY;
-          const currentSliceHeightPx = Math.min(sliceHeightPx, remainingHeightPx);
-
-          const sliceCanvas = document.createElement('canvas');
-          sliceCanvas.width = canvas.width;
-          sliceCanvas.height = currentSliceHeightPx;
-
-          const sliceCtx = sliceCanvas.getContext('2d');
-          if (sliceCtx) {
-            sliceCtx.fillStyle = '#ffffff';
-            sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-            sliceCtx.drawImage(
-              canvas,
-              0,
-              renderedY,
-              canvas.width,
-              currentSliceHeightPx,
-              0,
-              0,
-              canvas.width,
-              currentSliceHeightPx
-            );
-          }
-
-          const sliceDataUrl = sliceCanvas.toDataURL('image/jpeg', 0.98);
-          const currentHeightMm = (currentSliceHeightPx / canvas.width) * contentWidth;
-
-          if (pageIndex > 0) {
-            pdf.addPage('a4', 'portrait');
-          }
-
-          pdf.addImage(sliceDataUrl, 'JPEG', margin, margin, contentWidth, currentHeightMm, undefined, 'FAST');
-
-          renderedY += currentSliceHeightPx;
-          pageIndex++;
-        }
-      }
-
       const dateStr = new Date().toISOString().slice(0, 10);
-      pdf.save(`NOTA_TAGIHAN_VENDOR_${category.toUpperCase()}_${statusFilter.toUpperCase()}_${activeOrders.length}_PO_${dateStr}.pdf`);
+      const filename = `NOTA_TAGIHAN_VENDOR_${category.toUpperCase()}_${statusFilter.toUpperCase()}_${activeOrders.length}_PO_${dateStr}.pdf`;
+      
+      await saveElementToSmartMultiPagePdf(cardRef.current, {
+        filename,
+        pixelRatio: 2.2,
+        pdfQuality: 0.98,
+        marginMm: 8,
+        elementWidthPx: 840,
+      });
     } catch (e) {
       console.error('Gagal unduh PDF:', e);
       alert('Gagal mengunduh file PDF. Silakan coba lagi.');

@@ -154,17 +154,12 @@
     break-inside: avoid !important;
   }
 
-  .rekap-summary-block {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
-  .rekap-signatures-block {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
-  .rekap-header-block {
+  .rekap-kpi-block,
+  .rekap-summary-block,
+  .rekap-signatures-block,
+  .rekap-header-block,
+  [data-po-boundary="true"],
+  .break-inside-avoid {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
