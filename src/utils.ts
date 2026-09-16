@@ -755,3 +755,130 @@ export async function compressBase64IfLarge(dataUrl: string, maxDim: number = 16
     img.src = dataUrl;
   });
 }
+
+/**
+ * Calculates how many completed orders are eligible for image cleanup and the estimated size in bytes.
+ */
+export function getPurgeableCompletedOrdersStats(
+  orders: Pesanan[], 
+  thresholdDays: number = 14
+): { purgeableCount: number; estimatedBytes: number; totalCompletedWithImages: number } {
+  if (!orders || orders.length === 0) {
+    return { purgeableCount: 0, estimatedBytes: 0, totalCompletedWithImages: 0 };
+  }
+
+  const now = Date.now();
+  let purgeableCount = 0;
+  let estimatedBytes = 0;
+  let totalCompletedWithImages = 0;
+
+  for (const o of orders) {
+    if (o.statusProduksi !== 'Beres') continue;
+
+    const hasImages = Boolean(
+      (o.mockupUrl && o.mockupUrl.length > 500) ||
+      (o.fotoKerahUrl && o.fotoKerahUrl.length > 500) ||
+      (o.detailSizeNamaGambarUrl && o.detailSizeNamaGambarUrl.length > 500) ||
+      (o.spkData?.jerseyImages && o.spkData.jerseyImages.some(img => img.url && img.url.length > 500))
+    );
+
+    if (!hasImages) continue;
+    totalCompletedWithImages++;
+
+    const orderDateStr = o.deadline || o.createdAt || '';
+    const orderTimestamp = orderDateStr ? new Date(orderDateStr).getTime() : now;
+    const diffDays = (now - orderTimestamp) / (1000 * 60 * 60 * 24);
+
+    if (diffDays >= thresholdDays || thresholdDays <= 0) {
+      purgeableCount++;
+      let bytes = 0;
+      if (o.mockupUrl) bytes += o.mockupUrl.length;
+      if (o.fotoKerahUrl) bytes += o.fotoKerahUrl.length;
+      if (o.detailSizeNamaGambarUrl) bytes += o.detailSizeNamaGambarUrl.length;
+      if (o.spkData?.jerseyImages) {
+        o.spkData.jerseyImages.forEach(img => {
+          if (img.url) bytes += img.url.length;
+        });
+      }
+      estimatedBytes += bytes;
+    }
+  }
+
+  return { purgeableCount, estimatedBytes, totalCompletedWithImages };
+}
+
+/**
+ * Purges heavy image strings from completed orders that are older than thresholdDays.
+ * All financial, item, customer, status, size, and invoice text details remain 100% intact.
+ */
+export function purgeOldCompletedOrderImages(
+  orders: Pesanan[], 
+  thresholdDays: number = 14
+): { cleanedOrders: Pesanan[]; purgedCount: number; savedBytesEstimate: number } {
+  if (!orders || orders.length === 0) {
+    return { cleanedOrders: [], purgedCount: 0, savedBytesEstimate: 0 };
+  }
+
+  const now = Date.now();
+  let purgedCount = 0;
+  let savedBytesEstimate = 0;
+
+  const cleanedOrders = orders.map(o => {
+    if (o.statusProduksi !== 'Beres') {
+      return o;
+    }
+
+    const orderDateStr = o.deadline || o.createdAt || '';
+    const orderTimestamp = orderDateStr ? new Date(orderDateStr).getTime() : now;
+    const diffDays = (now - orderTimestamp) / (1000 * 60 * 60 * 24);
+
+    if (diffDays < thresholdDays && thresholdDays > 0) {
+      return o;
+    }
+
+    const hasImages = Boolean(
+      (o.mockupUrl && o.mockupUrl.length > 500) ||
+      (o.fotoKerahUrl && o.fotoKerahUrl.length > 500) ||
+      (o.detailSizeNamaGambarUrl && o.detailSizeNamaGambarUrl.length > 500) ||
+      (o.spkData?.jerseyImages && o.spkData.jerseyImages.some(img => img.url && img.url.length > 500))
+    );
+
+    if (!hasImages) {
+      return o;
+    }
+
+    purgedCount++;
+    let bytes = 0;
+    if (o.mockupUrl) bytes += o.mockupUrl.length;
+    if (o.fotoKerahUrl) bytes += o.fotoKerahUrl.length;
+    if (o.detailSizeNamaGambarUrl) bytes += o.detailSizeNamaGambarUrl.length;
+    if (o.spkData?.jerseyImages) {
+      o.spkData.jerseyImages.forEach(img => {
+        if (img.url) bytes += img.url.length;
+      });
+    }
+    savedBytesEstimate += bytes;
+
+    // Create shallow copy of order with image references cleared
+    const updated: Pesanan = {
+      ...o,
+      mockupUrl: '',
+      fotoKerahUrl: '',
+      detailSizeNamaGambarUrl: ''
+    };
+
+    if (updated.spkData) {
+      const cleanSpk = { ...updated.spkData };
+      cleanSpk.jerseyImages = [];
+      cleanSpk.collarImage = '';
+      (cleanSpk as any).mockupBase64 = '';
+      (cleanSpk as any).collarPhotoBase64 = '';
+      (cleanSpk as any).mockupImage = '';
+      updated.spkData = cleanSpk;
+    }
+
+    return updated;
+  });
+
+  return { cleanedOrders, purgedCount, savedBytesEstimate };
+}

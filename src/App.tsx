@@ -13,7 +13,8 @@ import {
   calculateCashFlowAkhir,
   checkOrderPaymentStatus,
   getBatchOrderPaymentStatus,
-  DEFAULT_ORDER_PAYMENT_STATUS
+  DEFAULT_ORDER_PAYMENT_STATUS,
+  purgeOldCompletedOrderImages
 } from './utils';
 
 // Import Modular Components
@@ -400,8 +401,9 @@ export default function App() {
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'pending' | 'saving' | 'error'>('synced');
   const isFirstRender = useRef(true);
   const lastSavedDataRef = useRef<string>('');
-
-
+  const isUploadingDriveRef = useRef(false);
+  const queuedSyncDataRef = useRef<{ pesananList: Pesanan[]; settings: ShopSettings } | null>(null);
+  const syncDebounceTimerRef = useRef<any>(null);
 
   const [customAlert, setCustomAlert] = useState<{ message: string; title?: string } | null>(null);
 
@@ -530,7 +532,50 @@ export default function App() {
     }
   }, [googleUser, googleToken]);
 
-  // Ambient Auto-Backup to Drive whenever data changes (debounced by 4s to prevent API spam)
+  // Process the queued Google Drive sync in a single sequential pipeline (mutex locked)
+  const executeDriveSync = async () => {
+    if (isUploadingDriveRef.current) {
+      // An upload is already in flight. When it completes, it will automatically process any queued items!
+      return;
+    }
+
+    if (!googleToken || !queuedSyncDataRef.current) {
+      setCloudSyncStatus('synced');
+      return;
+    }
+
+    const currentToSync = queuedSyncDataRef.current;
+    queuedSyncDataRef.current = null;
+    isUploadingDriveRef.current = true;
+    setCloudSyncStatus('saving');
+
+    try {
+      await uploadDraftToDrive(googleToken, currentToSync.pesananList, currentToSync.settings);
+      lastSavedDataRef.current = JSON.stringify(currentToSync);
+      // Only mark as synced if no new changes were queued during the upload
+      if (!queuedSyncDataRef.current) {
+        setCloudSyncStatus('synced');
+      }
+    } catch (err: any) {
+      console.warn('Auto-sync draft warning:', err);
+      if (err?.message === 'UNAUTHORIZED' || (err?.message && err.message.includes('401'))) {
+        clearExpiredToken();
+      }
+      // Re-queue the failed data so it is not lost and can be retried
+      if (!queuedSyncDataRef.current) {
+        queuedSyncDataRef.current = currentToSync;
+      }
+      setCloudSyncStatus('error');
+    } finally {
+      isUploadingDriveRef.current = false;
+      // If new changes arrived during the upload, trigger the next upload immediately
+      if (queuedSyncDataRef.current && googleToken) {
+        executeDriveSync();
+      }
+    }
+  };
+
+  // Ambient Auto-Backup to Drive whenever data changes (debounced with mutex queue)
   useEffect(() => {
     const isAutoSyncOn = localStorage.getItem('laporan_jersey_gdrive_autosync') === 'true';
     if (googleUser && googleToken && isAutoSyncOn) {
@@ -545,29 +590,28 @@ export default function App() {
 
       // If data matches what is saved or baseline, stay on synced
       if (currentDataStr === lastSavedDataRef.current) {
-        setCloudSyncStatus('synced');
+        if (!isUploadingDriveRef.current && !queuedSyncDataRef.current) {
+          setCloudSyncStatus('synced');
+        }
         return;
       }
 
-      // We have unsaved changes, change status to pending
+      // Queue the latest data for sync
+      queuedSyncDataRef.current = { pesananList, settings };
       setCloudSyncStatus('pending');
 
-      const timer = setTimeout(async () => {
-        try {
-          setCloudSyncStatus('saving');
-          console.log('Background Auto-Sync ke Google Drive berjalan...');
-          await uploadDraftToDrive(googleToken, pesananList, settings);
-          lastSavedDataRef.current = currentDataStr;
-          setCloudSyncStatus('synced');
-        } catch (err: any) {
-          console.warn('Failed to auto-backup draft (offline or session expired):', err);
-          if (err?.message === 'UNAUTHORIZED' || (err?.message && err.message.includes('401'))) {
-            clearExpiredToken();
-          }
-          setCloudSyncStatus('error');
+      if (syncDebounceTimerRef.current) {
+        clearTimeout(syncDebounceTimerRef.current);
+      }
+      syncDebounceTimerRef.current = setTimeout(() => {
+        executeDriveSync();
+      }, 1000);
+
+      return () => {
+        if (syncDebounceTimerRef.current) {
+          clearTimeout(syncDebounceTimerRef.current);
         }
-      }, 4000);
-      return () => clearTimeout(timer);
+      };
     }
   }, [pesananList, settings, googleUser, googleToken]);
 
@@ -575,7 +619,7 @@ export default function App() {
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (cloudSyncStatus === 'pending' || cloudSyncStatus === 'saving') {
-        const warningMessage = "⚠️ PERINGATAN: Butuh waktu sekitar 4 detik untuk auto-save ke Penyimpanan Awan. Apakah Anda yakin ingin mengabaikan cadangan terbaru dan keluar/refresh?";
+        const warningMessage = "⚠️ Sedang menyinkronkan draf ke Penyimpanan Awan. Apakah Anda yakin ingin keluar/refresh?";
         e.preventDefault();
         e.returnValue = warningMessage; // Standard for most browsers (Chrome, Firefox, Safari)
         return warningMessage; 
@@ -815,6 +859,21 @@ export default function App() {
   };
 
 
+
+  // Clean mockup & collar images on completed ('Beres') orders older than thresholdDays
+  const handleCleanCompletedImages = (thresholdDays: number = 14) => {
+    const result = purgeOldCompletedOrderImages(pesananList, thresholdDays);
+    if (result.purgedCount > 0) {
+      setPesananList(result.cleanedOrders);
+      persistOrders(result.cleanedOrders);
+      // Trigger cloud sync with cleaned orders if connected
+      if (googleUser && googleToken) {
+        queuedSyncDataRef.current = { pesananList: result.cleanedOrders, settings };
+        executeDriveSync();
+      }
+    }
+    return result;
+  };
 
   // Reset database values back to factory defaults (Starting completely from 0)
   const handleResetAll = () => {
@@ -1077,29 +1136,33 @@ export default function App() {
             {/* Cloud Sync Status Indicator */}
             {googleUser && googleToken && (
               <div 
+                onClick={cloudSyncStatus === 'error' ? () => {
+                  queuedSyncDataRef.current = { pesananList, settings };
+                  executeDriveSync();
+                } : undefined}
                 title={
-                  cloudSyncStatus === 'synced' ? 'Seluruh perubahan telah dicadangkan ke Google Drive' :
-                  cloudSyncStatus === 'pending' ? 'Terjadi penambahan/perubahan data. Menunggu 4 detik delay aman untuk auto-save...' :
+                  cloudSyncStatus === 'synced' ? 'Seluruh data tersimpan aman di Google Drive' :
+                  cloudSyncStatus === 'pending' ? 'Menyinkronkan perubahan ke Google Drive...' :
                   cloudSyncStatus === 'saving' ? 'Sedang mengunggah draf cadangan terbaru ke Google Drive...' :
-                  'Gagal menghubungkan draf ke Google Drive.'
+                  'Gagal mencadangkan ke cloud. Klik untuk mencoba lagi.'
                 }
-                className={`p-2 border rounded-xl text-xs flex items-center gap-1.5 cursor-default select-none transition-all duration-350 header-glow ${
-                  cloudSyncStatus === 'synced' ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/10' :
-                  cloudSyncStatus === 'pending' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' :
-                  cloudSyncStatus === 'saving' ? 'border-indigo-500/20 text-indigo-400 bg-indigo-500/10' :
-                  'border-rose-500/20 text-rose-400 bg-rose-500/10'
+                className={`p-2 border rounded-xl text-xs flex items-center gap-1.5 select-none transition-all duration-350 header-glow ${
+                  cloudSyncStatus === 'synced' ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/10 cursor-default' :
+                  cloudSyncStatus === 'pending' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10 cursor-default' :
+                  cloudSyncStatus === 'saving' ? 'border-indigo-500/20 text-indigo-400 bg-indigo-500/10 cursor-default' :
+                  'border-rose-500/20 text-rose-400 bg-rose-500/10 cursor-pointer hover:bg-rose-500/20'
                 }`}
               >
                 {cloudSyncStatus === 'synced' && (
                   <>
                     <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
-                    <span className="text-[10px] hidden sm:inline text-emerald-300 font-bold uppercase tracking-widest leading-none">Cloud Terhubung</span>
+                    <span className="text-[10px] hidden sm:inline text-emerald-300 font-bold uppercase tracking-widest leading-none">Tersimpan</span>
                   </>
                 )}
                 {cloudSyncStatus === 'pending' && (
                   <>
                     <div className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-                    <span className="text-[10px] hidden sm:inline text-amber-300 font-bold uppercase tracking-widest leading-none">Tertunda (4s)</span>
+                    <span className="text-[10px] hidden sm:inline text-amber-300 font-bold uppercase tracking-widest leading-none">Menyinkronkan...</span>
                   </>
                 )}
                 {cloudSyncStatus === 'saving' && (
@@ -1111,7 +1174,7 @@ export default function App() {
                 {cloudSyncStatus === 'error' && (
                   <>
                     <div className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
-                    <span className="text-[10px] hidden sm:inline text-rose-300 font-bold uppercase tracking-widest leading-none">Gagal Backup</span>
+                    <span className="text-[10px] hidden sm:inline text-rose-300 font-bold uppercase tracking-widest leading-none">Coba Simpan Ulang</span>
                   </>
                 )}
               </div>
@@ -1377,6 +1440,7 @@ export default function App() {
               pesananList={pesananList}
               onImportData={handleImportData}
               onResetAll={handleResetAll}
+              onCleanCompletedImages={handleCleanCompletedImages}
             />
           )}
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { ShopSettings, Pesanan } from '../types';
 import { 
   Building, 
@@ -25,7 +25,8 @@ import {
   LogOut,
   Loader2,
   QrCode,
-  CreditCard
+  CreditCard,
+  Sparkles
 } from 'lucide-react';
 import { 
   initAuth, 
@@ -38,6 +39,7 @@ import {
   uploadDraftToDrive,
   DriveFileMetadata
 } from '../driveService';
+import { getPurgeableCompletedOrdersStats } from '../utils';
 import { User } from 'firebase/auth';
 
 interface SettingsProps {
@@ -46,6 +48,7 @@ interface SettingsProps {
   pesananList: Pesanan[];
   onImportData: (orders: Pesanan[], shopName?: string, settings?: ShopSettings) => void;
   onResetAll: () => void;
+  onCleanCompletedImages?: (thresholdDays: number) => { purgedCount: number; savedBytesEstimate: number };
 }
 
 export default function Settings({ 
@@ -53,7 +56,8 @@ export default function Settings({
   onUpdateSettings, 
   pesananList, 
   onImportData, 
-  onResetAll 
+  onResetAll,
+  onCleanCompletedImages
 }: SettingsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const driveFileInputRef = useRef<HTMLInputElement>(null);
@@ -976,6 +980,115 @@ export default function Settings({
               </div>
             )}
           </div>
+
+          {/* Panel 4: Memory & Completed Orders Image Optimization */}
+          {(() => {
+            const thresholdDays = typeof settings.lamaHariHapusGambarBeres === 'number' ? settings.lamaHariHapusGambarBeres : 14;
+            const autoPurgeEnabled = settings.autoHapusGambarBeres !== false;
+            const purgeStats = getPurgeableCompletedOrdersStats(pesananList, thresholdDays);
+
+            return (
+              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-50 dark:border-slate-700/60 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-indigo-500" />
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                      Pembersihan Gambar Pesanan Beres
+                    </h3>
+                  </div>
+                  {purgeStats.purgeableCount > 0 && (
+                    <span className="text-[10px] bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-extrabold uppercase px-2 py-0.5 rounded-full border border-indigo-500/20">
+                      {purgeStats.purgeableCount} Siap Dibersihkan
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Menghapus gambar mockup &amp; foto kerah pada pesanan yang sudah <strong className="text-slate-700 dark:text-slate-200">BERES</strong> lebih dari beberapa minggu agar ukuran berkas simpanan awan sangat ringan dan cepat diunggah. Seluruh data nota, histori, transaksi, dan rincian ukuran tetap 100% aman tersimpan.
+                </p>
+
+                <div className="space-y-3 pt-1">
+                  {/* Auto Prune on Cloud Sync Switch */}
+                  <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700/60 rounded-xl">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-bold text-slate-800 dark:text-white">Auto-Prune Saat Cloud Sync</p>
+                        {autoPurgeEnabled && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                            Aktif
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-400">Otomatis kecualikan gambar pesanan beres lama saat backup Google Drive.</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer" 
+                        checked={autoPurgeEnabled}
+                        onChange={(e) => {
+                          onUpdateSettings({ autoHapusGambarBeres: e.target.checked });
+                          triggerSuccess(e.target.checked ? 'Pembersihan gambar otomatis saat cloud sync aktif!' : 'Pembersihan gambar otomatis dinonaktifkan.');
+                        }}
+                      />
+                      <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-350 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-650"></div>
+                    </label>
+                  </div>
+
+                  {/* Threshold Setting */}
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      Ambang Batas Usia Pesanan Beres
+                    </label>
+                    <select
+                      value={thresholdDays}
+                      onChange={(e) => onUpdateSettings({ lamaHariHapusGambarBeres: Number(e.target.value) })}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/25"
+                    >
+                      <option value={7}>1 Minggu (7 Hari setelah beres)</option>
+                      <option value={14}>2 Minggu (14 Hari setelah beres) - Rekomendasi</option>
+                      <option value={21}>3 Minggu (21 Hari setelah beres)</option>
+                      <option value={30}>1 Bulan (30 Hari setelah beres)</option>
+                      <option value={0}>Semua Pesanan Beres (Langsung tanpa menunggu)</option>
+                    </select>
+                  </div>
+
+                  {/* Live Savings Stats */}
+                  <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 rounded-xl flex items-center justify-between text-xs">
+                    <span className="text-slate-600 dark:text-slate-300 font-medium">
+                      {purgeStats.purgeableCount > 0 
+                        ? `${purgeStats.purgeableCount} pesanan beres lampau berbobot gambar` 
+                        : 'Semua pesanan beres lampau sudah bersih & ringan'}
+                    </span>
+                    {purgeStats.estimatedBytes > 0 && (
+                      <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                        ~{(purgeStats.estimatedBytes / (1024 * 1024)).toFixed(1)} MB
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Manual Purge Action Button */}
+                  {onCleanCompletedImages && (
+                    <button
+                      type="button"
+                      disabled={purgeStats.purgeableCount === 0}
+                      onClick={() => {
+                        const msg = `Bersihkan gambar mockup/foto kerah dari ${purgeStats.purgeableCount} pesanan beres yang sudah lebih dari ${thresholdDays === 0 ? 'hari ini' : thresholdDays + ' hari'}?\n\nCatatan: Seluruh data nota, histori uang, nominal harga, dan ukuran tetap 100% aman tersimpan.`;
+                        if (window.confirm(msg)) {
+                          const res = onCleanCompletedImages(thresholdDays);
+                          triggerSuccess(`Berhasil membersihkan gambar dari ${res.purgedCount} pesanan beres! Ukuran database & cloud sync kini jauh lebih ringan.`);
+                        }
+                      }}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-xs font-bold transition-all cursor-pointer shadow-3xs"
+                    >
+                      <Sparkles className="h-4 w-4 text-indigo-500" />
+                      Bersihkan Gambar Pesanan Beres Sekarang ({purgeStats.purgeableCount})
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
         </div>
 

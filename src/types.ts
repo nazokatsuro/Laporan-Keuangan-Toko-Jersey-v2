@@ -138,6 +138,8 @@ export interface ShopSettings {
   atasNamaRekeningToko?: string;
   qrisImageUrl?: string;
   qrisPayloadToko?: string;
+  autoHapusGambarBeres?: boolean; // Otomatis bersihkan mockup pesanan beres lampau (> 2 minggu)
+  lamaHariHapusGambarBeres?: number; // Ambang batas hari (default 14 hari)
 }
 
 export interface FinancialStats {
